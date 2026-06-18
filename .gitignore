@@ -1,0 +1,78 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Frontend / Vite
+node_modules/
+dist/
+.vite/
+.vite-cache/
+.turbo/
+.next/
+.parcel-cache/
+.cache/
+coverage/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# Generated geometry / exports
+*.stl
+*.obj
+*.3mf
+*.glb
+*.gltf
+
+# Docker local artifacts
+.docker/
+.docker-build/
+docker-data/
+docker-volumes/
+docker-compose.override.yml
+compose.override.yml
+*.tar
+*.tar.gz
+
+# Local databases / generated reports
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+backend/data/
+backend/.venv/
+reports/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
