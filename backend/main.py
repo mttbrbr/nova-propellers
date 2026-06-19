@@ -74,7 +74,7 @@ class PropellerSave(BaseModel):
 
 app = FastAPI(
     title="Nova Propeller API",
-    version="0.1.0",
+    version="0.1.0-alpha.1",
     description="Fast geometry generation API for drone propeller MVPs.",
 )
 
