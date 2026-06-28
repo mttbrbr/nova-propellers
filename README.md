@@ -92,6 +92,41 @@ docker compose exec backend sh
 
 The frontend sends `/api` requests through the Vite proxy to the backend. SQLite data is written to `/data/nova.db` inside the persistent `backend_data` volume.
 
+### Inverse design
+
+The inverse-design engine is split into independent geometry, solver and
+optimizer blocks under `backend/inverse_design`. Run the standalone example
+inside the backend container with:
+
+```bash
+docker compose exec backend python -m inverse_design.example
+```
+
+`InverseDesignOptimizer` depends only on the common geometry-parameterization
+and `BaseSolver` interfaces. BEMT and the preliminary horseshoe-lattice VLM can
+therefore be selected without changing the optimization loop.
+
+Every computational method has its own module under
+`backend/inverse_design/solvers` and is exposed through the central registry.
+Run the deterministic comparison harness with:
+
+```bash
+docker compose exec backend python -m inverse_design.benchmark
+```
+
+The harness checks software consistency and expected trends. It does not replace
+validation against wind-tunnel or published propeller data.
+
+### Airfoil coordinates and spanwise loft
+
+`backend/airfoil_management` imports UIUC/XFOIL `.dat` files, normalizes them
+to 100 spline-resampled points and blends corresponding coordinates along the
+blade span. The complete import, loft and optimizer-safety example runs with:
+
+```bash
+docker compose exec backend python -m airfoil_management.example
+```
+
 ## Alpha release
 
 The release identifier is `v0.1.0-alpha.1`. After reviewing and committing the release files, create and publish the tag with:

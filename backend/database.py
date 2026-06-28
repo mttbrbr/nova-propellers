@@ -37,6 +37,7 @@ def init_database() -> None:
                 thickness REAL NOT NULL,
                 source TEXT NOT NULL,
                 notes TEXT NOT NULL,
+                coordinates_json TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -83,8 +84,37 @@ def init_database() -> None:
             """
         )
         _migrate_polar_points(connection)
+        _migrate_propeller_runs(connection)
+        _migrate_airfoils(connection)
 
     seed_default_airfoils()
+
+
+def _migrate_airfoils(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(airfoils)").fetchall()
+    }
+    if "coordinates_json" not in columns:
+        connection.execute("ALTER TABLE airfoils ADD COLUMN coordinates_json TEXT")
+
+
+def _migrate_propeller_runs(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(propeller_runs)").fetchall()
+    }
+    additions = {
+        "propeller_type": "TEXT NOT NULL DEFAULT 'traditional'",
+        "geometry_method": "TEXT NOT NULL DEFAULT 'legacy'",
+        "geometry_json": "TEXT",
+        "analyses_json": "TEXT",
+        "stl_blob": "BLOB",
+        "schema_version": "INTEGER NOT NULL DEFAULT 1",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            connection.execute(f"ALTER TABLE propeller_runs ADD COLUMN {name} {definition}")
 
 
 def _migrate_polar_points(connection: sqlite3.Connection) -> None:
@@ -226,11 +256,18 @@ def list_airfoils() -> list[dict]:
         rows = connection.execute(
             """
             SELECT
-                a.*,
+                a.name,
+                a.family,
+                a.camber,
+                a.thickness,
+                a.source,
+                a.notes,
+                a.created_at,
                 COUNT(p.id) AS polar_points,
                 COUNT(DISTINCT ps.id) AS polar_sets,
                 MIN(p.reynolds) AS min_reynolds,
-                MAX(p.reynolds) AS max_reynolds
+                MAX(p.reynolds) AS max_reynolds,
+                CASE WHEN a.coordinates_json IS NULL THEN 0 ELSE 1 END AS has_coordinates
             FROM airfoils a
             LEFT JOIN polar_points p ON p.airfoil_name = a.name
             LEFT JOIN polar_sets ps ON ps.airfoil_name = a.name
@@ -304,7 +341,22 @@ def get_airfoil(name: str) -> dict:
         ).fetchone()
         if row is None:
             raise KeyError(name)
-        return dict(row)
+        result = dict(row)
+        coordinates_json = result.pop("coordinates_json", None)
+        result["coordinates"] = json.loads(coordinates_json) if coordinates_json else None
+        result["has_coordinates"] = result["coordinates"] is not None
+        return result
+
+
+def save_airfoil_coordinates(name: str, coordinates: list[list[float]]) -> dict:
+    with connect() as connection:
+        cursor = connection.execute(
+            "UPDATE airfoils SET coordinates_json = ? WHERE name = ?",
+            (json.dumps(coordinates), name),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(name)
+    return get_airfoil(name)
 
 
 def get_polar_table(name: str) -> dict[str, np.ndarray] | None:
@@ -498,30 +550,56 @@ def upsert_polar_points(
     return count
 
 
-def save_propeller_run(project_name: str, payload: dict, analysis: dict) -> int:
+def save_project_bundle(
+    project_name: str,
+    payload: dict,
+    geometry: dict,
+    analyses: list[dict],
+    stl_bytes: bytes,
+) -> int:
+    latest = analyses[-1] if analyses else {"summary": {}}
     with connect() as connection:
         cursor = connection.execute(
             """
-            INSERT INTO propeller_runs (project_name, design_mode, airfoil, payload_json, analysis_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO propeller_runs
+            (project_name, design_mode, airfoil, payload_json, analysis_json, created_at,
+             propeller_type, geometry_method, geometry_json, analyses_json, stl_blob, schema_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_name,
-                payload["design_mode"],
-                payload["airfoil"],
+                analyses[-1].get("model", "none") if analyses else "none",
+                payload.get("airfoil", "NACA 4412"),
                 json.dumps(payload),
-                json.dumps(analysis),
+                json.dumps(latest),
                 _now(),
+                payload.get("propeller_type", "traditional"),
+                geometry.get("method", "legacy"),
+                json.dumps(geometry),
+                json.dumps(analyses),
+                stl_bytes,
+                1,
             ),
         )
         return int(cursor.lastrowid)
+
+
+def get_project_stl(run_id: int) -> bytes:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT stl_blob FROM propeller_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+    if row is None or row["stl_blob"] is None:
+        raise KeyError(run_id)
+    return bytes(row["stl_blob"])
 
 
 def list_runs(limit: int = 20) -> list[dict]:
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT id, project_name, design_mode, airfoil, analysis_json, created_at
+            SELECT id, project_name, design_mode, airfoil, analysis_json, analyses_json,
+                   propeller_type, geometry_method, created_at
             FROM propeller_runs
             ORDER BY id DESC
             LIMIT ?
@@ -532,13 +610,17 @@ def list_runs(limit: int = 20) -> list[dict]:
     runs = []
     for row in rows:
         analysis = json.loads(row["analysis_json"])
+        analyses = json.loads(row["analyses_json"]) if row["analyses_json"] else [analysis]
         runs.append(
             {
                 "id": row["id"],
                 "project_name": row["project_name"],
                 "design_mode": row["design_mode"],
+                "propeller_type": row["propeller_type"] or "traditional",
+                "geometry_method": row["geometry_method"] or "legacy",
                 "airfoil": row["airfoil"],
-                "summary": analysis["summary"],
+                "models": [item.get("model", item.get("method", "legacy")) for item in analyses],
+                "summary": analysis.get("summary", {}),
                 "created_at": row["created_at"],
             }
         )
@@ -561,6 +643,15 @@ def get_run(run_id: int) -> dict:
         "airfoil": row["airfoil"],
         "payload": json.loads(row["payload_json"]),
         "analysis": json.loads(row["analysis_json"]),
+        "analyses": (
+            json.loads(row["analyses_json"])
+            if row["analyses_json"]
+            else [json.loads(row["analysis_json"])]
+        ),
+        "geometry": json.loads(row["geometry_json"]) if row["geometry_json"] else None,
+        "propeller_type": row["propeller_type"] or "traditional",
+        "geometry_method": row["geometry_method"] or "legacy",
+        "has_stl": row["stl_blob"] is not None,
         "created_at": row["created_at"],
     }
 

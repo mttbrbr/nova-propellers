@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from math import atan2, cos, pi, radians, sin, sqrt
+from math import atan2, comb, cos, pi, radians, sin, sqrt
 
 import numpy as np
 import trimesh
@@ -40,6 +40,174 @@ class BladePlan:
     airfoil_m: np.ndarray
     airfoil_p: np.ndarray
     airfoil_t: np.ndarray
+    airfoil_coordinates: list[np.ndarray] | None = None
+
+
+def build_canonical_geometry(
+    spec: PropellerSpec,
+    method: str,
+    parameters: dict | None = None,
+) -> dict:
+    """Build the solver-independent radial representation of a traditional blade."""
+    parameters = parameters or {}
+    radius = spec.diameter / 2.0
+    hub_radius = max(radius * 0.14, 0.012)
+    station_count = 40
+    fractions = np.linspace(0.0, 1.0, station_count)
+    radii = hub_radius + fractions * (radius - hub_radius)
+
+    if method == "bezier":
+        chord_default = [
+            {"x": 0.0, "y": spec.diameter * 0.105},
+            {"x": 0.32, "y": spec.diameter * 0.115},
+            {"x": 0.72, "y": spec.diameter * 0.065},
+            {"x": 1.0, "y": spec.diameter * 0.018},
+        ]
+        twist_default = [
+            {"x": 0.0, "y": 34.0},
+            {"x": 0.33, "y": 25.0},
+            {"x": 0.72, "y": 14.0},
+            {"x": 1.0, "y": 7.0},
+        ]
+        chord_points = parameters.get("chord_points") or chord_default
+        twist_points = parameters.get("twist_points") or twist_default
+        chord = _bezier_values(chord_points, fractions)
+        twist_deg = _bezier_values(twist_points, fractions)
+        normalized_parameters = {
+            "chord_points": chord_points,
+            "twist_points": twist_points,
+        }
+    elif method == "laguerre":
+        chord_coefficients = parameters.get("chord_coefficients") or [
+            spec.diameter * 0.105,
+            spec.diameter * 0.078,
+            -spec.diameter * 0.045,
+            -spec.diameter * 0.018,
+        ]
+        twist_coefficients = parameters.get("twist_coefficients") or [34.0, 25.0, -8.0, 1.0]
+        chord = np.polynomial.laguerre.lagval(fractions * 3.0, chord_coefficients)
+        twist_deg = np.polynomial.laguerre.lagval(fractions * 3.0, twist_coefficients)
+        normalized_parameters = {
+            "chord_coefficients": chord_coefficients,
+            "twist_coefficients": twist_coefficients,
+        }
+    else:
+        raise ValueError(f"Unsupported geometry method: {method}")
+
+    chord = np.clip(chord, spec.diameter * 0.012, spec.diameter * 0.16)
+    twist_deg = np.clip(twist_deg, 2.0, 45.0)
+    airfoil = AIRFOILS.get(spec.airfoil, AIRFOILS["NACA 4412"])
+    return {
+        "schema_version": 1,
+        "propeller_type": "traditional",
+        "method": method,
+        "parameters": normalized_parameters,
+        "diameter_m": spec.diameter,
+        "blades": spec.blades,
+        "airfoil": spec.airfoil,
+        "stations": [
+            {
+                "r_over_R": round(float(fractions[index]), 6),
+                "radius_m": round(float(radii[index]), 7),
+                "chord_m": round(float(chord[index]), 7),
+                "twist_deg": round(float(twist_deg[index]), 5),
+                "airfoil_m": airfoil["m"],
+                "airfoil_p": airfoil["p"],
+                "airfoil_t": airfoil["t"],
+            }
+            for index in range(station_count)
+        ],
+    }
+
+
+def generate_mesh_from_geometry(geometry: dict) -> trimesh.Trimesh:
+    plan = _plan_from_geometry(geometry)
+    radius = float(geometry["diameter_m"]) / 2.0
+    hub_radius = max(radius * 0.14, 0.012)
+    hub_height = max(radius * 0.09, 0.008)
+    hub = trimesh.creation.cylinder(radius=hub_radius, height=hub_height, sections=64, process=True)
+    vertices, faces = _build_blade_geometry(plan)
+    blade_meshes = []
+    for blade_index in range(int(geometry["blades"])):
+        blade = trimesh.Trimesh(vertices=vertices.copy(), faces=faces.copy(), process=False)
+        blade.apply_transform(
+            trimesh.transformations.rotation_matrix(
+                2.0 * pi * blade_index / int(geometry["blades"]), (0, 0, 1), (0, 0, 0)
+            )
+        )
+        blade_meshes.append(blade)
+    return _lightweight_mesh_cleanup(trimesh.util.concatenate([hub, *blade_meshes]))
+
+
+def analyze_geometry_bemt(spec: PropellerSpec, geometry: dict) -> dict:
+    plan = _plan_from_geometry(geometry)
+    bemt = _evaluate_bemt(spec, plan)
+    result = analyze_propeller(spec)
+    result["method"] = "Blade Element Momentum Theory (BEMT)"
+    result["geometry_method"] = geometry["method"]
+    result["summary"].update(
+        {
+            "estimated_thrust_n": round(bemt["thrust"], 3),
+            "thrust_error_pct": round(100.0 * (bemt["thrust"] - spec.thrust_target) / spec.thrust_target, 2),
+            "torque_nm": round(bemt["torque"], 4),
+            "power_w": round(bemt["power"], 2),
+            "figure_of_merit": round(bemt["figure_of_merit"], 3),
+        }
+    )
+    result["stations"] = [
+        {
+            "r_over_R": round(float(plan.fractions[index]), 3),
+            "radius_m": round(float(plan.radii[index]), 4),
+            "chord_mm": round(float(plan.chord[index] * 1000), 2),
+            "twist_deg": round(float(np.degrees(plan.twist[index])), 2),
+            "alpha_deg": round(float(bemt["alpha_deg"][index]), 2),
+            "phi_deg": round(float(bemt["phi_deg"][index]), 2),
+            "cl": round(float(bemt["cl"][index]), 3),
+            "cd": round(float(bemt["cd"][index]), 4),
+            "circulation": round(float(bemt["circulation"][index]), 5),
+            "loading_coefficient": round(float(bemt["loading_coefficient"][index]), 5),
+            "induction_a": round(float(bemt["induction_a"][index]), 3),
+            "induction_aprime": round(float(bemt["induction_aprime"][index]), 3),
+            "reynolds": round(float(bemt["reynolds"][index]), 0),
+            "d_thrust_n": round(float(bemt["d_thrust"][index]), 4),
+            "d_power_w": round(float(bemt["d_power"][index]), 3),
+        }
+        for index in range(len(plan.radii))
+    ]
+    return result
+
+
+def _bezier_values(points: list[dict], samples: np.ndarray) -> np.ndarray:
+    values = np.array([float(point["y"]) for point in sorted(points, key=lambda point: point["x"])])
+    degree = len(values) - 1
+    if degree < 1:
+        raise ValueError("A Bezier curve needs at least two control points")
+    if len(values) > 10:
+        raise ValueError("A Bezier curve supports at most ten control points")
+    return sum(
+        comb(degree, index) * (1.0 - samples) ** (degree - index) * samples**index * value
+        for index, value in enumerate(values)
+    )
+
+
+def _plan_from_geometry(geometry: dict) -> BladePlan:
+    stations = geometry.get("stations") or []
+    if len(stations) < 4:
+        raise ValueError("Canonical geometry requires at least four stations")
+    return BladePlan(
+        radii=np.array([station["radius_m"] for station in stations], dtype=float),
+        fractions=np.array([station["r_over_R"] for station in stations], dtype=float),
+        chord=np.array([station["chord_m"] for station in stations], dtype=float),
+        twist=np.radians([station["twist_deg"] for station in stations]),
+        airfoil_m=np.array([station["airfoil_m"] for station in stations], dtype=float),
+        airfoil_p=np.array([station["airfoil_p"] for station in stations], dtype=float),
+        airfoil_t=np.array([station["airfoil_t"] for station in stations], dtype=float),
+        airfoil_coordinates=(
+            [np.asarray(station["airfoil_coordinates"], dtype=float) for station in stations]
+            if all("airfoil_coordinates" in station for station in stations)
+            else None
+        ),
+    )
 
 
 def generate_propeller_mesh(spec: PropellerSpec) -> trimesh.Trimesh:
@@ -52,7 +220,7 @@ def generate_propeller_mesh(spec: PropellerSpec) -> trimesh.Trimesh:
         radius=hub_radius,
         height=hub_height,
         sections=64,
-        process=False,
+        process=True,
     )
 
     base_blade_vertices, base_blade_faces = _build_blade_geometry(plan)
@@ -342,15 +510,23 @@ def _evaluate_bemt_arrays(
 
 
 def _build_blade_geometry(plan: BladePlan) -> tuple[np.ndarray, np.ndarray]:
-    points_per_section = 83
+    points_per_section = (
+        len(plan.airfoil_coordinates[0])
+        if plan.airfoil_coordinates is not None
+        else 83
+    )
     vertices = []
 
     for index, radius in enumerate(plan.radii):
-        airfoil = _naca_points(
-            m=float(plan.airfoil_m[index]),
-            p=float(plan.airfoil_p[index]),
-            thickness=float(plan.airfoil_t[index]),
-            point_count=42,
+        airfoil = (
+            plan.airfoil_coordinates[index]
+            if plan.airfoil_coordinates is not None
+            else _naca_points(
+                m=float(plan.airfoil_m[index]),
+                p=float(plan.airfoil_p[index]),
+                thickness=float(plan.airfoil_t[index]),
+                point_count=42,
+            )
         )
         fraction = float(plan.fractions[index])
         chord = float(plan.chord[index])
