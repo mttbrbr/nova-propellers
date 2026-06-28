@@ -95,9 +95,14 @@ class InverseDesignOptimizer:
         def objective(vector: FloatArray) -> float:
             parameters = self.parameterization.decode(np.asarray(vector, dtype=float))
             geometry = self.parameterization.build(parameters)
-            performance = self.solver.evaluate(geometry, rpm)
-            thrust_error = (performance["thrust"] - target_thrust) / target_thrust
-            loss = thrust_error**2 + self.constraints.penalty(vector, geometry)
+            try:
+                performance = self.solver.evaluate(geometry, rpm)
+                thrust_error = (performance["thrust"] - target_thrust) / target_thrust
+                loss = thrust_error**2 + self.constraints.penalty(vector, geometry)
+            except (RuntimeError, ValueError, FloatingPointError):
+                # A non-convergent aerodynamic state is outside the feasible
+                # design domain, not a valid objective sample.
+                loss = 1e6 + self.constraints.penalty(vector, geometry)
             self._evaluations += 1
             if self.progress_callback is not None:
                 self.progress_callback(self._evaluations, float(loss))

@@ -57,6 +57,13 @@ class InverseDesignTests(unittest.TestCase):
             high = solver.evaluate(geometry, 5000)["thrust"]
             self.assertGreater(high, low, type(solver).__name__)
 
+    def test_bemt_analysis_is_independent_of_requested_thrust(self) -> None:
+        geometry = self.parameterization.build(self.points)
+        low_target = BEMTSolver(0.5).evaluate(geometry, 5000)
+        high_target = BEMTSolver(20.0).evaluate(geometry, 5000)
+        self.assertAlmostEqual(low_target["thrust"], high_target["thrust"], places=10)
+        self.assertAlmostEqual(low_target["torque"], high_target["torque"], places=10)
+
     def test_optimizer_reduces_target_error(self) -> None:
         solver = BEMTSolver(2.0)
         geometry = self.parameterization.build(self.points)

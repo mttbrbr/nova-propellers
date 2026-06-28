@@ -6,7 +6,7 @@ import PropellerViewport from './components/PropellerViewport.jsx';
 const API = import.meta.env.VITE_API_BASE_URL || '/api';
 const api = (url) => `${API.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 const initial = {
-  project_name: 'Nuova elica', propeller_type: 'traditional', diameter_mode: 'manual',
+  project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
   thrust_target: 10, disk_loading: 220, diameter: 0.25, rpm: 5000, blades: 2,
   airfoil: 'NACA 4412', geometry_method: 'bezier',
 };
@@ -18,8 +18,8 @@ const bezierDefaults = (diameter) => ({
   twist_points: [{ x: 0, y: 34 }, { x: .33, y: 25 }, { x: .72, y: 14 }, { x: 1, y: 7 }],
 });
 const phases = [
-  ['sizing', 'Stima iniziale', Gauge], ['geometry', 'Geometria', Layers3],
-  ['forces', 'Calcolo forze', Activity], ['report', 'Report', FileText],
+  ['sizing', 'Initial sizing', Gauge], ['geometry', 'Geometry', Layers3],
+  ['forces', 'Force analysis', Activity], ['report', 'Report', FileText],
   ['database', 'Database', Database],
 ];
 
@@ -73,7 +73,7 @@ function CurveEditor({ label, points, max, unit, onChange }) {
 
 function DistributionChart({ title, stations, field, unit = '', color = '#e4e4e7' }) {
   const rows = stations.filter((station) => Number.isFinite(Number(station[field])));
-  if (!rows.length) return <div className="rounded border border-zinc-800 p-3 text-xs text-zinc-600">{title}: dati non disponibili</div>;
+  if (!rows.length) return <div className="rounded border border-zinc-800 p-3 text-xs text-zinc-600">{title}: no data available</div>;
   const values = rows.map((station) => Number(station[field]));
   const min = Math.min(...values), max = Math.max(...values), range = Math.max(max - min, 1e-9);
   const points = values.map((value, index) => `${index / Math.max(values.length - 1, 1) * 100},${42 - (value - min) / range * 34}`).join(' ');
@@ -101,7 +101,7 @@ function PolarChart({ rows }) {
     return values.map((value, index) => `${index / Math.max(values.length - 1, 1) * 100},${42 - (value - min) / range * 34}`).join(' ');
   };
   return <div className="rounded-lg border border-zinc-800 bg-zinc-950/65 p-4">
-    <div className="mb-2 flex justify-between text-xs text-zinc-400"><span>Curve polari</span><span>Re {grouped[0].reynolds}</span></div>
+    <div className="mb-2 flex justify-between text-xs text-zinc-400"><span>Polar curves</span><span>Re {grouped[0].reynolds}</span></div>
     <svg className="h-32 w-full" viewBox="0 0 100 48" preserveAspectRatio="none">
       <polyline points={make('cl')} fill="none" stroke="#67e8f9" strokeWidth="2" vectorEffect="non-scaling-stroke" />
       <polyline points={make('cd')} fill="none" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -111,8 +111,8 @@ function PolarChart({ rows }) {
   </div>;
 }
 
-function AirfoilShapeChart({ coordinates, title = 'Coordinate normalizzate' }) {
-  if (!coordinates?.length) return <div className="rounded border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-600">Nessuna coordinata DAT importata.</div>;
+function AirfoilShapeChart({ coordinates, title = 'Normalized coordinates' }) {
+  if (!coordinates?.length) return <div className="rounded border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-600">No DAT coordinates imported.</div>;
   const points = coordinates.map(([x, y]) => `${8 + Number(x) * 184},${60 - Number(y) * 360}`).join(' ');
   return <div className="rounded-xl border border-white/[0.07] bg-zinc-950/70 p-4 shadow-xl shadow-black/20">
     <div className="mb-2 text-xs text-zinc-400">{title}</div>
@@ -131,9 +131,9 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
   return <div className="h-full overflow-auto p-4 sm:p-6 lg:p-8 2xl:p-10">
     <div className="w-full space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><div className="text-xs uppercase tracking-wider text-zinc-600">Report tecnico</div>
-          <h2 className="mt-1 text-2xl font-semibold">{project?.project_name || 'Progetto corrente'}</h2>
-          <p className="mt-1 text-xs text-zinc-500">{geometry?.method || '—'} · {geometry?.stations?.length || 0} stazioni · {geometry?.blades || '—'} pale</p></div>
+        <div><div className="text-xs uppercase tracking-wider text-zinc-600">Technical report</div>
+          <h2 className="mt-1 text-2xl font-semibold">{project?.project_name || 'Current project'}</h2>
+          <p className="mt-1 text-xs text-zinc-500">{geometry?.method || '—'} · {geometry?.stations?.length || 0} stations · {geometry?.blades || '—'} blades</p></div>
         {stlUrl && <a className="rounded-md border border-zinc-700 px-4 py-2 text-xs" href={stlUrl} download="nova_report_geometry.stl"><Download size={14} className="mr-2 inline" />STL</a>}
       </div>
       <div className="flex flex-wrap gap-2">{analyses.map((item) =>
@@ -145,23 +145,23 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 2xl:grid-cols-8">{Object.entries(analysis.summary || {}).slice(0, 12).map(([key, value]) =>
           <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"><div className="text-[9px] uppercase text-zinc-600">{key.replaceAll('_', ' ')}</div><div className="mt-1 text-sm">{value}</div></div>)}</div>
         <div className={`rounded-md border p-3 text-xs ${analysis.curve_source === 'native' ? 'border-emerald-900 text-emerald-300' : 'border-amber-900 text-amber-300'}`}>
-          Curve {analysis.curve_source === 'native' ? 'native del solver' : 'ricostruite dai risultati globali'}.
+          Curves {analysis.curve_source === 'native' ? 'provided by the solver' : 'reconstructed from global results'}.
         </div>
-      </> : <div className="rounded border border-zinc-800 p-4 text-sm text-zinc-500">Nessuna analisi salvata.</div>}
+      </> : <div className="rounded border border-zinc-800 p-4 text-sm text-zinc-500">No saved analyses.</div>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <DistributionChart title="Corda" stations={stations} field="chord_mm" unit="mm" />
+        <DistributionChart title="Chord" stations={stations} field="chord_mm" unit="mm" />
         <DistributionChart title="Twist" stations={stations} field="twist_deg" unit="°" color="#a78bfa" />
-        <DistributionChart title="Angolo d’attacco" stations={stations} field="alpha_deg" unit="°" color="#38bdf8" />
+        <DistributionChart title="Angle of attack" stations={stations} field="alpha_deg" unit="°" color="#38bdf8" />
         <DistributionChart title="Cl" stations={stations} field="cl" color="#67e8f9" />
         <DistributionChart title="Cd" stations={stations} field="cd" color="#fbbf24" />
         <DistributionChart title="Reynolds" stations={stations} field="reynolds" color="#34d399" />
-        <DistributionChart title="Circolazione" stations={stations} field="circulation" color="#f472b6" />
-        <DistributionChart title="Spinta locale" stations={stations} field="d_thrust_n" unit="N" color="#fb923c" />
-        <DistributionChart title="Potenza locale" stations={stations} field="d_power_w" unit="W" color="#e879f9" />
+        <DistributionChart title="Circulation" stations={stations} field="circulation" color="#f472b6" />
+        <DistributionChart title="Local thrust" stations={stations} field="d_thrust_n" unit="N" color="#fb923c" />
+        <DistributionChart title="Local power" stations={stations} field="d_power_w" unit="W" color="#e879f9" />
       </div>
       {stations.length > 0 && <div className="overflow-auto rounded-lg border border-zinc-800">
         <div className="grid min-w-[1050px] grid-cols-11 bg-zinc-950 p-3 text-[9px] uppercase text-zinc-600">
-          {['r/R','r [m]','corda [mm]','twist','alpha','Cl','Cd','Re','Γ','dT [N]','dP [W]'].map((label) => <span key={label}>{label}</span>)}
+          {['r/R','r [m]','chord [mm]','twist','alpha','Cl','Cd','Re','Γ','dT [N]','dP [W]'].map((label) => <span key={label}>{label}</span>)}
         </div>{stations.map((row, index) => <div key={index} className="grid min-w-[1050px] grid-cols-11 border-t border-zinc-900 p-3 text-[10px] text-zinc-300">
           {[row.r_over_R,row.radius_m,row.chord_mm,row.twist_deg,row.alpha_deg,row.cl,row.cd,row.reynolds,row.circulation,row.d_thrust_n,row.d_power_w].map((value, i) => <span key={i}>{value ?? '—'}</span>)}
         </div>)}
@@ -172,26 +172,26 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
 
 function AirfoilWorkspace({ detail }) {
   const rows = detail?.polars || [], quality = detail?.polar_quality;
-  if (!detail) return <div className="grid h-full place-items-center text-sm text-zinc-600">Seleziona un profilo dal database.</div>;
+  if (!detail) return <div className="grid h-full place-items-center text-sm text-zinc-600">Select an airfoil from the database.</div>;
   return <div className="h-full overflow-auto p-4 sm:p-6 lg:p-8 2xl:p-10"><div className="w-full space-y-6">
-    <div><div className="text-xs uppercase text-zinc-600">Database profili</div><h2 className="mt-1 text-2xl font-semibold">{detail.name}</h2>
+    <div><div className="text-xs uppercase text-zinc-600">Airfoil database</div><h2 className="mt-1 text-2xl font-semibold">{detail.name}</h2>
       <p className="mt-1 text-xs text-zinc-500">{detail.family} · {detail.source}</p></div>
     <div className="grid gap-3 md:grid-cols-4">
-      {[['Camber', detail.camber],['Spessore', detail.thickness],['Set polari', detail.polar_sets?.length || 0],['Punti', rows.length]].map(([label,value]) =>
+      {[['Camber', detail.camber],['Thickness', detail.thickness],['Polar sets', detail.polar_sets?.length || 0],['Points', rows.length]].map(([label,value]) =>
         <div key={label} className="rounded border border-zinc-800 p-3"><div className="text-[9px] uppercase text-zinc-600">{label}</div><div className="mt-1 text-sm">{value}</div></div>)}
     </div>
     <div className={`rounded border p-4 text-xs ${quality?.status === 'ok' ? 'border-emerald-900 text-emerald-300' : 'border-amber-900 text-amber-300'}`}>
-      Qualità polari: {quality?.status || 'missing'}{quality?.warnings?.length ? ` · ${quality.warnings.join(' · ')}` : ''}
+      Polar quality: {quality?.status || 'missing'}{quality?.warnings?.length ? ` · ${quality.warnings.join(' · ')}` : ''}
     </div>
     <PolarChart rows={rows} />
     <AirfoilShapeChart coordinates={detail.coordinates} />
     <div className="grid gap-3 md:grid-cols-2">{(detail.polar_sets || []).map((set) =>
       <div key={set.id} className="rounded border border-zinc-800 bg-zinc-900/40 p-3 text-xs">
         <div className="flex justify-between"><span>{set.label}</span><span className="text-zinc-600">#{set.id}</span></div>
-        <div className="mt-2 text-zinc-500">{set.method} · Re {set.min_reynolds}–{set.max_reynolds} · {set.points} punti</div>
+        <div className="mt-2 text-zinc-500">{set.method} · Re {set.min_reynolds}–{set.max_reynolds} · {set.points} points</div>
       </div>)}</div>
     <div className="max-h-[420px] overflow-auto rounded border border-zinc-800">
-      <div className="grid min-w-[850px] grid-cols-8 bg-zinc-950 p-3 text-[9px] uppercase text-zinc-600">{['Set','Re','Mach','Alpha','Cl','Cd','Cm','Fonte'].map((x) => <span key={x}>{x}</span>)}</div>
+      <div className="grid min-w-[850px] grid-cols-8 bg-zinc-950 p-3 text-[9px] uppercase text-zinc-600">{['Set','Re','Mach','Alpha','Cl','Cd','Cm','Source'].map((x) => <span key={x}>{x}</span>)}</div>
       {rows.map((row, i) => <div key={i} className="grid min-w-[850px] grid-cols-8 border-t border-zinc-900 p-3 text-[10px]">
         {[row.polar_set_id,row.reynolds,row.mach,row.alpha_deg,row.cl,row.cd,row.cm,row.source].map((x,j) => <span key={j}>{x}</span>)}
       </div>)}
@@ -291,7 +291,7 @@ function App() {
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      throw new Error(result.detail || `Errore HTTP ${response.status}`);
+      throw new Error(result.detail || `HTTP error ${response.status}`);
     }
     return response;
   };
@@ -474,13 +474,13 @@ function App() {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: selectedAirfoil, ...airfoilEdit, camber: airfoilDetail.camber, thickness: airfoilDetail.thickness }),
     });
-    if (!response.ok) throw new Error('Aggiornamento profilo fallito');
+    if (!response.ok) throw new Error('Airfoil update failed');
     const updated = await response.json();
     setAirfoilDetail((current) => ({ ...current, ...updated }));
   });
   const deleteAirfoil = () => run(async () => {
     const response = await fetch(api(`/airfoils/${encodeURIComponent(selectedAirfoil)}`), { method: 'DELETE' });
-    if (!response.ok) throw new Error('Eliminazione profilo fallita');
+    if (!response.ok) throw new Error('Airfoil deletion failed');
     const remaining = airfoils.filter((name) => name !== selectedAirfoil);
     setAirfoils(remaining); setSelectedAirfoil(remaining[0] || ''); setAirfoilDetail(null);
     await refreshAirfoils();
@@ -490,8 +490,8 @@ function App() {
 
   return <main className="min-h-screen overflow-x-hidden bg-[#08080a] text-zinc-100 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
     <header className="shrink-0 border-b border-white/[0.07] bg-zinc-950/80 px-4 py-4 shadow-2xl shadow-black/30 backdrop-blur-xl sm:px-6"><div className="flex w-full items-center justify-between">
-      <div><div className="text-xs font-medium tracking-[0.24em] text-zinc-500">NOVA</div><h1 className="mt-1 text-xl font-semibold tracking-tight">Propeller design workflow</h1></div>
-      <span className="hidden self-center text-xs text-zinc-500 sm:block">Geometria e modelli indipendenti</span>
+      <div className="text-xs font-medium tracking-[0.24em] text-zinc-500">NOVA propellers</div>
+      <span className="hidden self-center text-xs text-zinc-500 sm:block">Independent geometry and models</span>
     </div></header>
     <div className="grid w-full grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[clamp(360px,28vw,500px)_minmax(0,1fr)]">
       <aside className="border-b border-white/[0.07] bg-zinc-950/55 p-4 shadow-2xl shadow-black/30 sm:p-5 lg:h-full lg:overflow-y-auto lg:border-b-0 lg:border-r">
@@ -501,107 +501,107 @@ function App() {
           </button>)}</nav></div>
         <div className="space-y-4">
           {phase === 'sizing' && <>
-            <Card title="Configurazione progetto"><div className="space-y-3">
-              <Field label="Nome progetto" text value={inputs.project_name} onChange={(v) => set('project_name', v)} />
-              <Select label="Tipo di elica" value={inputs.propeller_type} onChange={(v) => set('propeller_type', v)}
-                options={[['traditional', 'Tradizionale'], ['toroidal', 'Toroidale — prossimamente', true]]} />
-              <Field label="Spinta target" value={inputs.thrust_target} unit="N" onChange={(v) => set('thrust_target', v)} />
+            <Card title="Project configuration"><div className="space-y-3">
+              <Field label="Project name" text value={inputs.project_name} onChange={(v) => set('project_name', v)} />
+              <Select label="Propeller type" value={inputs.propeller_type} onChange={(v) => set('propeller_type', v)}
+                options={[['traditional', 'Traditional'], ['toroidal', 'Toroidal — coming soon', true]]} />
+              <Field label="Target thrust" value={inputs.thrust_target} unit="N" onChange={(v) => set('thrust_target', v)} />
             </div></Card>
-            <Card title="Scelta del diametro"><div className="space-y-3">
-              <Select label="Modalità" value={inputs.diameter_mode} onChange={(v) => set('diameter_mode', v)}
-                options={[['manual', 'Diametro manuale'], ['actuator_disk', 'Stima con disco attuatore']]} />
+            <Card title="Diameter selection"><div className="space-y-3">
+              <Select label="Mode" value={inputs.diameter_mode} onChange={(v) => set('diameter_mode', v)}
+                options={[['manual', 'Manual diameter'], ['actuator_disk', 'Actuator disk estimate']]} />
               {inputs.diameter_mode === 'manual'
-                ? <Field label="Diametro" value={inputs.diameter} unit="m" onChange={(v) => set('diameter', v)} />
-                : <><Field label="Carico del disco" value={inputs.disk_loading} unit="N/m²" onChange={(v) => set('disk_loading', v)} />
-                  <button className={secondary} onClick={estimate}>Stima diametro</button></>}
+                ? <Field label="Diameter" value={inputs.diameter} unit="m" onChange={(v) => set('diameter', v)} />
+                : <><Field label="Disk loading" value={inputs.disk_loading} unit="N/m²" onChange={(v) => set('disk_loading', v)} />
+                  <button className={secondary} onClick={estimate}>Estimate diameter</button></>}
               {sizing && <div className="rounded bg-zinc-950 p-3 text-xs text-zinc-400">Ø {sizing.diameter_m} m · vᵢ {sizing.induced_velocity_m_s} m/s · P {sizing.ideal_power_w} W</div>}
-              <button className={primary} onClick={() => setPhase('geometry')}>Continua alla geometria</button>
+              <button className={primary} onClick={() => setPhase('geometry')}>Continue to geometry</button>
             </div></Card>
           </>}
 
           {phase === 'geometry' && <>
-            <Card title="Definizione della geometria"><div className="grid grid-cols-2 gap-3">
-              <Field label="Diametro" value={inputs.diameter} unit="m" onChange={(v) => set('diameter', v)} />
-              <Field label="RPM progetto" value={inputs.rpm} unit="rpm" onChange={(v) => set('rpm', v)} />
-              <Field label="Numero pale" value={inputs.blades} onChange={(v) => set('blades', v)} />
-              <Select label="Profilo" value={inputs.airfoil} onChange={(v) => set('airfoil', v)} options={airfoils.map((x) => [x, x])} />
-            </div><div className="mt-3"><Select label="Approccio di progetto" value={designMode}
+            <Card title="Geometry definition"><div className="grid grid-cols-2 gap-3">
+              <Field label="Diameter" value={inputs.diameter} unit="m" onChange={(v) => set('diameter', v)} />
+              <Field label="Design RPM" value={inputs.rpm} unit="rpm" onChange={(v) => set('rpm', v)} />
+              <Field label="Blade count" value={inputs.blades} onChange={(v) => set('blades', v)} />
+              <Select label="Airfoil" value={inputs.airfoil} onChange={(v) => set('airfoil', v)} options={airfoils.map((x) => [x, x])} />
+            </div><div className="mt-3"><Select label="Design approach" value={designMode}
               onChange={(value) => {
                 setDesignMode(value);
                 if (value === 'inverse') set('geometry_method', 'bezier');
                 setInverseResult(null);
               }}
-              options={[['direct', 'Diretto — geometria → prestazioni'], ['inverse', 'Inverso — prestazioni → geometria']]} /></div>
-            {designMode === 'direct' && <div className="mt-3"><Select label="Metodo geometrico" value={inputs.geometry_method}
-              onChange={(v) => set('geometry_method', v)} options={[['bezier', 'Curve di Bézier'], ['laguerre', 'Polinomi di Laguerre']]} /></div>}
+              options={[['direct', 'Direct — geometry → performance'], ['inverse', 'Inverse — performance → geometry']]} /></div>
+            {designMode === 'direct' && <div className="mt-3"><Select label="Geometry method" value={inputs.geometry_method}
+              onChange={(v) => set('geometry_method', v)} options={[['bezier', 'Bézier curves'], ['laguerre', 'Laguerre polynomials']]} /></div>}
             {designMode === 'inverse' && <div className="mt-4 rounded-md border border-sky-900/60 bg-sky-950/20 p-3 text-xs leading-5 text-sky-200">
-              L’ottimizzatore modifica corda e twist Bézier per raggiungere la spinta target, rispettando i limiti geometrici della mesh.
+              The optimizer adjusts Bézier chord and twist to reach the target thrust while respecting the mesh geometry limits.
             </div>}</Card>
             {(designMode === 'inverse' || inputs.geometry_method === 'bezier') ? <>
-              <Card title="Punti di controllo Bézier"><div className="grid grid-cols-2 gap-3">
-                {[['chord', 'Corda', bezier.chord_points.length], ['twist', 'Twist', bezier.twist_points.length]].map(([key, label, count]) =>
+              <Card title="Bézier control points"><div className="grid grid-cols-2 gap-3">
+                {[['chord', 'Chord', bezier.chord_points.length], ['twist', 'Twist', bezier.twist_points.length]].map(([key, label, count]) =>
                   <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3">
                     <div className="mb-2 text-xs">{label}</div>
                     <select className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs"
                       value={count} onChange={(event) => setBezierPointCount(key, event.target.value)}>
                       {Array.from({ length: 9 }, (_, index) => index + 2).map((value) =>
-                        <option key={value} value={value}>{value} punti</option>)}
+                        <option key={value} value={value}>{value} points</option>)}
                     </select>
                   </div>)}
               </div>
               {(bezier.chord_points.length > 4 || bezier.twist_points.length > 4) && <div className="mt-3 rounded-lg border border-amber-800/70 bg-amber-950/30 p-3 text-xs leading-5 text-amber-200">
-                Sandbox manuale attivo con più di 4 punti. La geometria diretta resta disponibile, ma l’ottimizzazione inversa è bloccata dalla safety guard.
+                Manual sandbox active with more than 4 points. Direct geometry remains available, but inverse optimization is blocked by the safety guard.
               </div>}</Card>
-              <CurveEditor label="Distribuzione corda" points={bezier.chord_points} max={inputs.diameter * .16} unit="m"
+              <CurveEditor label="Chord distribution" points={bezier.chord_points} max={inputs.diameter * .16} unit="m"
                 onChange={(points) => { setBezier({ ...bezier, chord_points: points }); setInverseResult(null); }} />
-              <CurveEditor label="Distribuzione twist" points={bezier.twist_points} max={45} unit="°"
+              <CurveEditor label="Twist distribution" points={bezier.twist_points} max={45} unit="°"
                 onChange={(points) => { setBezier({ ...bezier, twist_points: points }); setInverseResult(null); }} />
-            </> : <Card title="Coefficienti di Laguerre">{Object.keys(laguerre).map((key) =>
+            </> : <Card title="Laguerre coefficients">{Object.keys(laguerre).map((key) =>
               <div key={key} className="mb-3"><div className="mb-2 text-xs text-zinc-500">{key.replace('_coefficients', '')}</div>
                 <div className="grid grid-cols-4 gap-2">{laguerre[key].map((value, i) =>
                   <input key={i} className="w-full rounded border border-zinc-800 bg-zinc-950 p-2 text-xs" type="number" step="any" value={value}
                     onChange={(e) => setLaguerre({ ...laguerre, [key]: laguerre[key].map((x, j) => j === i ? Number(e.target.value) : x) })} />)}
                 </div></div>)}</Card>}
-            <Card title="Loft dei profili lungo la pala"><div className="space-y-3">
+            <Card title="Airfoil loft along the blade"><div className="space-y-3">
               <label className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-xs">
-                <span>Usa profili DAT distribuiti</span>
+                <span>Use distributed DAT airfoils</span>
                 <input type="checkbox" checked={useAirfoilLoft} disabled={coordinateAirfoils.length < 1}
                   onChange={(event) => { setUseAirfoilLoft(event.target.checked); setLoftPreview(null); }} />
               </label>
-              {coordinateAirfoils.length < 1 && <p className="text-[10px] leading-4 text-zinc-500">Importa almeno un profilo `.dat` nella sezione Database.</p>}
+              {coordinateAirfoils.length < 1 && <p className="text-[10px] leading-4 text-zinc-500">Import at least one `.dat` airfoil in the Database section.</p>}
               {useAirfoilLoft && <>
                 {inputs.geometry_method === 'bezier' ? <div className="space-y-2">
-                  <p className="text-[10px] leading-4 text-zinc-500">Ogni punto di controllo della corda definisce anche una stazione profilo.</p>
+                  <p className="text-[10px] leading-4 text-zinc-500">Each chord control point also defines an airfoil station.</p>
                   {bezier.chord_points.map((point, index) => <div key={`${point.x}-${index}`} className="grid grid-cols-[90px_1fr] items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-                    <div><div className="mb-1 text-[9px] uppercase text-zinc-600">Stazione</div><div className="text-xs">r/R {point.x.toFixed(3)}</div></div>
-                    <Select label={`Profilo P${index + 1}`} value={bezierProfileAssignments[index] || coordinateAirfoils[0] || ''}
+                    <div><div className="mb-1 text-[9px] uppercase text-zinc-600">Station</div><div className="text-xs">r/R {point.x.toFixed(3)}</div></div>
+                    <Select label={`Airfoil P${index + 1}`} value={bezierProfileAssignments[index] || coordinateAirfoils[0] || ''}
                       onChange={(value) => setBezierProfileAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? value : item))}
                       options={coordinateAirfoils.map((name) => [name, name])} />
                   </div>)}
                 </div> : <div className="space-y-2">
-                  <p className="text-[10px] leading-4 text-zinc-500">Definisci liberamente le posizioni radiali delle sezioni per la geometria Laguerre.</p>
+                  <p className="text-[10px] leading-4 text-zinc-500">Define the radial section positions freely for Laguerre geometry.</p>
                   {laguerreProfileAssignments.map((assignment, index) => <div key={index} className="grid grid-cols-[100px_1fr_32px] items-end gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-                    <Field label="Posizione r/R" value={assignment.radial_fraction}
+                    <Field label="r/R position" value={assignment.radial_fraction}
                       onChange={(value) => updateLaguerreProfileStation(index, { radial_fraction: Math.max(0, Math.min(1, value)) })} />
-                    <Select label="Profilo" value={assignment.airfoil}
+                    <Select label="Airfoil" value={assignment.airfoil}
                       onChange={(value) => updateLaguerreProfileStation(index, { airfoil: value })}
                       options={coordinateAirfoils.map((name) => [name, name])} />
                     <button className="mb-0.5 h-9 rounded border border-red-900 text-xs text-red-300"
                       disabled={laguerreProfileAssignments.length <= 2 || index === 0 || index === laguerreProfileAssignments.length - 1}
                       onClick={() => setLaguerreProfileAssignments((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
                   </div>)}
-                  <button className={secondary} disabled={laguerreProfileAssignments.length >= 10} onClick={addLaguerreProfileStation}>Aggiungi stazione profilo</button>
+                  <button className={secondary} disabled={laguerreProfileAssignments.length >= 10} onClick={addLaguerreProfileStation}>Add airfoil station</button>
                 </div>}
-                <button className={secondary} onClick={previewLoft}>Anteprima sezione a r/R = 0.5</button>
-                {loftPreview && <AirfoilShapeChart coordinates={loftPreview} title="Loft interpolato a r/R = 0.5" />}
+                <button className={secondary} onClick={previewLoft}>Preview section at r/R = 0.5</button>
+                {loftPreview && <AirfoilShapeChart coordinates={loftPreview} title="Interpolated loft at r/R = 0.5" />}
               </>}
             </div></Card>
-            {designMode === 'inverse' && <Card title="Obiettivo dell’ottimizzazione"><div className="space-y-3">
+            {designMode === 'inverse' && <Card title="Optimization target"><div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Spinta target" value={inputs.thrust_target} unit="N" onChange={(v) => { set('thrust_target', v); setInverseResult(null); }} />
-                <Field label="Regime" value={inputs.rpm} unit="rpm" onChange={(v) => { set('rpm', v); setInverseResult(null); }} />
+                <Field label="Target thrust" value={inputs.thrust_target} unit="N" onChange={(v) => { set('thrust_target', v); setInverseResult(null); }} />
+                <Field label="Speed" value={inputs.rpm} unit="rpm" onChange={(v) => { set('rpm', v); setInverseResult(null); }} />
               </div>
-              <Select label="Solver usato nella loss" value={inverseSolver} onChange={(value) => { setInverseSolver(value); setInverseResult(null); }}
+              <Select label="Solver used in the loss function" value={inverseSolver} onChange={(value) => { setInverseSolver(value); setInverseResult(null); }}
                 options={(computationalMethods.length ? computationalMethods : [
                   { id: 'bemt', name: 'BEMT', fidelity: 'preliminary' },
                   { id: 'llt', name: 'LLT', fidelity: 'preliminary' },
@@ -614,35 +614,35 @@ function App() {
               </p>}
               <button className={primary} onClick={optimizeGeometry}
                 disabled={busy || bezier.chord_points.length > 4 || bezier.twist_points.length > 4}>
-                {busy ? <><Loader2 className="animate-spin" size={15} /> Ottimizzazione…</> : <><Activity size={15} /> Trova geometria candidata</>}
+                {busy ? <><Loader2 className="animate-spin" size={15} /> Optimizing…</> : <><Activity size={15} /> Find candidate geometry</>}
               </button>
             </div></Card>}
-            {inverseResult && <Card title="Geometria candidata">
+            {inverseResult && <Card title="Candidate geometry">
               <div className="mb-3 grid grid-cols-2 gap-2">
-                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Spinta iniziale</div>
+                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Initial thrust</div>
                   <div className="mt-1 text-sm">{inverseResult.initial_performance.thrust.toFixed(3)} N</div></div>
-                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Spinta ottimizzata</div>
+                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Optimized thrust</div>
                   <div className="mt-1 text-sm">{inverseResult.performance.thrust.toFixed(3)} N</div></div>
-                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Errore target</div>
+                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Target error</div>
                   <div className="mt-1 text-sm">{(100 * Math.abs(inverseResult.performance.thrust - inputs.thrust_target) / inputs.thrust_target).toFixed(2)}%</div></div>
-                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Iterazioni</div>
+                <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Iterations</div>
                   <div className="mt-1 text-sm">{inverseResult.iterations}</div></div>
               </div>
               <div className={`mb-3 rounded p-2 text-xs ${inverseResult.success ? 'bg-emerald-950/40 text-emerald-300' : 'bg-amber-950/40 text-amber-300'}`}>
-                {inverseResult.success ? 'Convergenza raggiunta.' : `Soluzione utilizzabile ma non convergente: ${inverseResult.message}`}
+                {inverseResult.success ? 'Convergence achieved.' : `Usable but non-convergent solution: ${inverseResult.message}`}
               </div>
-              <button className={primary} onClick={applyInverseResult} disabled={busy}>Applica e genera STL</button>
-              <button className={`${secondary} mt-2`} onClick={() => setInverseResult(null)}>Scarta candidata</button>
+              <button className={primary} onClick={applyInverseResult} disabled={busy}>Apply and generate STL</button>
+              <button className={`${secondary} mt-2`} onClick={() => setInverseResult(null)}>Discard candidate</button>
             </Card>}
-            {designMode === 'direct' && <button className={primary} onClick={() => generate()} disabled={busy}>{busy ? 'Generazione…' : 'Genera geometria'}</button>}
-            {stlUrl && <a className={secondary} href={stlUrl} download={`nova_${inputs.geometry_method}.stl`}><Download size={15} /> Scarica STL</a>}
-            {canonical && <button className={secondary} onClick={() => setPhase('forces')}>Continua al calcolo forze</button>}
+            {designMode === 'direct' && <button className={primary} onClick={() => generate()} disabled={busy}>{busy ? 'Generating…' : 'Generate geometry'}</button>}
+            {stlUrl && <a className={secondary} href={stlUrl} download={`nova_${inputs.geometry_method}.stl`}><Download size={15} /> Download STL</a>}
+            {canonical && <button className={secondary} onClick={() => setPhase('forces')}>Continue to force analysis</button>}
           </>}
 
           {phase === 'forces' && <>
-            <Card title="Modello di calcolo"><p className="mb-4 text-xs text-zinc-500">Il modello usa la geometria canonica senza modificarla.</p>
-              <Select label="Modello" value={model} onChange={setModel} options={(computationalMethods.length ? computationalMethods : [
-                { id: 'actuator_disk', name: 'Disco attuatore', fidelity: 'ideal' },
+            <Card title="Computational model"><p className="mb-4 text-xs text-zinc-500">The model uses the canonical geometry without modifying it.</p>
+              <Select label="Model" value={model} onChange={setModel} options={(computationalMethods.length ? computationalMethods : [
+                { id: 'actuator_disk', name: 'Actuator disk', fidelity: 'ideal' },
                 { id: 'bemt', name: 'BEMT', fidelity: 'preliminary' },
                 { id: 'llt', name: 'LLT', fidelity: 'preliminary' },
                 { id: 'vlm', name: 'VLM', fidelity: 'experimental' },
@@ -651,53 +651,53 @@ function App() {
               {computationalMethods.find((method) => method.id === model) && <div className="mt-3 rounded bg-zinc-950 p-3 text-[10px] leading-4 text-zinc-400">
                 {computationalMethods.find((method) => method.id === model).description}
               </div>}
-              <button className={`${primary} mt-4`} disabled={!canonical || busy} onClick={analyze}><Play size={15} /> Esegui modello</button>
-              {!canonical && <p className="mt-3 text-xs text-amber-400">Generare prima la geometria.</p>}
+              <button className={`${primary} mt-4`} disabled={!canonical || busy} onClick={analyze}><Play size={15} /> Run model</button>
+              {!canonical && <p className="mt-3 text-xs text-amber-400">Generate the geometry first.</p>}
             </Card>
             {analyses.map((analysis) => <Card key={analysis.model} title={analysis.method}>
               <div className="grid grid-cols-2 gap-2">{Object.entries(analysis.summary).slice(0, 10).map(([key, value]) =>
                 <div key={key} className="rounded bg-zinc-950 p-2"><div className="text-[9px] text-zinc-600">{key.replaceAll('_', ' ')}</div><div className="text-xs">{value}</div></div>)}</div>
             </Card>)}
-            {canonical && <button className={secondary} onClick={() => setPhase('report')}>Vai al report</button>}
+            {canonical && <button className={secondary} onClick={() => setPhase('report')}>View report</button>}
           </>}
 
           {phase === 'report' && <>
-            <Card title="Report del progetto corrente">
-              <p className="mb-4 text-xs leading-5 text-zinc-500">Questa sezione mostra esclusivamente geometria, risultati e curve della sessione corrente.</p>
+            <Card title="Current project report">
+              <p className="mb-4 text-xs leading-5 text-zinc-500">This section only shows geometry, results, and curves from the current session.</p>
               <div className="space-y-2">{analyses.map((analysis) =>
                 <button key={analysis.model} onClick={() => setReportModel(analysis.model)}
                   className={`w-full rounded border p-3 text-left text-xs ${reportModel === analysis.model ? 'border-zinc-400 bg-zinc-900' : 'border-zinc-800 bg-zinc-950'}`}>
                   <div>{analysis.method || analysis.model}</div>
-                  <div className="mt-1 text-[10px] text-zinc-600">{analysis.fidelity || 'legacy'} · curve {analysis.curve_source || 'non disponibili'}</div>
+                  <div className="mt-1 text-[10px] text-zinc-600">{analysis.fidelity || 'legacy'} · curves {analysis.curve_source || 'unavailable'}</div>
                 </button>)}</div>
-              {!analyses.length && <div className="text-xs text-zinc-600">Esegui almeno un modello nella fase precedente.</div>}
+              {!analyses.length && <div className="text-xs text-zinc-600">Run at least one model in the previous step.</div>}
             </Card>
-            <button className={secondary} onClick={() => setPhase('database')}><Database size={14} /> Apri il database</button>
+            <button className={secondary} onClick={() => setPhase('database')}><Database size={14} /> Open database</button>
           </>}
 
           {phase === 'database' && <>
             <div className="grid grid-cols-2 gap-2">
-              <button className={reportView === 'projects' ? primary : secondary} onClick={() => setReportView('projects')}>Progetti</button>
-              <button className={reportView === 'airfoils' ? primary : secondary} onClick={() => setReportView('airfoils')}>Profili e polari</button>
+              <button className={reportView === 'projects' ? primary : secondary} onClick={() => setReportView('projects')}>Projects</button>
+              <button className={reportView === 'airfoils' ? primary : secondary} onClick={() => setReportView('airfoils')}>Airfoils and polars</button>
             </div>
             {reportView === 'projects' ? <>
-              <Card title="Progetto completo"><p className="mb-4 text-xs text-zinc-500">Salva input, geometria, STL, curve e tutte le analisi.</p>
-                <button className={primary} disabled={!canonical || busy} onClick={save}><Save size={15} /> {savedId ? `Salvato #${savedId}` : 'Salva nel database'}</button>
+              <Card title="Complete project"><p className="mb-4 text-xs text-zinc-500">Save inputs, geometry, STL, curves, and all analyses.</p>
+                <button className={primary} disabled={!canonical || busy} onClick={save}><Save size={15} /> {savedId ? `Saved #${savedId}` : 'Save to database'}</button>
               </Card>
-              <Card title="Progetti salvati"><div className="max-h-[480px] space-y-2 overflow-auto">{projects.map((project) =>
+              <Card title="Saved projects"><div className="max-h-[480px] space-y-2 overflow-auto">{projects.map((project) =>
                 <div key={project.id} className={`rounded border p-3 ${selectedProject?.id === project.id ? 'border-zinc-500 bg-zinc-900' : 'border-zinc-800 bg-zinc-950'}`}>
                   <button className="w-full text-left" onClick={() => open(project.id)}>
                     <div className="flex justify-between text-xs"><span>{project.project_name}</span><span className="text-zinc-600">#{project.id}</span></div>
                     <div className="mt-1 text-[10px] text-zinc-500">{project.geometry_method} · {(project.models || []).join(', ')}</div>
                     <div className="mt-1 text-[9px] text-zinc-700">{project.created_at}</div>
                   </button><div className="mt-2 flex gap-3 text-[10px]"><a href={api(`/propellers/${project.id}/stl`)}>STL</a>
-                    <button className="text-red-400" onClick={() => remove(project.id)}>Elimina</button></div>
+                    <button className="text-red-400" onClick={() => remove(project.id)}>Delete</button></div>
                 </div>)}</div></Card>
             </> : <>
-              <Card title="Importa coordinate XFOIL/UIUC">
-                <p className="mb-3 text-xs leading-5 text-zinc-500">Il file `.dat` verrà pulito e normalizzato automaticamente a 100 punti.</p>
+              <Card title="Import XFOIL/UIUC coordinates">
+                <p className="mb-3 text-xs leading-5 text-zinc-500">The `.dat` file will be cleaned and normalized automatically to 100 points.</p>
                 <label className={`${primary} cursor-pointer`}>
-                  <span>Seleziona file .dat</span>
+                  <span>Select .dat file</span>
                   <input type="file" accept=".dat,text/plain" className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
@@ -706,21 +706,21 @@ function App() {
                     }} />
                 </label>
               </Card>
-              <Card title="Profili disponibili"><div className="max-h-56 space-y-1 overflow-auto">{airfoils.map((name) =>
+              <Card title="Available airfoils"><div className="max-h-56 space-y-1 overflow-auto">{airfoils.map((name) =>
                 <button key={name} onClick={() => setSelectedAirfoil(name)}
                   className={`w-full rounded px-3 py-2 text-left text-xs ${selectedAirfoil === name ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-950 text-zinc-400'}`}>{name}</button>)}</div></Card>
-              <Card title="Nuovo profilo"><div className="space-y-2">
-                <Field label="Nome" text value={airfoilForm.name} onChange={(value) => setAirfoilForm({ ...airfoilForm, name: value })} />
-                <Field label="Famiglia" text value={airfoilForm.family} onChange={(value) => setAirfoilForm({ ...airfoilForm, family: value })} />
-                <Field label="Fonte" text value={airfoilForm.source} onChange={(value) => setAirfoilForm({ ...airfoilForm, source: value })} />
-                <button className={primary} disabled={!airfoilForm.name || busy} onClick={createAirfoil}>Crea profilo</button>
+              <Card title="New airfoil"><div className="space-y-2">
+                <Field label="Name" text value={airfoilForm.name} onChange={(value) => setAirfoilForm({ ...airfoilForm, name: value })} />
+                <Field label="Family" text value={airfoilForm.family} onChange={(value) => setAirfoilForm({ ...airfoilForm, family: value })} />
+                <Field label="Source" text value={airfoilForm.source} onChange={(value) => setAirfoilForm({ ...airfoilForm, source: value })} />
+                <button className={primary} disabled={!airfoilForm.name || busy} onClick={createAirfoil}>Create airfoil</button>
               </div></Card>
-              {airfoilDetail && <Card title="Modifica profilo"><div className="space-y-2">
-                <Field label="Famiglia" text value={airfoilEdit.family} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, family: value })} />
-                <Field label="Fonte" text value={airfoilEdit.source} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, source: value })} />
-                <Field label="Note" text value={airfoilEdit.notes} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, notes: value })} />
-                <button className={secondary} onClick={updateAirfoil}>Aggiorna</button>
-                <button className="w-full rounded border border-red-900 p-2 text-xs text-red-300" onClick={deleteAirfoil}>Elimina profilo</button>
+              {airfoilDetail && <Card title="Edit airfoil"><div className="space-y-2">
+                <Field label="Family" text value={airfoilEdit.family} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, family: value })} />
+                <Field label="Source" text value={airfoilEdit.source} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, source: value })} />
+                <Field label="Notes" text value={airfoilEdit.notes} onChange={(value) => setAirfoilEdit({ ...airfoilEdit, notes: value })} />
+                <button className={secondary} onClick={updateAirfoil}>Update</button>
+                <button className="w-full rounded border border-red-900 p-2 text-xs text-red-300" onClick={deleteAirfoil}>Delete airfoil</button>
               </div></Card>}
             </>}
           </>}
@@ -747,7 +747,7 @@ function App() {
                 onSelectModel={setReportModel}
                 stlUrl={stlUrl}
               />
-            : <div className="grid h-full min-h-[620px] place-items-center text-sm text-zinc-600 lg:min-h-0">Seleziona un progetto archiviato.</div>
+            : <div className="grid h-full min-h-[620px] place-items-center text-sm text-zinc-600 lg:min-h-0">Select an archived project.</div>
           : <AirfoilWorkspace detail={airfoilDetail} />}
       </section> : <section className="relative min-w-0 min-h-[620px] overflow-hidden bg-[radial-gradient(circle_at_50%_40%,#27272a_0%,#09090b_52%,#050506_100%)] shadow-inner shadow-black lg:h-full lg:min-h-0">
         <PropellerViewport geometry={mesh} displayMode={displayMode} />
@@ -760,13 +760,13 @@ function App() {
         </div>
         <div className="absolute left-6 top-6 flex gap-2 text-[10px] text-zinc-400">
           <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">{inputs.propeller_type}</span>
-          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">geometria: {inputs.geometry_method}</span>
-          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">modello: {model}</span>
+          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">geometry: {inputs.geometry_method}</span>
+          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">model: {model}</span>
         </div>
-        {!mesh && <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-zinc-600">Genera una geometria per visualizzare la pala</div>}
-        {busy && <div className="absolute inset-0 grid place-items-center bg-zinc-950/35"><div className="flex gap-2 rounded bg-zinc-950 p-3 text-xs"><Loader2 className="animate-spin" size={15} /> Elaborazione</div></div>}
+        {!mesh && <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-zinc-600">Generate geometry to view the blade</div>}
+        {busy && <div className="absolute inset-0 grid place-items-center bg-zinc-950/35"><div className="flex gap-2 rounded bg-zinc-950 p-3 text-xs"><Loader2 className="animate-spin" size={15} /> Processing</div></div>}
         <div className="absolute inset-x-0 bottom-0 border-t border-zinc-900 bg-zinc-950/80 px-6 py-3 text-xs text-zinc-500">
-          {canonical ? `${canonical.stations.length} stazioni · ${inputs.blades} pale · Ø ${inputs.diameter} m` : 'Nessuna geometria canonica generata'}
+          {canonical ? `${canonical.stations.length} stations · ${inputs.blades} blades · Ø ${inputs.diameter} m` : 'No canonical geometry generated'}
         </div>
       </section>
       }

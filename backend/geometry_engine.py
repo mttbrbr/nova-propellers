@@ -427,65 +427,111 @@ def _evaluate_bemt_arrays(
     radii: np.ndarray,
     chord: np.ndarray,
     twist: np.ndarray,
+    *,
+    axial_velocity: float = AXIAL_FLIGHT_SPEED,
+    air_density: float = AIR_DENSITY,
+    air_viscosity: float = AIR_VISCOSITY,
+    max_iterations: int = 200,
+    tolerance: float = 1e-5,
 ) -> dict:
+    """Evaluate an axial-flow propeller with blade-element/momentum theory.
+
+    The induced axial and tangential velocities are solved from annular
+    momentum balance.  The operating thrust target is deliberately not part of
+    the analysis: a fixed geometry at a fixed operating point must have one
+    predicted aerodynamic state.
+    """
     radius = spec.diameter / 2.0
     omega = 2.0 * pi * spec.rpm / 60.0
-    axial_velocity = max(_momentum_induced_velocity(spec), AXIAL_FLIGHT_SPEED)
-    tangential_velocity = omega * radii
-    induction_a = np.full_like(radii, 0.08, dtype=float)
-    induction_aprime = np.full_like(radii, 0.01, dtype=float)
-    sigma = spec.blades * chord / np.maximum(2.0 * pi * radii, 1e-6)
+    if omega <= 0 or axial_velocity < 0 or air_density <= 0 or air_viscosity <= 0:
+        raise ValueError("BEMT requires positive RPM and fluid properties, with non-negative axial velocity")
 
-    for _ in range(40):
-        axial = axial_velocity * (1.0 + induction_a)
-        tangential = tangential_velocity * (1.0 - induction_aprime)
-        relative_velocity = np.sqrt(axial**2 + tangential**2)
+    freestream = float(axial_velocity)
+    induced_axial = np.full_like(radii, max(0.04 * omega * radius, 0.1), dtype=float)
+    induced_tangential = np.full_like(radii, 0.01 * omega * radii, dtype=float)
+    converged = False
+    residual = float("inf")
+
+    for iteration in range(1, max_iterations + 1):
+        axial = freestream + induced_axial
+        tangential = np.maximum(omega * radii - induced_tangential, 1e-6)
+        relative_velocity = np.hypot(axial, tangential)
         phi = np.arctan2(axial, np.maximum(tangential, 1e-6))
         alpha = twist - phi
-        reynolds = AIR_DENSITY * relative_velocity * chord / AIR_VISCOSITY
+        reynolds = air_density * relative_velocity * chord / air_viscosity
         cl, cd = _polar_coefficients(spec, alpha, reynolds)
         cn = cl * np.cos(phi) - cd * np.sin(phi)
         ct = cl * np.sin(phi) + cd * np.cos(phi)
         loss = _prandtl_loss(spec.blades, radii, radius, phi)
+        dynamic_pressure = 0.5 * air_density * relative_velocity**2
+        thrust_per_radius = spec.blades * dynamic_pressure * chord * cn
+        torque_per_radius = spec.blades * radii * dynamic_pressure * chord * ct
 
-        next_a = 1.0 / (
-            (4.0 * loss * np.sin(phi) ** 2) / np.maximum(sigma * cn, 1e-6)
-            - 1.0
+        # dT/dr = 4*pi*r*rho*F*vi*(V_inf + vi)
+        momentum_term = np.maximum(
+            thrust_per_radius / np.maximum(pi * radii * air_density * loss, 1e-12),
+            0.0,
         )
-        next_aprime = 1.0 / (
-            (4.0 * loss * np.sin(phi) * np.cos(phi)) / np.maximum(sigma * ct, 1e-6)
-            + 1.0
+        next_axial = 0.5 * (np.sqrt(freestream**2 + momentum_term) - freestream)
+        # dQ/dr = 4*pi*r^3*rho*F*(V_inf + vi)*v_theta
+        next_tangential = torque_per_radius / np.maximum(
+            4.0 * pi * radii**3 * air_density * loss * (freestream + next_axial),
+            1e-12,
         )
-        next_a = np.clip(next_a, -0.2, 0.55)
-        next_aprime = np.clip(next_aprime, -0.08, 0.22)
-        induction_a = 0.72 * induction_a + 0.28 * next_a
-        induction_aprime = 0.72 * induction_aprime + 0.28 * next_aprime
+        next_tangential = np.clip(next_tangential, 0.0, 0.95 * omega * radii)
+        next_axial = np.clip(next_axial, 0.0, omega * radius)
 
-    axial = axial_velocity * (1.0 + induction_a)
-    tangential = tangential_velocity * (1.0 - induction_aprime)
-    relative_velocity = np.sqrt(axial**2 + tangential**2)
+        # The exact root and tip have zero-width vortex-loss singularities and
+        # do not define annular control volumes. Exclude those boundary nodes
+        # from the convergence norm; their loads are still integrated.
+        interior = slice(1, -1)
+        scale_axial = max(float(np.max(next_axial[interior])), 1.0)
+        scale_tangential = max(float(np.max(next_tangential[interior])), 1.0)
+        residual = max(
+            float(np.max(np.abs(next_axial[interior] - induced_axial[interior]))) / scale_axial,
+            float(np.max(np.abs(next_tangential[interior] - induced_tangential[interior]))) / scale_tangential,
+        )
+        relaxation = 0.08
+        induced_axial += relaxation * (next_axial - induced_axial)
+        induced_tangential += relaxation * (next_tangential - induced_tangential)
+        if residual < tolerance:
+            converged = True
+            break
+
+    axial = freestream + induced_axial
+    tangential = np.maximum(omega * radii - induced_tangential, 1e-6)
+    relative_velocity = np.hypot(axial, tangential)
     phi = np.arctan2(axial, np.maximum(tangential, 1e-6))
     alpha = twist - phi
     alpha_deg = np.degrees(alpha)
-    reynolds = AIR_DENSITY * relative_velocity * chord / AIR_VISCOSITY
+    reynolds = air_density * relative_velocity * chord / air_viscosity
     cl, cd = _polar_coefficients(spec, alpha, reynolds)
     loss = _prandtl_loss(spec.blades, radii, radius, phi)
     dr = np.gradient(radii)
 
-    q = 0.5 * AIR_DENSITY * relative_velocity**2
+    q = 0.5 * air_density * relative_velocity**2
     lift = q * chord * cl
     drag = q * chord * cd
     circulation = 0.5 * relative_velocity * chord * cl
-    d_thrust = spec.blades * (lift * np.cos(phi) - drag * np.sin(phi)) * dr * loss
-    d_torque = spec.blades * radii * (lift * np.sin(phi) + drag * np.cos(phi)) * dr * loss
+    # Prandtl's factor belongs to the annular momentum relation. Applying it
+    # again to blade-element forces would count the finite-blade loss twice.
+    d_thrust = spec.blades * (lift * np.cos(phi) - drag * np.sin(phi)) * dr
+    d_torque = spec.blades * radii * (lift * np.sin(phi) + drag * np.cos(phi)) * dr
 
     thrust = float(np.sum(d_thrust))
     torque = float(np.sum(d_torque))
     power = float(max(torque * omega, 0.0))
     d_power = np.maximum(d_torque * omega, 0.0)
-    ideal_power = spec.thrust_target * axial_velocity
+    disk_area = pi * radius**2
+    ideal_induced_velocity = 0.5 * (
+        sqrt(freestream**2 + 2.0 * max(thrust, 0.0) / max(air_density * disk_area, 1e-12))
+        - freestream
+    )
+    ideal_power = thrust * (freestream + ideal_induced_velocity)
     figure_of_merit = float(np.clip(ideal_power / max(power, 1e-6), 0.0, 1.0))
     tip_mach = omega * radius / 343.0
+    induction_a = induced_axial / max(omega * radius, 1e-12)
+    induction_aprime = induced_tangential / np.maximum(omega * radii, 1e-12)
 
     return {
         "thrust": thrust,
@@ -506,6 +552,10 @@ def _evaluate_bemt_arrays(
         "d_thrust": d_thrust,
         "d_power": d_power,
         "tip_mach": tip_mach,
+        "converged": converged,
+        "iterations": iteration,
+        "residual": residual,
+        "axial_velocity_m_s": freestream,
     }
 
 

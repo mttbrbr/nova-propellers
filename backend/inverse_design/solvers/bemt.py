@@ -7,17 +7,29 @@ from .base import BaseSolver, SolverResult
 
 
 class BEMTSolver(BaseSolver):
-    """Adapter around Nova's iterative blade-element/momentum implementation."""
+    """Axial-flow blade-element/momentum solver."""
 
-    def __init__(self, reference_thrust_n: float = 10.0) -> None:
+    def __init__(
+        self,
+        reference_thrust_n: float | None = None,
+        *,
+        axial_velocity_m_s: float = 0.0,
+        air_density: float = 1.225,
+        air_viscosity: float = 1.81e-5,
+    ) -> None:
+        # Retained only for API compatibility. Analysis must not depend on a
+        # requested thrust value.
         self.reference_thrust_n = reference_thrust_n
+        self.axial_velocity = axial_velocity_m_s
+        self.rho = air_density
+        self.viscosity = air_viscosity
 
     def evaluate(self, geometry_data: GeometryData, rpm: float) -> SolverResult:
         return self.evaluate_detailed(geometry_data, rpm)["performance"]
 
     def evaluate_detailed(self, geometry_data: GeometryData, rpm: float) -> dict:
         spec = PropellerSpec(
-            thrust_target=self.reference_thrust_n,
+            thrust_target=self.reference_thrust_n or 1.0,
             rpm=rpm,
             diameter=geometry_data.diameter_m,
             blades=geometry_data.blades,
@@ -25,18 +37,24 @@ class BEMTSolver(BaseSolver):
             design_mode="preliminary",
         )
         result = _evaluate_bemt_arrays(
-            spec, geometry_data.radius_m, geometry_data.chord_m, geometry_data.twist_rad
+            spec,
+            geometry_data.radius_m,
+            geometry_data.chord_m,
+            geometry_data.twist_rad,
+            axial_velocity=self.axial_velocity,
+            air_density=self.rho,
+            air_viscosity=self.viscosity,
         )
+        if not result["converged"]:
+            raise RuntimeError(
+                f"BEMT did not converge after {result['iterations']} iterations "
+                f"(residual={result['residual']:.3e})"
+            )
         omega = 2.0 * np.pi * rpm / 60.0
-        useful_power = max(result["thrust"], 0.0) * max(
-            np.sqrt(max(result["thrust"], 0.0) / (2 * 1.225 * np.pi * (geometry_data.diameter_m / 2) ** 2)),
-            0.0,
-        )
-        shaft_power = max(result["torque"] * omega, 1e-9)
         performance = {
             "thrust": float(result["thrust"]),
             "torque": float(result["torque"]),
-            "efficiency": float(np.clip(useful_power / shaft_power, 0.0, 1.0)),
+            "efficiency": float(result["figure_of_merit"]),
         }
         dr = np.gradient(geometry_data.radius_m)
         d_torque = result["d_power"] / max(omega, 1e-9)
@@ -59,4 +77,20 @@ class BEMTSolver(BaseSolver):
             }
             for index, fraction in enumerate(geometry_data.radial_fraction)
         ]
-        return {"performance": performance, "curves": curves, "curve_source": "native"}
+        revolutions_per_second = rpm / 60.0
+        diameter = geometry_data.diameter_m
+        coefficients = {
+            "thrust": result["thrust"] / max(self.rho * revolutions_per_second**2 * diameter**4, 1e-12),
+            "power": result["power"] / max(self.rho * revolutions_per_second**3 * diameter**5, 1e-12),
+            "torque": result["torque"] / max(self.rho * revolutions_per_second**2 * diameter**5, 1e-12),
+        }
+        return {
+            "performance": performance,
+            "curves": curves,
+            "curve_source": "native",
+            "coefficients": coefficients,
+            "convergence": {
+                "iterations": result["iterations"],
+                "residual": result["residual"],
+            },
+        }
