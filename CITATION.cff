@@ -4,6 +4,6 @@ title: "Nova Propellers"
 type: software
 authors:
   - alias: "mttbrbr"
-repository-code: "https://github.com/mttbrbr/Nova"
+repository-code: "https://github.com/mttbrbr/nova-propellers"
 version: "0.1.0-alpha.2"
 license: "Apache-2.0"

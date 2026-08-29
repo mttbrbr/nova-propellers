@@ -1,6 +1,6 @@
 # Nova Propellers
 
-[![CI](https://github.com/mttbrbr/Nova/actions/workflows/ci.yml/badge.svg)](https://github.com/mttbrbr/Nova/actions/workflows/ci.yml)
+[![CI](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
 
@@ -39,7 +39,7 @@ the codebase.
 You only need Docker Engine (or Docker Desktop) and Docker Compose v2.
 
 ```bash
-git clone https://github.com/mttbrbr/Nova.git
+git clone https://github.com/mttbrbr/nova-propellers.git
 cd Nova
 docker compose up --build -d
 ```

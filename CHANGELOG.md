@@ -35,5 +35,5 @@ All notable changes to Nova are documented in this file.
 - Airfoil polar database and persistent propeller runs.
 - Docker Compose development environment for one-command startup.
 
-[0.1.0-alpha.1]: https://github.com/mttbrbr/Nova/releases/tag/v0.1.0-alpha.1
-[0.1.0-alpha.2]: https://github.com/mttbrbr/Nova/releases/tag/v0.1.0-alpha.2
+[0.1.0-alpha.1]: https://github.com/mttbrbr/nova-propellers/releases/tag/v0.1.0-alpha.1
+[0.1.0-alpha.2]: https://github.com/mttbrbr/nova-propellers/releases/tag/v0.1.0-alpha.2
