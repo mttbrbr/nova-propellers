@@ -8,8 +8,12 @@ from typing import Iterable
 
 import numpy as np
 
-from polar_database import AIRFOIL_POLAR_SEEDS, ALPHA_GRID, REYNOLDS_GRID, build_seed_table
-
+from polar_database import (
+    ALPHA_GRID,
+    REYNOLDS_GRID,
+    SYNTHETIC_POLAR_PARAMETERS,
+    build_seed_table,
+)
 
 DB_PATH = Path(os.getenv("NOVA_DB_PATH", "/app/data/nova.db"))
 
@@ -206,7 +210,7 @@ def seed_default_airfoils() -> None:
         }
         now = _now()
 
-        for name, seed in AIRFOIL_POLAR_SEEDS.items():
+        for name, seed in SYNTHETIC_POLAR_PARAMETERS.items():
             if name not in existing:
                 connection.execute(
                     """
@@ -218,8 +222,8 @@ def seed_default_airfoils() -> None:
                         "NACA 4-digit",
                         _infer_camber(name),
                         _infer_thickness(name),
-                        "internal_seed_xfoil_style",
-                        "Seeded tabulated polar. Replace with imported XFOIL or wind-tunnel CSV for production use.",
+                        "synthetic_demo",
+                        "Synthetic demonstration polar. Replace it with licensed, validated data for engineering work.",
                         now,
                     ),
                 )
@@ -234,18 +238,18 @@ def seed_default_airfoils() -> None:
                     connection,
                     name,
                     label="Seeded low-Re table",
-                    source="internal_seed_xfoil_style",
+                    source="synthetic_demo",
                     method="seed",
                     mach=0.03,
                     ncrit=9.0,
-                    notes="Synthetic startup table. Replace with imported XFOIL, CFD or wind-tunnel data for production use.",
+                    notes="Synthetic demonstration table. Replace it with licensed, validated data for engineering work.",
                 )
                 _insert_polar_table(
                     connection,
                     polar_set_id,
                     name,
                     table,
-                    "internal_seed_xfoil_style",
+                    "synthetic_demo",
                     0.03,
                     9.0,
                 )

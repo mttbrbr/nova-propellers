@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from airfoil_management import AirfoilLoft, AirfoilManager
 from database import (
     create_airfoil,
     delete_airfoil,
@@ -14,18 +15,17 @@ from database import (
     get_airfoil,
     get_polar_points,
     get_polar_sets,
-    get_run,
     get_project_stl,
+    get_run,
     init_database,
     list_airfoils,
     list_runs,
-    save_project_bundle,
     save_airfoil_coordinates,
+    save_project_bundle,
     summarize_polar_quality,
     update_airfoil,
     upsert_polar_points,
 )
-from airfoil_management import AirfoilLoft, AirfoilManager
 from geometry_engine import (
     AIR_DENSITY,
     PropellerSpec,
@@ -35,8 +35,8 @@ from geometry_engine import (
 from inverse_design import (
     BezierBladeGeometry,
     BezierControlPoints,
-    GeometryData,
     GeometryConstraints,
+    GeometryData,
     InverseDesignOptimizer,
     create_solver,
     list_methods,
@@ -135,7 +135,7 @@ class AirfoilLoftRequest(BaseModel):
 
 app = FastAPI(
     title="Nova Propeller API",
-    version="0.1.0-alpha.1",
+    version="0.1.0-alpha.2",
     description="Fast geometry generation API for drone propeller MVPs.",
 )
 
@@ -379,6 +379,8 @@ def create_geometry(payload: GeometryRequest) -> dict:
 
 @app.post("/api/geometries/stl")
 def download_geometry(payload: GeometryRequest) -> Response:
+    if payload.propeller_type != "traditional":
+        raise HTTPException(status_code=501, detail="Toroidal geometry is planned but not available.")
     try:
         geometry = build_canonical_geometry(
             _geometry_to_spec(payload), payload.geometry_method, payload.geometry_parameters
@@ -402,17 +404,43 @@ def download_geometry(payload: GeometryRequest) -> Response:
 @app.post("/api/analyses")
 def run_analysis(payload: AnalysisRequest) -> dict:
     try:
+        descriptor = next(item for item in list_methods() if item["id"] == payload.model)
+        if payload.inputs.propeller_type not in descriptor["suitable_for"]:
+            raise ValueError(
+                f"{descriptor['name']} does not support {payload.inputs.propeller_type} geometry"
+            )
         geometry = GeometryData.from_dict(payload.geometry)
         solver = create_solver(payload.model, target_thrust_n=payload.inputs.thrust_target)
         detailed = solver.evaluate_detailed(geometry, payload.inputs.rpm)
         performance = detailed["performance"]
+        convergence = detailed.get("convergence")
+        warnings = list(descriptor["warnings"])
+        if convergence and not convergence.get("converged", False):
+            warnings.append(
+                f"Solver did not converge: {convergence.get('termination_reason', 'unknown')} "
+                f"after {convergence.get('iterations', 'unknown')} iterations "
+                f"(residual={convergence.get('residual', 'unknown')})."
+            )
         omega = 2.0 * np.pi * payload.inputs.rpm / 60.0
-        descriptor = next(item for item in list_methods() if item["id"] == payload.model)
         return {
             "model": payload.model,
             "method": descriptor["name"],
+            "role": descriptor["role"],
             "fidelity": descriptor["fidelity"],
             "description": descriptor["description"],
+            "solver": {
+                "id": payload.model,
+                "version": app.version,
+                "fidelity": descriptor["fidelity"],
+            },
+            "units": {
+                "thrust": "N",
+                "torque": "N*m",
+                "power": "W",
+                "efficiency": "dimensionless",
+            },
+            "warnings": warnings,
+            "convergence": convergence,
             "curve_source": detailed["curve_source"],
             "summary": {
                 "target_thrust_n": round(payload.inputs.thrust_target, 4),

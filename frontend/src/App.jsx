@@ -222,7 +222,7 @@ function App() {
   const [mesh, setMesh] = useState(null);
   const [stlUrl, setStlUrl] = useState('');
   const [displayMode, setDisplayMode] = useState('surface');
-  const [model, setModel] = useState('actuator_disk');
+  const [model, setModel] = useState('bemt');
   const [designMode, setDesignMode] = useState('direct');
   const [inverseSolver, setInverseSolver] = useState('bemt');
   const [inverseResult, setInverseResult] = useState(null);
@@ -274,6 +274,8 @@ function App() {
     refreshAirfoils().catch(() => {});
     fetch(api('/computational-methods')).then((r) => r.json()).then(setComputationalMethods).catch(() => {});
     refresh();
+    // Bootstrap once; later refreshes are triggered explicitly after database changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -642,12 +644,12 @@ function App() {
           {phase === 'forces' && <>
             <Card title="Computational model"><p className="mb-4 text-xs text-zinc-500">The model uses the canonical geometry without modifying it.</p>
               <Select label="Model" value={model} onChange={setModel} options={(computationalMethods.length ? computationalMethods : [
-                { id: 'actuator_disk', name: 'Actuator disk', fidelity: 'ideal' },
                 { id: 'bemt', name: 'BEMT', fidelity: 'preliminary' },
                 { id: 'llt', name: 'LLT', fidelity: 'preliminary' },
                 { id: 'vlm', name: 'VLM', fidelity: 'experimental' },
                 { id: 'bem', name: 'BEM', fidelity: 'experimental' },
-              ]).map((method) => [method.id, `${method.name} — ${method.fidelity}`])} />
+              ]).filter((method) => method.role !== 'sizing_reference' && method.id !== 'actuator_disk')
+                .map((method) => [method.id, `${method.name} — ${method.fidelity}`])} />
               {computationalMethods.find((method) => method.id === model) && <div className="mt-3 rounded bg-zinc-950 p-3 text-[10px] leading-4 text-zinc-400">
                 {computationalMethods.find((method) => method.id === model).description}
               </div>}

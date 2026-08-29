@@ -13,45 +13,54 @@ from .vlm import VLMSolver
 class MethodDescriptor:
     id: str
     name: str
+    role: str
     fidelity: str
     suitable_for: tuple[str, ...]
     description: str
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
+            "role": self.role,
             "fidelity": self.fidelity,
             "suitable_for": self.suitable_for,
             "description": self.description,
+            "warnings": self.warnings,
         }
 
 
 METHODS = {
     "actuator_disk": MethodDescriptor(
-        "actuator_disk", "Actuator disk", "ideal",
-        ("traditional", "toroidal"),
-        "Ideal momentum-theory reference using the requested operating thrust.",
+        "actuator_disk", "Actuator disk", "sizing_reference", "ideal_reference",
+        ("traditional",),
+        "Ideal momentum-theory sizing reference; it is not a blade-performance prediction.",
+        ("The returned thrust is the requested target, not a prediction from blade geometry.",),
     ),
     "bemt": MethodDescriptor(
-        "bemt", "Blade Element Momentum Theory", "preliminary",
+        "bemt", "Blade Element Momentum Theory", "analysis", "preliminary",
         ("traditional",),
         "Iterative blade-element model with induction and tabulated section polars.",
+        ("Not yet qualified against an experimental propeller dataset.",),
     ),
     "llt": MethodDescriptor(
-        "llt", "Lifting-Line Theory", "preliminary",
+        "llt", "Lifting-Line Theory", "analysis", "preliminary",
         ("traditional",),
         "Rotating lifting line with finite-span correction and Prandtl losses.",
+        ("Not yet qualified against an experimental propeller dataset.",),
     ),
     "vlm": MethodDescriptor(
-        "vlm", "Vortex Lattice Method", "experimental",
-        ("traditional", "toroidal"),
+        "vlm", "Vortex Lattice Method", "analysis", "experimental",
+        ("traditional",),
         "Horseshoe-vortex lattice with fixed wake; wake relaxation is not yet included.",
+        ("Architecture prototype only; do not use for engineering decisions.",),
     ),
     "bem": MethodDescriptor(
-        "bem", "Boundary Element Method", "experimental",
-        ("traditional", "toroidal"),
+        "bem", "Boundary Element Method", "analysis", "experimental",
+        ("traditional",),
         "Chordwise-refined constant-strength vortex boundary elements.",
+        ("Architecture prototype only; do not use for engineering decisions.",),
     ),
 }
 

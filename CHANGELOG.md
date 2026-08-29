@@ -2,6 +2,30 @@
 
 All notable changes to Nova are documented in this file.
 
+## [0.1.0-alpha.2] - Unreleased
+
+### Added
+
+- Apache-2.0 licensing, provenance records and dependency license checks.
+- Reproducible Python and npm dependency locks.
+- Backend, frontend, compliance and Compose CI workflows.
+- Explicit solver roles, warnings, units and convergence metadata.
+- Public-facing project documentation and an original interface screenshot.
+
+### Changed
+
+- Docker Compose now defaults to immutable local images; reload mounts live in
+  `docker-compose.dev.yml`.
+- Built-in polar data are explicitly identified as synthetic demonstration data.
+- Actuator disk is a sizing reference rather than a selectable blade analysis.
+
+### Fixed
+
+- Toroidal geometry is consistently rejected until implemented.
+- Experimental VLM/BEM methods no longer advertise unsupported toroidal geometry.
+- Non-converged BEMT runs return explicit metadata and warnings instead of an
+  opaque API failure.
+
 ## [0.1.0-alpha.1] - 2026-06-19
 
 ### Added
@@ -12,3 +36,4 @@ All notable changes to Nova are documented in this file.
 - Docker Compose development environment for one-command startup.
 
 [0.1.0-alpha.1]: https://github.com/mttbrbr/Nova/releases/tag/v0.1.0-alpha.1
+[0.1.0-alpha.2]: https://github.com/mttbrbr/Nova/releases/tag/v0.1.0-alpha.2

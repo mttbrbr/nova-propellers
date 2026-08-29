@@ -25,4 +25,5 @@ class BaseSolver(ABC):
             "performance": performance,
             "curves": reconstruct_radial_curves(geometry_data, rpm, performance),
             "curve_source": "reconstructed",
+            "convergence": None,
         }

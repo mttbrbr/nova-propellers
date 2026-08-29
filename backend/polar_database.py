@@ -3,11 +3,12 @@ from pathlib import Path
 
 import numpy as np
 
-
 REYNOLDS_GRID = np.asarray([30000.0, 60000.0, 100000.0, 200000.0, 500000.0])
 ALPHA_GRID = np.asarray([-8.0, -4.0, 0.0, 4.0, 8.0, 12.0, 16.0])
 
-AIRFOIL_POLAR_SEEDS = {
+# Synthetic parameters for UI demonstration and software tests only. They are
+# not measurements and are not derived from XFOIL, CFD or wind-tunnel data.
+SYNTHETIC_POLAR_PARAMETERS = {
     "NACA 0012": {"cl0": 0.00, "slope": 0.092, "clmax": 1.05, "cd0": 0.014, "cm0": 0.000},
     "NACA 2412": {"cl0": 0.22, "slope": 0.098, "clmax": 1.18, "cd0": 0.015, "cm0": -0.055},
     "NACA 4412": {"cl0": 0.42, "slope": 0.103, "clmax": 1.28, "cd0": 0.016, "cm0": -0.095},
@@ -88,7 +89,9 @@ def _load_csv_table(airfoil_name: str) -> dict[str, np.ndarray] | None:
 
 
 def build_seed_table(airfoil_name: str) -> dict[str, np.ndarray]:
-    seed = AIRFOIL_POLAR_SEEDS.get(airfoil_name, AIRFOIL_POLAR_SEEDS["NACA 4412"])
+    seed = SYNTHETIC_POLAR_PARAMETERS.get(
+        airfoil_name, SYNTHETIC_POLAR_PARAMETERS["NACA 4412"]
+    )
     cl_table = []
     cd_table = []
     cm_table = []

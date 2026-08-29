@@ -10,7 +10,6 @@ from scipy.optimize import OptimizeResult, minimize
 from .geometry import GeometryData, GeometryParameterization
 from .solvers import BaseSolver, SolverResult
 
-
 FloatArray = NDArray[np.float64]
 
 

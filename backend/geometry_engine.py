@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from math import atan2, comb, cos, pi, radians, sin, sqrt
+from math import comb, cos, pi, radians, sin, sqrt
 
 import numpy as np
 import trimesh
 
 from polar_database import interpolate_polar
-
 
 AIR_DENSITY = 1.225
 AIR_VISCOSITY = 1.81e-5
@@ -367,7 +366,6 @@ def _solve_larrabee_distribution(
     radius = spec.diameter / 2.0
     design_cl = _design_cl(spec)
     dr = np.gradient(radii)
-    omega = 2.0 * pi * spec.rpm / 60.0
     min_chord = spec.diameter * 0.012
     max_chord = spec.diameter * 0.16 / max(spec.blades / 2, 1)
 
@@ -555,6 +553,8 @@ def _evaluate_bemt_arrays(
         "converged": converged,
         "iterations": iteration,
         "residual": residual,
+        "tolerance": tolerance,
+        "termination_reason": "tolerance_met" if converged else "maximum_iterations",
         "axial_velocity_m_s": freestream,
     }
 

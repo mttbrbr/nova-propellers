@@ -1,0 +1,17 @@
+{
+  "annotated-types==0.7.0": "MIT",
+  "anyio==4.14.0": "MIT",
+  "click==8.4.1": "BSD-3-Clause",
+  "fastapi==0.115.6": "MIT",
+  "h11==0.16.0": "MIT",
+  "idna==3.18": "BSD-3-Clause",
+  "numpy==2.2.1": "BSD-3-Clause",
+  "pydantic==2.13.4": "MIT",
+  "pydantic_core==2.46.4": "MIT",
+  "scipy==1.14.1": "BSD-3-Clause",
+  "starlette==0.41.3": "BSD-3-Clause",
+  "trimesh==4.5.3": "MIT",
+  "typing-inspection==0.4.2": "MIT",
+  "typing_extensions==4.15.0": "PSF-2.0",
+  "uvicorn==0.34.0": "BSD-3-Clause"
+}

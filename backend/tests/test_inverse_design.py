@@ -5,13 +5,13 @@ import numpy as np
 from inverse_design import (
     ActuatorDiskSolver,
     BEMTSolver,
-    BoundaryElementSolver,
-    VLMSolver,
     BezierBladeGeometry,
     BezierControlPoints,
+    BoundaryElementSolver,
     GeometryConstraints,
     InverseDesignOptimizer,
     LLTSolver,
+    VLMSolver,
     list_methods,
 )
 
@@ -45,10 +45,17 @@ class InverseDesignTests(unittest.TestCase):
             self.assertLessEqual(result["efficiency"], 1.0)
 
     def test_registry_exposes_every_computational_method(self) -> None:
+        methods = list_methods()
         self.assertEqual(
-            {method["id"] for method in list_methods()},
+            {method["id"] for method in methods},
             {"actuator_disk", "bemt", "llt", "vlm", "bem"},
         )
+        actuator_disk = next(method for method in methods if method["id"] == "actuator_disk")
+        self.assertEqual(actuator_disk["role"], "sizing_reference")
+        self.assertIn("not a prediction", actuator_disk["warnings"][0])
+        for method in methods:
+            self.assertEqual(method["suitable_for"], ("traditional",))
+            self.assertTrue(method["warnings"])
 
     def test_aerodynamic_methods_increase_thrust_with_rpm(self) -> None:
         geometry = self.parameterization.build(self.points)
@@ -63,6 +70,13 @@ class InverseDesignTests(unittest.TestCase):
         high_target = BEMTSolver(20.0).evaluate(geometry, 5000)
         self.assertAlmostEqual(low_target["thrust"], high_target["thrust"], places=10)
         self.assertAlmostEqual(low_target["torque"], high_target["torque"], places=10)
+
+    def test_bemt_detailed_result_reports_convergence(self) -> None:
+        geometry = self.parameterization.build(self.points)
+        result = BEMTSolver(2.0).evaluate_detailed(geometry, 5000)
+        self.assertTrue(result["convergence"]["converged"])
+        self.assertEqual(result["convergence"]["termination_reason"], "tolerance_met")
+        self.assertLess(result["convergence"]["residual"], result["convergence"]["tolerance"])
 
     def test_optimizer_reduces_target_error(self) -> None:
         solver = BEMTSolver(2.0)

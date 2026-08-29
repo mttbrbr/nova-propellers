@@ -6,8 +6,7 @@ from typing import Mapping
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.interpolate import CubicSpline, splprep, splev
-
+from scipy.interpolate import CubicSpline, splev, splprep
 
 FloatArray = NDArray[np.float64]
 

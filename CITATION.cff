@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use Nova Propellers, cite this repository and the exact release."
+title: "Nova Propellers"
+type: software
+authors:
+  - alias: "mttbrbr"
+repository-code: "https://github.com/mttbrbr/Nova"
+version: "0.1.0-alpha.2"
+license: "Apache-2.0"

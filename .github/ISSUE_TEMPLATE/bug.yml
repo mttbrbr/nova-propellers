@@ -1,0 +1,29 @@
+name: Bug report
+description: Report reproducible software behavior that appears incorrect.
+title: "[Bug] "
+labels: ["type: bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Nova is alpha software. Do not use its output as production engineering evidence.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include inputs, solver, version and exact commands.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, Docker version, browser
+    validations:
+      required: true

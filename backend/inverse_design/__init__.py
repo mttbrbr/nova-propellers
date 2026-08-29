@@ -9,8 +9,8 @@ from .optimizer import (
 )
 from .solvers import (
     ActuatorDiskSolver,
-    BEMTSolver,
     BaseSolver,
+    BEMTSolver,
     BoundaryElementSolver,
     LLTSolver,
     VLMSolver,

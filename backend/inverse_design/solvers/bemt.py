@@ -45,11 +45,6 @@ class BEMTSolver(BaseSolver):
             air_density=self.rho,
             air_viscosity=self.viscosity,
         )
-        if not result["converged"]:
-            raise RuntimeError(
-                f"BEMT did not converge after {result['iterations']} iterations "
-                f"(residual={result['residual']:.3e})"
-            )
         omega = 2.0 * np.pi * rpm / 60.0
         performance = {
             "thrust": float(result["thrust"]),
@@ -90,7 +85,10 @@ class BEMTSolver(BaseSolver):
             "curve_source": "native",
             "coefficients": coefficients,
             "convergence": {
+                "converged": result["converged"],
                 "iterations": result["iterations"],
                 "residual": result["residual"],
+                "tolerance": result["tolerance"],
+                "termination_reason": result["termination_reason"],
             },
         }
