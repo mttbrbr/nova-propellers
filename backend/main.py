@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 from typing import Literal
 
@@ -146,10 +147,10 @@ def startup() -> None:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=[origin.strip() for origin in os.getenv(
+        "NOVA_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://tauri.localhost,https://tauri.localhost",
+    ).split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
