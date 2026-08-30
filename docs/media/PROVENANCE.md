@@ -3,6 +3,8 @@
 | File | Created | Origin | License |
 | --- | --- | --- | --- |
 | `nova-workbench.jpg` | 2026 | Screenshot captured from the Nova Propellers geometry workspace by `mttbrbr` | Apache-2.0 |
+| `icon-nova-propellers.png` | 2026 | Original Nova Propellers icon supplied by `mttbrbr`; no third-party source material | Apache-2.0 |
+| `icon-max-nova-propellers.png` | 2026 | High-resolution source for the original Nova Propellers icon supplied by `mttbrbr` | Apache-2.0 |
 
 The image contains only Nova's own interface and generated propeller geometry;
 it does not include third-party logos, stock assets or imported datasets.

@@ -33,11 +33,15 @@ def candidate_files() -> list[Path]:
 def main() -> int:
     errors = []
     media_manifest = (ROOT / "docs/media/PROVENANCE.md").read_text()
+    icon_manifest = (ROOT / "src-tauri/icons/PROVENANCE.md").read_text()
     for path in candidate_files():
         if FORBIDDEN_PARTS.intersection(path.parts) or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"Generated or data file is not allowed in the source archive: {path}")
         if path.suffix.lower() in MEDIA_SUFFIXES:
-            if path.parts[:2] != ("docs", "media"):
+            if path.parts[:2] == ("src-tauri", "icons"):
+                if path.name not in icon_manifest:
+                    errors.append(f"Icon is missing from src-tauri/icons/PROVENANCE.md: {path}")
+            elif path.parts[:2] != ("docs", "media"):
                 errors.append(f"Media must be stored under docs/media: {path}")
             elif path.name not in media_manifest:
                 errors.append(f"Media is missing from docs/media/PROVENANCE.md: {path}")

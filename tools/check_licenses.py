@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_NPM_LICENSES = {
     "Apache-2.0",
+    "Apache-2.0 OR MIT",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC-BY-4.0",

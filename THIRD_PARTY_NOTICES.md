@@ -17,6 +17,8 @@ source-only release archive.
 | Three.js and React Three Fiber | 3D rendering | MIT |
 | Lucide React | Interface icons | ISC |
 | Vite, Tailwind CSS, PostCSS and Autoprefixer | Frontend build | MIT |
+| Tauri, Wry and Tauri shell plugin | Linux desktop shell and sidecar lifecycle | Apache-2.0 / MIT |
+| PyInstaller | Standalone Python application bundler | GPL-2.0-or-later with bootloader exception |
 
 The exact transitive inventory is generated from the committed Python and npm
 lockfiles. Notable transitive notices include `caniuse-lite` under CC-BY-4.0.
@@ -24,6 +26,12 @@ NumPy/SciPy binary wheels may contain OpenBLAS/LAPACK under BSD-style licenses,
 GCC runtime libraries under GPL-3.0-with-GCC-exception, and `libquadmath` under
 LGPL-2.1-or-later. Those notices do not relicense Nova source code, but must be
 preserved by anyone redistributing the corresponding binaries.
+
+Desktop binary packages include the PyInstaller bootloader and the resolved
+Python environment. PyInstaller's bootloader exception permits distribution of
+the resulting application under Nova's license; bundled dependency license and
+native-library notices still apply. GTK and WebKitGTK are system dependencies
+of the Arch and Debian packages and remain under their respective licenses.
 
 The release process must refresh this file whenever a runtime dependency or
 locked version changes. Package metadata marked `UNKNOWN` must be verified

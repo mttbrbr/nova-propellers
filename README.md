@@ -1,6 +1,9 @@
 # Nova Propellers
 
+<img src="docs/media/icon-nova-propellers.png" alt="Nova Propellers icon" width="128">
+
 [![CI](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml)
+[![Desktop packages](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
 
@@ -33,6 +36,20 @@ units, solver maturity, convergence information and warnings visible.
 Toroidal propellers are deliberately out of scope for the current alpha. Nova
 only exposes methods that match the geometry and analysis paths implemented in
 the codebase.
+
+## Linux desktop application
+
+Nova now has a Tauri 2 desktop shell for Linux x86_64. It starts a bundled
+FastAPI sidecar on a dynamically selected loopback port, waits for the health
+check, then opens the existing React interface. End users do not need Docker or
+a separately configured Python environment.
+
+The primary development platform is Arch Linux. Native Arch packages and
+Ubuntu 24.04/Debian packages can be built from this repository; see the
+[Linux desktop guide](docs/DESKTOP_LINUX.md) for exact development, packaging,
+debugging and installation commands.
+
+The Docker workflow remains supported during the desktop migration.
 
 ## Quick start with published images
 
@@ -141,15 +158,19 @@ python tools/check_source_archive.py
 ```text
 frontend/            React, Vite and Three.js interface
 backend/             FastAPI application and SQLite persistence
+  desktop_launcher.py Loopback-only standalone desktop entrypoint
   inverse_design/    Geometry, solvers, optimizer and benchmark
   airfoil_management/ Coordinate import, normalization and lofting
+src-tauri/            Tauri 2 shell and backend lifecycle manager
+packaging/            Arch PKGBUILD, Debian builder and Linux integration
 docs/                Algorithm notes and project media
-tools/               Release and license checks
+tools/               Build, packaging, smoke and release checks
 ```
 
-The frontend sends `/api` requests through Vite's local proxy. FastAPI owns the
-canonical geometry used by analysis, persistence and export, while SQLite keeps
-projects, airfoils and polar sets on the local machine.
+In web/Docker mode the frontend sends `/api` requests through Vite's local
+proxy. In desktop mode it discovers the sidecar endpoint from Tauri. FastAPI
+owns the canonical geometry used by analysis, persistence and export, while
+SQLite keeps projects, airfoils and polar sets on the local machine.
 
 ## Project status
 

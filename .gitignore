@@ -46,6 +46,18 @@ frontend/dist/
 frontend/.vite/
 frontend/.cache/
 
+# Tauri / desktop packaging
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/nova-backend-*
+.desktop-tools/
+backend/build/
+backend/dist/
+backend/nova-backend.spec
+packaging/arch/pkg/
+packaging/arch/src/
+packaging/arch/*.pkg.tar.zst
+
 # Generated geometry / exports
 *.stl
 *.obj
@@ -70,6 +82,7 @@ compose.override.yml
 *.sqlite-journal
 backend/data/
 backend/.venv/
+backend/.venv-desktop/
 reports/
 
 # Temporary files

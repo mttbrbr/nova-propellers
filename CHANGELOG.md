@@ -2,6 +2,22 @@
 
 All notable changes to Nova are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Tauri 2 Linux desktop shell with automatic FastAPI sidecar lifecycle,
+  dynamic loopback endpoint discovery and readiness/error reporting.
+- PyInstaller backend build and standalone smoke test.
+- Arch Linux `PKGBUILD`, Ubuntu/Debian bundling and clean package CI.
+- Arch-first desktop development, packaging and debugging guide.
+
+### Changed
+
+- Local non-Docker persistence follows XDG data directory conventions.
+- The frontend discovers its desktop backend while retaining `/api` for the
+  existing web and Docker workflow.
+
 ## [0.1.0-alpha.2] - 2026-08-30
 
 ### Added

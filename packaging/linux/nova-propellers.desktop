@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nova Propellers
+Comment=Design and analyze traditional propellers
+Exec=nova-propellers
+Icon=nova-propellers
+Terminal=false
+Categories=Science;Engineering;
+StartupNotify=true

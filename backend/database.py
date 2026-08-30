@@ -15,7 +15,14 @@ from polar_database import (
     build_seed_table,
 )
 
-DB_PATH = Path(os.getenv("NOVA_DB_PATH", "/app/data/nova.db"))
+
+def default_database_path() -> Path:
+    data_home = os.getenv("XDG_DATA_HOME")
+    root = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
+    return root / "nova-propellers" / "nova.db"
+
+
+DB_PATH = Path(os.getenv("NOVA_DB_PATH", str(default_database_path()))).expanduser()
 
 
 @contextmanager

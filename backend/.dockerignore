@@ -4,6 +4,10 @@ __pycache__/
 .coverage
 .ruff_cache/
 .venv/
+.venv-desktop/
 venv/
+build/
+dist/
+nova-backend.spec
 data/
 *.stl
