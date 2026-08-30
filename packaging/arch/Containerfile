@@ -1,0 +1,18 @@
+FROM archlinux:base-devel
+
+RUN pacman -Syu --noconfirm \
+      git \
+      nodejs \
+      npm \
+      rust \
+      uv \
+      webkit2gtk-4.1 \
+    && pacman -Scc --noconfirm
+
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd --gid "${GROUP_ID}" nova \
+    && useradd --uid "${USER_ID}" --gid "${GROUP_ID}" --create-home nova
+
+USER nova
+WORKDIR /workspace

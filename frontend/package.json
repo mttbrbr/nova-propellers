@@ -4,19 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --configLoader runner",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop:live": "../tools/dev_desktop.sh",
+    "desktop:dev": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri dev",
+    "desktop:build": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri build"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",
+    "@tauri-apps/api": "2.11.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.171.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",

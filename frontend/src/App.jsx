@@ -1,10 +1,9 @@
 import { Activity, AlertCircle, Database, Download, FileText, Gauge, Layers3, Loader2, Play, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { api } from './backend.js';
 import PropellerViewport from './components/PropellerViewport.jsx';
 
-const API = import.meta.env.VITE_API_BASE_URL || '/api';
-const api = (url) => `${API.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 const initial = {
   project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
   thrust_target: 10, disk_loading: 220, diameter: 0.25, rpm: 5000, blades: 2,
