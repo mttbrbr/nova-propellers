@@ -85,6 +85,10 @@ current commit and runs a clean `PKGBUILD` build:
 ./tools/package_arch.sh
 ```
 
+The PKGBUILD deliberately uses Arch's native `/usr/bin/gcc` and an isolated
+Cargo home. This prevents a user-level Cargo configuration for a Debian
+cross-compiler (such as `x86_64-linux-gnu-gcc`) from affecting the package.
+
 The result is `packaging/arch/nova-propellers-*.pkg.tar.zst`. Install it with:
 
 ```bash

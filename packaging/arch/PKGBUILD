@@ -6,7 +6,7 @@ arch=('x86_64')
 url="https://github.com/mttbrbr/nova-propellers"
 license=('Apache-2.0')
 depends=('gtk3' 'webkit2gtk-4.1')
-makedepends=('nodejs' 'npm' 'rust' 'uv')
+makedepends=('gcc' 'nodejs' 'npm' 'rust' 'uv')
 options=('!strip' '!debug')
 
 _upstream_version="0.1.0-alpha.2"
@@ -19,6 +19,12 @@ build() {
   export UV_CACHE_DIR="${srcdir}/uv-cache"
   export UV_PYTHON_INSTALL_DIR="${srcdir}/uv-python"
   export PYINSTALLER_CONFIG_DIR="${srcdir}/pyinstaller"
+  # Build natively on Arch even if the invoking user's Cargo configuration
+  # contains a Debian cross-compiler setting.
+  export CARGO_HOME="${srcdir}/cargo-home"
+  export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/gcc
+  export CC=/usr/bin/gcc
+  export CXX=/usr/bin/g++
 
   uv python install 3.12
   npm ci --prefix frontend
@@ -27,6 +33,12 @@ build() {
 }
 check() {
   cd "${srcdir}/${pkgname}-${_upstream_version}"
+
+  export CARGO_HOME="${srcdir}/cargo-home"
+  export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/gcc
+  export CC=/usr/bin/gcc
+  export CXX=/usr/bin/g++
+
   python tools/smoke_desktop_backend.py \
     src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
   cargo test --release --manifest-path src-tauri/Cargo.toml --locked
