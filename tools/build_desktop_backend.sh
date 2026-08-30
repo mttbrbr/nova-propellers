@@ -17,7 +17,7 @@ if [[ -z "${python_bin}" || ! -x "$(command -v "${python_bin}" 2>/dev/null || pr
   exit 1
 fi
 
-"${python_bin}" -m venv "${venv_dir}"
+"${python_bin}" -m venv --clear "${venv_dir}"
 "${venv_dir}/bin/python" -m pip install --disable-pip-version-check \
   --requirement "${backend_dir}/requirements-desktop.txt"
 
