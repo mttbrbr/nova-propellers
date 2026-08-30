@@ -34,15 +34,20 @@ Toroidal propellers are deliberately out of scope for the current alpha. Nova
 only exposes methods that match the geometry and analysis paths implemented in
 the codebase.
 
-## Quick start
+## Quick start with published images
 
 You only need Docker Engine (or Docker Desktop) and Docker Compose v2.
 
 ```bash
 git clone https://github.com/mttbrbr/nova-propellers.git
-cd Nova
-docker compose up --build -d
+cd nova-propellers
+docker compose pull
+docker compose up --detach --no-build
 ```
+
+This downloads the pre-built frontend and backend images from GitHub Container
+Registry instead of compiling Nova on your machine. Nova is alpha software, so
+`latest` currently points to the most recent alpha release.
 
 Once both containers are healthy, open:
 
@@ -57,6 +62,20 @@ docker compose ps
 docker compose logs -f
 docker compose down
 ```
+
+To update to the newest published release:
+
+```bash
+git pull
+docker compose pull
+docker compose up --detach --no-build
+```
+
+To pin a specific release, copy `.env.example` to `.env` and set
+`NOVA_IMAGE_TAG` to a published version such as `0.1.0-alpha.2`, then run the
+pull and startup commands again. Published images are available as
+`ghcr.io/mttbrbr/nova-propellers-backend` and
+`ghcr.io/mttbrbr/nova-propellers-frontend`.
 
 Projects and imported airfoils live in the `nova_backend_data` Docker volume,
 so a normal restart or `docker compose down` keeps them. Running
@@ -89,8 +108,13 @@ method are documented in [docs/ALGORITHMS.md](docs/ALGORITHMS.md).
 
 ## Development
 
-The base Compose file builds self-contained local images. Add the development
-override for source mounts and automatic reload:
+Build self-contained images from the checked-out source with:
+
+```bash
+docker compose up --build --detach
+```
+
+Add the development override for source mounts and automatic reload:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
@@ -129,7 +153,7 @@ projects, airfoils and polar sets on the local machine.
 
 ## Project status
 
-The next source release is `v0.1.0-alpha.2`. Work towards a trustworthy
+The current source release is `v0.1.0-alpha.2`. Work towards a trustworthy
 engineering workflow is tracked in the [roadmap](ROADMAP.md), and user-visible
 changes are recorded in the [changelog](CHANGELOG.md).
 

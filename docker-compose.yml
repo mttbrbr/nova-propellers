@@ -1,5 +1,6 @@
 services:
   backend:
+    image: ghcr.io/mttbrbr/nova-propellers-backend:${NOVA_IMAGE_TAG:-latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -20,6 +21,7 @@ services:
       start_period: 20s
 
   frontend:
+    image: ghcr.io/mttbrbr/nova-propellers-frontend:${NOVA_IMAGE_TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile

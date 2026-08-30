@@ -2,20 +2,22 @@
 
 All notable changes to Nova are documented in this file.
 
-## [0.1.0-alpha.2] - Unreleased
+## [0.1.0-alpha.2] - 2026-08-30
 
 ### Added
 
 - Apache-2.0 licensing, provenance records and dependency license checks.
 - Reproducible Python and npm dependency locks.
 - Backend, frontend, compliance and Compose CI workflows.
+- Multi-architecture frontend and backend images published through GitHub
+  Container Registry for tagged releases.
 - Explicit solver roles, warnings, units and convergence metadata.
 - Public-facing project documentation and an original interface screenshot.
 
 ### Changed
 
-- Docker Compose now defaults to immutable local images; reload mounts live in
-  `docker-compose.dev.yml`.
+- Docker Compose supports both published GHCR images and reproducible local
+  builds; reload mounts live in `docker-compose.dev.yml`.
 - Built-in polar data are explicitly identified as synthetic demonstration data.
 - Actuator disk is a sizing reference rather than a selectable blade analysis.
 
