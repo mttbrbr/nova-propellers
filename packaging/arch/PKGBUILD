@@ -29,7 +29,7 @@ check() {
   cd "${srcdir}/${pkgname}-${_upstream_version}"
   python tools/smoke_desktop_backend.py \
     src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
-  cargo test --manifest-path src-tauri/Cargo.toml --locked
+  cargo test --release --manifest-path src-tauri/Cargo.toml --locked
 }
 
 package() {
