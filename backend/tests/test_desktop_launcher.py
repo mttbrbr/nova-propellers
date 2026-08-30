@@ -63,6 +63,15 @@ class DesktopLauncherTests(unittest.TestCase):
                 with urllib.request.urlopen(f"{endpoint}/health", timeout=5) as response:
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.read(), b'{"status":"ok"}')
+                request = urllib.request.Request(
+                    f"{endpoint}/health",
+                    headers={"Origin": "tauri://localhost"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    self.assertEqual(
+                        response.headers["Access-Control-Allow-Origin"],
+                        "tauri://localhost",
+                    )
             finally:
                 process.terminate()
                 process.wait(timeout=5)
