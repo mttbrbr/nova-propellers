@@ -114,7 +114,7 @@ provided by the standard rustup/setup-node workflows):
 sudo apt update
 sudo apt install build-essential curl file libayatana-appindicator3-dev \
   librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev python3.12 \
-  python3.12-venv wget
+  libpython3.12 python3.12-venv wget
 ```
 
 With Node.js 22, npm and the stable Rust toolchain available, build the package:

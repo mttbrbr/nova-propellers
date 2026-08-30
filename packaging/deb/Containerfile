@@ -13,6 +13,7 @@ RUN apt-get update \
       libssl-dev \
       libwebkit2gtk-4.1-dev \
       libxdo-dev \
+      libpython3.12 \
       nodejs \
       npm \
       python3.12 \
