@@ -7,7 +7,7 @@ url="https://github.com/mttbrbr/nova-propellers"
 license=('Apache-2.0')
 depends=('gtk3' 'webkit2gtk-4.1')
 makedepends=('nodejs' 'npm' 'rust' 'uv')
-options=('!strip')
+options=('!strip' '!debug')
 
 _upstream_version="0.1.0-alpha.2"
 source=("${pkgname}-${_upstream_version}.tar.gz::${url}/archive/refs/tags/v${_upstream_version}.tar.gz")
