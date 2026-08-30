@@ -8,8 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "desktop:dev": "tauri dev --config ../src-tauri/tauri.conf.json",
-    "desktop:build": "tauri build --config ../src-tauri/tauri.conf.json"
+    "desktop:dev": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri dev",
+    "desktop:build": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri build"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",

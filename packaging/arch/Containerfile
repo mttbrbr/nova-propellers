@@ -1,6 +1,7 @@
 FROM archlinux:base-devel
 
 RUN pacman -Syu --noconfirm \
+      git \
       nodejs \
       npm \
       rust \
