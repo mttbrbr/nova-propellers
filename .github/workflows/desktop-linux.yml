@@ -28,7 +28,7 @@ jobs:
           --build-arg USER_ID="$(id -u)"
           --build-arg GROUP_ID="$(id -g)"
           --tag nova-tauri-arch-builder
-          --file packaging/arch/Containerfile .
+          --file packaging/arch/Containerfile packaging/arch
       - name: Build and test Arch package
         run: >-
           docker run --rm
@@ -70,4 +70,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nova-propellers-debian-x86_64
-          path: src-tauri/target/release/bundle/deb/*.deb
+          path: src-tauri/target/debian/release/bundle/deb/*.deb

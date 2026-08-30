@@ -68,8 +68,9 @@ npm ci --prefix frontend
 npm --prefix frontend run desktop:build
 ```
 
-The native executable is written to `src-tauri/target/release/` and bundles are
-under `src-tauri/target/release/bundle/`. PyInstaller is intentionally used in
+The native Arch executable is written to `src-tauri/target/release/`. Debian
+artifacts use the isolated `src-tauri/target/debian/release/bundle/deb/`
+directory so Cargo can never reuse Arch objects. PyInstaller is intentionally used in
 one-file mode: its tested NumPy, SciPy and Trimesh wheels need no manually
 installed Python runtime. Build on the oldest supported distribution, Ubuntu
 24.04, when producing a portable Debian artifact; an Arch-built binary can
@@ -125,7 +126,7 @@ With Node.js 22, npm and the stable Rust toolchain available, build the package:
 Install the resulting bundle with:
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/*.deb
+sudo apt install ./src-tauri/target/debian/release/bundle/deb/*.deb
 ```
 
 The `.deb` declares the WebKitGTK/GTK libraries detected by the Tauri bundler.
