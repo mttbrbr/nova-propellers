@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["deb"],
-    "category": "Science",
+    "category": "Education",
     "shortDescription": "Propeller design and analysis workbench",
     "longDescription": "Local-first workbench for designing, analyzing, optimizing, and exporting traditional propellers.",
     "externalBin": ["binaries/nova-backend"]
