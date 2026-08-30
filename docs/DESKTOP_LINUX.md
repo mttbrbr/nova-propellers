@@ -182,7 +182,7 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
 
-With `xorg-server-xvfb`, `xdotool` and `procps-ng` installed, the packaged
+With `xorg-server-xvfb`, `xdotool`, `openbox` and `procps-ng` installed, the packaged
 application lifecycle can also be exercised without a physical display:
 
 ```bash

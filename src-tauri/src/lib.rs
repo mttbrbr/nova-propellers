@@ -48,9 +48,47 @@ impl BackendManager {
             .expect("backend child lock poisoned")
             .take()
         {
-            let _ = child.kill();
+            terminate_process_tree(child);
         }
     }
+}
+
+fn parse_child_pids(contents: &str) -> Vec<u32> {
+    contents
+        .split_whitespace()
+        .filter_map(|value| value.parse().ok())
+        .collect()
+}
+
+fn descendant_pids(parent: u32) -> Vec<u32> {
+    let children_path = format!("/proc/{parent}/task/{parent}/children");
+    let direct = std::fs::read_to_string(children_path)
+        .map(|contents| parse_child_pids(&contents))
+        .unwrap_or_default();
+    let mut descendants = Vec::new();
+    for child in direct {
+        descendants.extend(descendant_pids(child));
+        descendants.push(child);
+    }
+    descendants
+}
+
+fn signal_processes(processes: &[u32], signal: libc::c_int) {
+    for process in processes {
+        // PIDs come from the sidecar's /proc descendants and are never supplied
+        // by the frontend. ESRCH is harmless when a process exited meanwhile.
+        unsafe {
+            libc::kill(*process as libc::pid_t, signal);
+        }
+    }
+}
+
+fn terminate_process_tree(child: CommandChild) {
+    let descendants = descendant_pids(child.pid());
+    signal_processes(&descendants, libc::SIGTERM);
+    thread::sleep(Duration::from_millis(250));
+    signal_processes(&descendants, libc::SIGKILL);
+    let _ = child.kill();
 }
 
 #[tauri::command]
@@ -281,5 +319,11 @@ mod tests {
         manager.stop();
         assert!(manager.shutting_down.load(Ordering::SeqCst));
         assert!(manager.child.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn parses_linux_child_process_list() {
+        assert_eq!(parse_child_pids("123  456\n"), vec![123, 456]);
+        assert!(parse_child_pids("").is_empty());
     }
 }
