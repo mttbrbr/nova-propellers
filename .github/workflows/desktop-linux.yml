@@ -1,0 +1,73 @@
+name: Desktop Linux packages
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "src-tauri/**"
+      - "packaging/**"
+      - "tools/build_desktop_backend.sh"
+      - "tools/package_*.sh"
+      - ".github/workflows/desktop-linux.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  arch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build Arch package environment
+        run: >-
+          docker build
+          --build-arg USER_ID="$(id -u)"
+          --build-arg GROUP_ID="$(id -g)"
+          --tag nova-tauri-arch-builder
+          --file packaging/arch/Containerfile .
+      - name: Build and test Arch package
+        run: >-
+          docker run --rm
+          --volume "$GITHUB_WORKSPACE:/workspace"
+          nova-tauri-arch-builder
+          ./tools/package_arch.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-propellers-arch-x86_64
+          path: packaging/arch/*.pkg.tar.zst
+
+  debian:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+      - name: Build and test Debian package
+        run: |
+          ./tools/package_deb.sh
+          python tools/smoke_desktop_backend.py \
+            src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-propellers-debian-x86_64
+          path: src-tauri/target/release/bundle/deb/*.deb

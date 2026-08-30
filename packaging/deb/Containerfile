@@ -1,0 +1,27 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      file \
+      libayatana-appindicator3-dev \
+      librsvg2-dev \
+      libssl-dev \
+      libwebkit2gtk-4.1-dev \
+      libxdo-dev \
+      nodejs \
+      npm \
+      python3.12 \
+      python3.12-venv \
+      wget \
+    && curl --proto '=https' --tlsv1.2 --silent --show-error --fail https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+WORKDIR /workspace
