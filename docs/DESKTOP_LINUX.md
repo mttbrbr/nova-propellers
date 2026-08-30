@@ -24,19 +24,35 @@ Install the native build prerequisites:
 sudo pacman -S --needed base-devel git nodejs npm rust uv webkit2gtk-4.1
 ```
 
-Prepare the locked frontend dependencies, Python 3.12 and sidecar, then start
-Tauri:
+Prepare the locked frontend dependencies and Python 3.12, then start the live
+desktop environment:
 
 ```bash
 uv python install 3.12
 npm ci --prefix frontend
+npm --prefix frontend run desktop:live
+```
+
+`desktop:live` runs FastAPI directly from the Python sources with Uvicorn reload,
+then starts Tauri and Vite HMR. Frontend and backend changes therefore do not
+require rebuilding PyInstaller or reinstalling a package. The first Rust/Tauri
+compilation is still required; Rust changes trigger an incremental rebuild.
+
+Development uses port `8765` by default. Override it when necessary:
+
+```bash
+NOVA_DEV_BACKEND_PORT=8877 npm --prefix frontend run desktop:live
+```
+
+Before a release, test the actual bundled sidecar explicitly:
+
+```bash
 ./tools/build_desktop_backend.sh
 npm --prefix frontend run desktop:dev
 ```
 
-`desktop:dev` starts Vite automatically. The Tauri window remains hidden until
-FastAPI answers its health check. A startup failure or later backend crash is
-shown in the window with the sidecar error tail and a retry action.
+The Tauri window remains hidden until FastAPI answers its health check. A
+startup failure or later backend crash is shown in the window.
 
 For backend-only debugging, reuse the environment created by the sidecar build:
 

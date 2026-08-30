@@ -149,7 +149,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in os.getenv(
         "NOVA_ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:1420,http://127.0.0.1:1420,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
     ).split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],

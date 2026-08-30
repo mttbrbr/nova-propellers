@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --configLoader runner",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "desktop:live": "../tools/dev_desktop.sh",
     "desktop:dev": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri dev",
     "desktop:build": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri build"
   },

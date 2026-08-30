@@ -144,9 +144,7 @@ fn wait_until_ready(app: AppHandle, endpoint: String) {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
             let manager = app.state::<BackendManager>();
-            if manager.shutting_down.load(Ordering::SeqCst)
-                || manager.status().error.is_some()
-            {
+            if manager.shutting_down.load(Ordering::SeqCst) || manager.status().error.is_some() {
                 return;
             }
             if health_check(&endpoint) {
@@ -170,6 +168,13 @@ fn wait_until_ready(app: AppHandle, endpoint: String) {
 }
 
 fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(endpoint) = std::env::var("NOVA_BACKEND_ENDPOINT") {
+        let endpoint = parse_endpoint(&format!("{ENDPOINT_PREFIX}{endpoint}"))
+            .ok_or("NOVA_BACKEND_ENDPOINT must use http://127.0.0.1:<port>")?;
+        wait_until_ready(app.clone(), endpoint);
+        return Ok(());
+    }
+
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
     let data_dir = data_dir
@@ -325,5 +330,17 @@ mod tests {
     fn parses_linux_child_process_list() {
         assert_eq!(parse_child_pids("123  456\n"), vec![123, 456]);
         assert!(parse_child_pids("").is_empty());
+    }
+
+    #[test]
+    fn accepts_only_loopback_development_backend() {
+        assert_eq!(
+            parse_endpoint("NOVA_BACKEND_ENDPOINT=http://127.0.0.1:8765/api"),
+            Some("http://127.0.0.1:8765/api".into())
+        );
+        assert_eq!(
+            parse_endpoint("NOVA_BACKEND_ENDPOINT=http://192.168.1.2:8765/api"),
+            None
+        );
     }
 }
