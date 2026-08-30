@@ -53,8 +53,8 @@ package() {
     "${pkgdir}/usr/bin/nova-backend"
   install -Dm644 packaging/linux/nova-propellers.desktop \
     "${pkgdir}/usr/share/applications/nova-propellers.desktop"
-  install -Dm644 src-tauri/icons/icon.png \
-    "${pkgdir}/usr/share/icons/hicolor/1024x1024/apps/nova-propellers.png"
+  install -Dm644 docs/media/icon-nova-propellers.png \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/nova-propellers.png"
   install -Dm644 LICENSE \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

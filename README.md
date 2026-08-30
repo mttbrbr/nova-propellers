@@ -1,6 +1,9 @@
 # Nova Propellers
 
+<img src="docs/media/icon-nova-propellers.png" alt="Nova Propellers icon" width="128">
+
 [![CI](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml)
+[![Desktop packages](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
 

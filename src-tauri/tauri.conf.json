@@ -29,7 +29,7 @@
     "active": true,
     "targets": ["deb"],
     "category": "Education",
-    "icon": ["icons/icon.png"],
+    "icon": ["../docs/media/icon-nova-propellers.png"],
     "shortDescription": "Propeller design and analysis workbench",
     "longDescription": "Local-first workbench for designing, analyzing, optimizing, and exporting traditional propellers.",
     "externalBin": ["binaries/nova-backend"]
