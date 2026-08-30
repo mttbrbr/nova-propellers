@@ -2,18 +2,32 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 
 const webEndpoint = import.meta.env.VITE_API_BASE_URL || '/api';
 let backendEndpoint = webEndpoint;
+const startupPollIntervalMs = 100;
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 export async function initializeBackend() {
   if (!isTauri()) {
     return { endpoint: webEndpoint, ready: true, mode: 'web' };
   }
 
-  const status = await invoke('backend_status');
-  if (!status.ready || !status.endpoint) {
-    throw new Error(status.error || 'The local Nova backend is not ready.');
+  // The hidden WebView can load before the Python sidecar has completed its
+  // startup. Rust owns the timeout and reports a terminal error; until then,
+  // keep waiting instead of turning the transient "not ready" state into a
+  // permanent frontend error screen.
+  while (true) {
+    const status = await invoke('backend_status');
+    if (status.error) {
+      throw new Error(status.error);
+    }
+    if (status.ready && status.endpoint) {
+      backendEndpoint = status.endpoint;
+      return status;
+    }
+    await wait(startupPollIntervalMs);
   }
-  backendEndpoint = status.endpoint;
-  return status;
 }
 
 export function api(path) {
