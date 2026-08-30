@@ -1,0 +1,48 @@
+pkgname=nova-propellers
+pkgver=0.1.0.alpha.2
+pkgrel=1
+pkgdesc="Local-first propeller design and analysis desktop workbench"
+arch=('x86_64')
+url="https://github.com/mttbrbr/nova-propellers"
+license=('Apache-2.0')
+depends=('gtk3' 'webkit2gtk-4.1')
+makedepends=('nodejs' 'npm' 'rust' 'uv')
+options=('!strip')
+
+_upstream_version="0.1.0-alpha.2"
+source=("${pkgname}-${_upstream_version}.tar.gz::${url}/archive/refs/tags/v${_upstream_version}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "${srcdir}/${pkgname}-${_upstream_version}"
+
+  export UV_CACHE_DIR="${srcdir}/uv-cache"
+  export UV_PYTHON_INSTALL_DIR="${srcdir}/uv-python"
+  export PYINSTALLER_CONFIG_DIR="${srcdir}/pyinstaller"
+
+  uv python install 3.12
+  npm ci --prefix frontend
+  ./tools/build_desktop_backend.sh
+  npm --prefix frontend run desktop:build -- --no-bundle
+}
+check() {
+  cd "${srcdir}/${pkgname}-${_upstream_version}"
+  python tools/smoke_desktop_backend.py \
+    src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
+  cargo test --manifest-path src-tauri/Cargo.toml --locked
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${_upstream_version}"
+
+  install -Dm755 src-tauri/target/release/nova-propellers \
+    "${pkgdir}/usr/bin/nova-propellers"
+  install -Dm755 src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu \
+    "${pkgdir}/usr/bin/nova-backend"
+  install -Dm644 packaging/linux/nova-propellers.desktop \
+    "${pkgdir}/usr/share/applications/nova-propellers.desktop"
+  install -Dm644 src-tauri/icons/icon.png \
+    "${pkgdir}/usr/share/icons/hicolor/1024x1024/apps/nova-propellers.png"
+  install -Dm644 LICENSE \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
