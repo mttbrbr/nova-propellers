@@ -105,8 +105,14 @@ fn wait_until_ready(app: AppHandle, endpoint: String) {
     thread::spawn(move || {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         while Instant::now() < deadline {
+            let manager = app.state::<BackendManager>();
+            if manager.shutting_down.load(Ordering::SeqCst)
+                || manager.status().error.is_some()
+            {
+                return;
+            }
             if health_check(&endpoint) {
-                app.state::<BackendManager>().update(BackendStatus {
+                manager.update(BackendStatus {
                     endpoint: Some(endpoint),
                     ready: true,
                     error: None,
@@ -179,6 +185,12 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 CommandEvent::Terminated(payload) => {
+                    handle
+                        .state::<BackendManager>()
+                        .child
+                        .lock()
+                        .expect("backend child lock poisoned")
+                        .take();
                     if !handle
                         .state::<BackendManager>()
                         .shutting_down
@@ -258,5 +270,16 @@ mod tests {
             Some(SocketAddr::from(([127, 0, 0, 1], 43125)))
         );
         assert_eq!(endpoint_address("not-an-endpoint"), None);
+        assert_eq!(endpoint_address("http://localhost:8000/api"), None);
+        assert_eq!(endpoint_address("https://127.0.0.1:8000/api"), None);
+    }
+
+    #[test]
+    fn stopping_without_a_child_is_idempotent() {
+        let manager = BackendManager::default();
+        manager.stop();
+        manager.stop();
+        assert!(manager.shutting_down.load(Ordering::SeqCst));
+        assert!(manager.child.lock().unwrap().is_none());
     }
 }

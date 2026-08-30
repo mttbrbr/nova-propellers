@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
-import { initializeBackend } from './backend.js';
+import { initializeBackend, monitorBackend } from './backend.js';
 import './styles.css';
 
 const root = createRoot(document.getElementById('root'));
@@ -33,4 +33,9 @@ function renderStartupError(error) {
   );
 }
 
-initializeBackend().then(renderApp).catch(renderStartupError);
+initializeBackend()
+  .then(() => {
+    renderApp();
+    monitorBackend(renderStartupError);
+  })
+  .catch(renderStartupError);
