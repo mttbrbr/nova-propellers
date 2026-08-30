@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nova Propellers",
+  "version": "0.1.0-alpha.2",
+  "identifier": "io.github.mttbrbr.nova-propellers",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../frontend run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm --prefix ../frontend run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nova Propellers",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' http://127.0.0.1:* ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "category": "Science",
+    "shortDescription": "Propeller design and analysis workbench",
+    "longDescription": "Local-first workbench for designing, analyzing, optimizing, and exporting traditional propellers.",
+    "externalBin": ["binaries/nova-backend"]
+  }
+}
