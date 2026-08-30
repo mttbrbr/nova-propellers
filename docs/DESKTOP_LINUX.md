@@ -182,6 +182,13 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
 
+With `xorg-server-xvfb`, `xdotool` and `procps-ng` installed, the packaged
+application lifecycle can also be exercised without a physical display:
+
+```bash
+./tools/smoke_desktop_lifecycle.sh /usr/bin/nova-propellers
+```
+
 `packaging/arch/PKGBUILD` runs both the sidecar smoke test and Rust tests during
 `makepkg`. The desktop package workflow repeats Arch and Ubuntu builds in clean
 environments. Existing backend, frontend and Docker Compose CI remains active.
