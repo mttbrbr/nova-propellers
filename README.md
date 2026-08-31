@@ -172,6 +172,10 @@ proxy. In desktop mode it discovers the sidecar endpoint from Tauri. FastAPI
 owns the canonical geometry used by analysis, persistence and export, while
 SQLite keeps projects, airfoils and polar sets on the local machine.
 
+See [Architecture and integration paths](docs/ARCHITECTURE.md) for the current
+desktop/server boundaries, API automation examples, and the proposed path for
+remote solvers and a future OpenFOAM executor.
+
 ## Project status
 
 The current source release is `v0.1.0-alpha.2`. Work towards a trustworthy
