@@ -42,6 +42,7 @@ from inverse_design import (
     create_solver,
     list_methods,
 )
+from validation import CanonicalSolverResult
 
 
 class AirfoilCreate(BaseModel):
@@ -423,27 +424,41 @@ def run_analysis(payload: AnalysisRequest) -> dict:
                 f"(residual={convergence.get('residual', 'unknown')})."
             )
         omega = 2.0 * np.pi * payload.inputs.rpm / 60.0
-        return {
-            "model": payload.model,
-            "method": descriptor["name"],
-            "role": descriptor["role"],
-            "fidelity": descriptor["fidelity"],
-            "description": descriptor["description"],
-            "solver": {
+        power_w = performance["torque"] * omega
+        result = CanonicalSolverResult(
+            schema_version="1.0",
+            model=payload.model,
+            method=descriptor["name"],
+            role=descriptor["role"],
+            fidelity=descriptor["fidelity"],
+            description=descriptor["description"],
+            solver={
                 "id": payload.model,
                 "version": app.version,
                 "fidelity": descriptor["fidelity"],
             },
-            "units": {
+            operating_point={
+                "rpm": payload.inputs.rpm,
+                "angular_velocity_rad_s": omega,
+                "air_density_kg_m3": getattr(solver, "rho", AIR_DENSITY),
+                "axial_velocity_m_s": getattr(solver, "axial_velocity", 0.0),
+            },
+            performance={
+                "thrust_n": performance["thrust"],
+                "torque_nm": performance["torque"],
+                "power_w": power_w,
+                "efficiency": performance["efficiency"],
+            },
+            units={
                 "thrust": "N",
                 "torque": "N*m",
                 "power": "W",
                 "efficiency": "dimensionless",
             },
-            "warnings": warnings,
-            "convergence": convergence,
-            "curve_source": detailed["curve_source"],
-            "summary": {
+            warnings=warnings,
+            convergence=convergence,
+            curve_source=detailed["curve_source"],
+            summary={
                 "target_thrust_n": round(payload.inputs.thrust_target, 4),
                 "estimated_thrust_n": round(performance["thrust"], 4),
                 "thrust_error_pct": round(
@@ -456,8 +471,9 @@ def run_analysis(payload: AnalysisRequest) -> dict:
                 "power_w": round(performance["torque"] * omega, 4),
                 "efficiency": round(performance["efficiency"], 4),
             },
-            "stations": detailed["curves"],
-        }
+            stations=detailed["curves"],
+        )
+        return result.model_dump()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"{payload.model} analysis failed: {exc}") from exc
 

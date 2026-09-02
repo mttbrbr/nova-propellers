@@ -77,6 +77,12 @@ class InverseDesignTests(unittest.TestCase):
         self.assertTrue(result["convergence"]["converged"])
         self.assertEqual(result["convergence"]["termination_reason"], "tolerance_met")
         self.assertLess(result["convergence"]["residual"], result["convergence"]["tolerance"])
+        diagnostics = result["convergence"]["diagnostics"]
+        self.assertEqual(diagnostics["classification"], "converged")
+        self.assertGreater(len(diagnostics["history"]), 1)
+        self.assertEqual(
+            diagnostics["history"][-1]["iteration"], result["convergence"]["iterations"]
+        )
 
     def test_optimizer_reduces_target_error(self) -> None:
         solver = BEMTSolver(2.0)

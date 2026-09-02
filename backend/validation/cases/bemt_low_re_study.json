@@ -1,0 +1,35 @@
+{
+  "study_id": "bemt-low-reynolds-treatment-001",
+  "purpose": "low_reynolds_strategy_comparison",
+  "rpm_values": [3500.0, 5000.0, 6500.0],
+  "station_counts": [18, 48, 72],
+  "solver_tolerances": [0.00001, 0.000001],
+  "max_iterations": 800,
+  "relaxation_factor": 0.08,
+  "max_tangential_induction_ratio": 0.75,
+  "acceptance": {
+    "require_all_converged": true,
+    "max_relative_performance_delta": 0.005,
+    "max_absolute_cl": 2.0,
+    "min_cd": 0.00001,
+    "max_cd": 1.0
+  },
+  "strategies": ["clip", "linear_extrapolation", "smooth_transition"],
+  "baseline_strategy": "clip",
+  "geometries": [
+    {
+      "id": "baseline-250mm-2b",
+      "diameter_m": 0.25,
+      "blades": 2,
+      "chord_points": [[0.0, 0.026], [0.33, 0.029], [0.72, 0.016], [1.0, 0.006]],
+      "twist_points_deg": [[0.0, 34.0], [0.33, 25.0], [0.72, 14.0], [1.0, 7.0]]
+    },
+    {
+      "id": "slender-300mm-3b",
+      "diameter_m": 0.3,
+      "blades": 3,
+      "chord_points": [[0.0, 0.024], [0.3, 0.026], [0.7, 0.015], [1.0, 0.005]],
+      "twist_points_deg": [[0.0, 31.0], [0.3, 23.0], [0.7, 13.0], [1.0, 6.0]]
+    }
+  ]
+}

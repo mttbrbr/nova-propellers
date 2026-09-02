@@ -1,0 +1,162 @@
+{
+  "schema_version": "1.0",
+  "report_id": "bemt-pre-experimental-verification",
+  "generated_at_utc": "2026-09-02T09:13:46.095550+00:00",
+  "nova_version": "0.1.0-alpha.2",
+  "environment": {
+    "python": "3.12.14",
+    "numpy": "2.2.1",
+    "platform": "Linux-7.2.2-1-cachyos-x86_64-with-glibc2.41"
+  },
+  "claim": "Software and numerical verification in the declared domain; not validation against experimental measurements.",
+  "supported_domain": {
+    "solver": "bemt",
+    "operation": "static axial",
+    "minimum_tolerance": 1e-05,
+    "maximum_tangential_induction_ratio": 0.75,
+    "relaxation_strategy": "fixed",
+    "relaxation_factor": 0.08,
+    "low_reynolds_strategy": "clip",
+    "validated_station_counts": [
+      12,
+      18,
+      24,
+      36,
+      48,
+      72
+    ]
+  },
+  "regression": {
+    "passed": true,
+    "cases": [
+      {
+        "case_id": "bemt-baseline-001",
+        "passed": true,
+        "checks": [
+          "finite performance",
+          "declared convergence",
+          "station-to-total thrust conservation",
+          "power identity P = Q omega",
+          "RPM monotonicity",
+          "golden regression values"
+        ],
+        "configuration_sha256": "aa868fe36142010a479526b7004dceff6ac54c01a6d4478cba8367b58225ab7d"
+      }
+    ]
+  },
+  "sensitivity": {
+    "passed": true,
+    "assessment": {
+      "passed": true,
+      "all_converged": true,
+      "nonconverged_evaluations": 0,
+      "classifications": {
+        "converged": 96
+      },
+      "max_relative_error_at_finest_grid": 0.003002912269965785,
+      "evaluations": 90
+    },
+    "configuration_sha256": "c859e1e4e9087499eee8ef4085def24966cb0b4b2bb4baa329d75b7454ae4707"
+  },
+  "root_induction": {
+    "passed": true,
+    "recommended_ratio": 0.75,
+    "assessments": [
+      {
+        "strategy_id": "cap-0.95",
+        "ratio": 0.95,
+        "passed": false,
+        "converged": 12,
+        "evaluations": 18,
+        "median_iterations": 353.0,
+        "max_relative_performance_delta": 0.0,
+        "failure_diagnostics": {
+          "components": {
+            "tangential_induction": 3,
+            "axial_induction": 3
+          },
+          "alpha_clipped": 0,
+          "reynolds_clipped": 6,
+          "limiting_r_over_R_range": [
+            0.15829787234042555,
+            0.16422535211267608
+          ],
+          "limiting_alpha_deg_range": [
+            8.164717249889392,
+            8.252182092527171
+          ],
+          "limiting_reynolds_range": [
+            1123.10978600216,
+            2421.9321953404888
+          ],
+          "limiting_loss_factor_range": [
+            0.47398696112299893,
+            0.5371235921564237
+          ]
+        }
+      },
+      {
+        "strategy_id": "cap-0.75",
+        "ratio": 0.75,
+        "passed": true,
+        "converged": 18,
+        "evaluations": 18,
+        "median_iterations": 312.0,
+        "max_relative_performance_delta": 0.0005404704883995923,
+        "failure_diagnostics": {
+          "components": {},
+          "alpha_clipped": 0,
+          "reynolds_clipped": 0,
+          "limiting_r_over_R_range": null
+        }
+      },
+      {
+        "strategy_id": "cap-0.70",
+        "ratio": 0.7,
+        "passed": true,
+        "converged": 18,
+        "evaluations": 18,
+        "median_iterations": 315.0,
+        "max_relative_performance_delta": 0.0010822343666681386,
+        "failure_diagnostics": {
+          "components": {},
+          "alpha_clipped": 0,
+          "reynolds_clipped": 0,
+          "limiting_r_over_R_range": null
+        }
+      },
+      {
+        "strategy_id": "cap-0.65",
+        "ratio": 0.65,
+        "passed": true,
+        "converged": 18,
+        "evaluations": 18,
+        "median_iterations": 317.5,
+        "max_relative_performance_delta": 0.0020108790886677486,
+        "failure_diagnostics": {
+          "components": {},
+          "alpha_clipped": 0,
+          "reynolds_clipped": 0,
+          "limiting_r_over_R_range": null
+        }
+      },
+      {
+        "strategy_id": "cap-0.50",
+        "ratio": 0.5,
+        "passed": false,
+        "converged": 18,
+        "evaluations": 18,
+        "median_iterations": 319.5,
+        "max_relative_performance_delta": 0.010225556580802611,
+        "failure_diagnostics": {
+          "components": {},
+          "alpha_clipped": 0,
+          "reynolds_clipped": 0,
+          "limiting_r_over_R_range": null
+        }
+      }
+    ],
+    "configuration_sha256": "3da72c230bcef509195491700756550d72eff6f93074fd9316219f3fee99da2c"
+  },
+  "passed": true
+}

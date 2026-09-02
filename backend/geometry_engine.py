@@ -4,7 +4,7 @@ from math import comb, cos, pi, radians, sin, sqrt
 import numpy as np
 import trimesh
 
-from polar_database import interpolate_polar
+from polar_database import ALPHA_GRID, REYNOLDS_GRID, interpolate_polar
 
 AIR_DENSITY = 1.225
 AIR_VISCOSITY = 1.81e-5
@@ -431,6 +431,10 @@ def _evaluate_bemt_arrays(
     air_viscosity: float = AIR_VISCOSITY,
     max_iterations: int = 200,
     tolerance: float = 1e-5,
+    relaxation_factor: float = 0.08,
+    relaxation_strategy: str = "fixed",
+    low_re_strategy: str = "clip",
+    max_tangential_induction_ratio: float = 0.75,
 ) -> dict:
     """Evaluate an axial-flow propeller with blade-element/momentum theory.
 
@@ -443,12 +447,21 @@ def _evaluate_bemt_arrays(
     omega = 2.0 * pi * spec.rpm / 60.0
     if omega <= 0 or axial_velocity < 0 or air_density <= 0 or air_viscosity <= 0:
         raise ValueError("BEMT requires positive RPM and fluid properties, with non-negative axial velocity")
+    if not 0 < relaxation_factor <= 1:
+        raise ValueError("BEMT relaxation factor must be in (0, 1]")
+    if relaxation_strategy not in {"fixed", "adaptive"}:
+        raise ValueError("BEMT relaxation strategy must be fixed or adaptive")
+    if not 0 < max_tangential_induction_ratio < 1:
+        raise ValueError("Maximum tangential induction ratio must be in (0, 1)")
 
     freestream = float(axial_velocity)
     induced_axial = np.full_like(radii, max(0.04 * omega * radius, 0.1), dtype=float)
     induced_tangential = np.full_like(radii, 0.01 * omega * radii, dtype=float)
     converged = False
     residual = float("inf")
+    residual_history = []
+    current_relaxation = relaxation_factor
+    previous_residual = None
 
     for iteration in range(1, max_iterations + 1):
         axial = freestream + induced_axial
@@ -457,7 +470,7 @@ def _evaluate_bemt_arrays(
         phi = np.arctan2(axial, np.maximum(tangential, 1e-6))
         alpha = twist - phi
         reynolds = air_density * relative_velocity * chord / air_viscosity
-        cl, cd = _polar_coefficients(spec, alpha, reynolds)
+        cl, cd = _polar_coefficients(spec, alpha, reynolds, low_re_strategy)
         cn = cl * np.cos(phi) - cd * np.sin(phi)
         ct = cl * np.sin(phi) + cd * np.cos(phi)
         loss = _prandtl_loss(spec.blades, radii, radius, phi)
@@ -476,7 +489,9 @@ def _evaluate_bemt_arrays(
             4.0 * pi * radii**3 * air_density * loss * (freestream + next_axial),
             1e-12,
         )
-        next_tangential = np.clip(next_tangential, 0.0, 0.95 * omega * radii)
+        unconstrained_tangential = next_tangential.copy()
+        tangential_limit = max_tangential_induction_ratio * omega * radii
+        next_tangential = np.clip(next_tangential, 0.0, tangential_limit)
         next_axial = np.clip(next_axial, 0.0, omega * radius)
 
         # The exact root and tip have zero-width vortex-loss singularities and
@@ -485,13 +500,60 @@ def _evaluate_bemt_arrays(
         interior = slice(1, -1)
         scale_axial = max(float(np.max(next_axial[interior])), 1.0)
         scale_tangential = max(float(np.max(next_tangential[interior])), 1.0)
-        residual = max(
-            float(np.max(np.abs(next_axial[interior] - induced_axial[interior]))) / scale_axial,
-            float(np.max(np.abs(next_tangential[interior] - induced_tangential[interior]))) / scale_tangential,
+        axial_residuals = np.abs(next_axial[interior] - induced_axial[interior]) / scale_axial
+        tangential_residuals = (
+            np.abs(next_tangential[interior] - induced_tangential[interior]) / scale_tangential
         )
-        relaxation = 0.08
-        induced_axial += relaxation * (next_axial - induced_axial)
-        induced_tangential += relaxation * (next_tangential - induced_tangential)
+        axial_residual = float(np.max(axial_residuals))
+        tangential_residual = float(np.max(tangential_residuals))
+        residual = max(axial_residual, tangential_residual)
+        if relaxation_strategy == "adaptive" and previous_residual is not None:
+            ratio = residual / max(previous_residual, 1e-30)
+            if ratio > 1.05:
+                current_relaxation = max(0.02, current_relaxation * 0.5)
+            elif ratio < 0.92:
+                current_relaxation = min(0.3, current_relaxation * 1.08)
+        if axial_residual >= tangential_residual:
+            limiting_component = "axial_induction"
+            limiting_index = int(np.argmax(axial_residuals)) + 1
+        else:
+            limiting_component = "tangential_induction"
+            limiting_index = int(np.argmax(tangential_residuals)) + 1
+        limiting_alpha_deg = float(np.degrees(alpha[limiting_index]))
+        limiting_reynolds = float(reynolds[limiting_index])
+        polar_context = _polar_grid_context(
+            limiting_alpha_deg, limiting_reynolds, low_re_strategy
+        )
+        residual_history.append(
+            {
+                "iteration": iteration,
+                "residual": residual,
+                "axial_residual": axial_residual,
+                "tangential_residual": tangential_residual,
+                "limiting_component": limiting_component,
+                "limiting_r_over_R": float(radii[limiting_index] / radius),
+                "limiting_alpha_deg": limiting_alpha_deg,
+                "limiting_reynolds": limiting_reynolds,
+                "limiting_phi_deg": float(np.degrees(phi[limiting_index])),
+                "limiting_loss_factor": float(loss[limiting_index]),
+                "limiting_cl": float(cl[limiting_index]),
+                "limiting_cd": float(cd[limiting_index]),
+                "tangential_induction_ratio": float(
+                    induced_tangential[limiting_index]
+                    / max(omega * radii[limiting_index], 1e-12)
+                ),
+                "tangential_limit_active": bool(
+                    unconstrained_tangential[limiting_index]
+                    >= tangential_limit[limiting_index]
+                ),
+                "max_tangential_induction_ratio": max_tangential_induction_ratio,
+                "polar_context": polar_context,
+                "relaxation_factor": current_relaxation,
+            }
+        )
+        induced_axial += current_relaxation * (next_axial - induced_axial)
+        induced_tangential += current_relaxation * (next_tangential - induced_tangential)
+        previous_residual = residual
         if residual < tolerance:
             converged = True
             break
@@ -503,7 +565,7 @@ def _evaluate_bemt_arrays(
     alpha = twist - phi
     alpha_deg = np.degrees(alpha)
     reynolds = air_density * relative_velocity * chord / air_viscosity
-    cl, cd = _polar_coefficients(spec, alpha, reynolds)
+    cl, cd = _polar_coefficients(spec, alpha, reynolds, low_re_strategy)
     loss = _prandtl_loss(spec.blades, radii, radius, phi)
     dr = np.gradient(radii)
 
@@ -530,6 +592,9 @@ def _evaluate_bemt_arrays(
     tip_mach = omega * radius / 343.0
     induction_a = induced_axial / max(omega * radius, 1e-12)
     induction_aprime = induced_tangential / np.maximum(omega * radii, 1e-12)
+    convergence_diagnostics = _summarize_convergence_history(
+        residual_history, converged, tolerance, relaxation_strategy
+    )
 
     return {
         "thrust": thrust,
@@ -555,7 +620,77 @@ def _evaluate_bemt_arrays(
         "residual": residual,
         "tolerance": tolerance,
         "termination_reason": "tolerance_met" if converged else "maximum_iterations",
+        "diagnostics": convergence_diagnostics,
         "axial_velocity_m_s": freestream,
+    }
+
+
+def _polar_grid_context(alpha_deg: float, reynolds: float, low_re_strategy: str) -> dict:
+    alpha_clipped = not ALPHA_GRID[0] <= alpha_deg <= ALPHA_GRID[-1]
+    reynolds_clipped = not REYNOLDS_GRID[0] <= reynolds <= REYNOLDS_GRID[-1]
+    alpha_value = float(np.clip(alpha_deg, ALPHA_GRID[0], ALPHA_GRID[-1]))
+    reynolds_value = float(np.clip(reynolds, REYNOLDS_GRID[0], REYNOLDS_GRID[-1]))
+
+    def bounds(grid: np.ndarray, value: float) -> tuple[float, float]:
+        upper_index = min(max(int(np.searchsorted(grid, value, side="right")), 1), len(grid) - 1)
+        return float(grid[upper_index - 1]), float(grid[upper_index])
+
+    alpha_lower, alpha_upper = bounds(ALPHA_GRID, alpha_value)
+    reynolds_lower, reynolds_upper = bounds(REYNOLDS_GRID, reynolds_value)
+    return {
+        "alpha_clipped": alpha_clipped,
+        "reynolds_clipped": reynolds_clipped,
+        "alpha_segment_deg": [alpha_lower, alpha_upper],
+        "reynolds_segment": [reynolds_lower, reynolds_upper],
+        "low_re_strategy": low_re_strategy,
+    }
+
+
+def _summarize_convergence_history(
+    history: list[dict], converged: bool, tolerance: float, relaxation_strategy: str
+) -> dict:
+    residuals = [item["residual"] for item in history]
+    initial = residuals[0]
+    final = residuals[-1]
+    tail = residuals[-min(30, len(residuals)):]
+    tail_ratio = max(tail) / max(min(tail), 1e-30)
+    recent_start = residuals[-min(50, len(residuals))]
+    recent_reduction = final / max(recent_start, 1e-30)
+    direction_changes = sum(
+        (tail[index] - tail[index - 1]) * (tail[index - 1] - tail[index - 2]) < 0
+        for index in range(2, len(tail))
+    )
+    if converged:
+        classification = "converged"
+    elif tail_ratio < 1.02:
+        classification = "stagnation"
+    elif direction_changes >= max(3, len(tail) // 3):
+        classification = "oscillation"
+    elif final < initial:
+        classification = "slow_convergence"
+    else:
+        classification = "divergence"
+
+    sampled = [
+        item
+        for index, item in enumerate(history)
+        if index == 0 or item["iteration"] % 5 == 0 or index == len(history) - 1
+    ]
+    return {
+        "classification": classification,
+        "relaxation_strategy": relaxation_strategy,
+        "initial_relaxation_factor": history[0]["relaxation_factor"],
+        "final_relaxation_factor": history[-1]["relaxation_factor"],
+        "minimum_relaxation_factor": min(item["relaxation_factor"] for item in history),
+        "maximum_relaxation_factor": max(item["relaxation_factor"] for item in history),
+        "initial_residual": initial,
+        "final_residual": final,
+        "total_reduction_ratio": final / max(initial, 1e-30),
+        "recent_reduction_ratio": recent_reduction,
+        "tail_variation_ratio": tail_ratio,
+        "target_tolerance": tolerance,
+        "history_sampling": "first, every 5 iterations, and final",
+        "history": sampled,
     }
 
 
@@ -708,10 +843,13 @@ def _polar_coefficients(
     spec: PropellerSpec,
     alpha: np.ndarray,
     reynolds: np.ndarray | None = None,
+    low_re_strategy: str = "clip",
 ) -> tuple[np.ndarray, np.ndarray]:
     if reynolds is None:
         reynolds = np.full_like(alpha, 90000.0, dtype=float)
-    return interpolate_polar(spec.airfoil, np.degrees(alpha), reynolds)
+    return interpolate_polar(
+        spec.airfoil, np.degrees(alpha), reynolds, low_re_strategy=low_re_strategy
+    )
 
 
 def _design_cl(spec: PropellerSpec) -> float:

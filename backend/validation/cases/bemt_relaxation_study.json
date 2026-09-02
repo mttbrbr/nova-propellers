@@ -1,0 +1,37 @@
+{
+  "study_id": "bemt-relaxation-strategy-001",
+  "purpose": "convergence_strategy_comparison",
+  "rpm_values": [3500.0, 5000.0, 6500.0],
+  "station_counts": [18, 48],
+  "solver_tolerances": [0.00001, 0.000001],
+  "max_iterations": 800,
+  "max_tangential_induction_ratio": 0.75,
+  "acceptance": {
+    "require_all_converged": true,
+    "max_relative_performance_delta": 0.005
+  },
+  "strategies": [
+    {"id": "fixed-008", "strategy": "fixed", "initial_factor": 0.08},
+    {"id": "fixed-012", "strategy": "fixed", "initial_factor": 0.12},
+    {"id": "fixed-016", "strategy": "fixed", "initial_factor": 0.16},
+    {"id": "fixed-020", "strategy": "fixed", "initial_factor": 0.2},
+    {"id": "adaptive-008", "strategy": "adaptive", "initial_factor": 0.08}
+  ],
+  "baseline_strategy_id": "fixed-008",
+  "geometries": [
+    {
+      "id": "baseline-250mm-2b",
+      "diameter_m": 0.25,
+      "blades": 2,
+      "chord_points": [[0.0, 0.026], [0.33, 0.029], [0.72, 0.016], [1.0, 0.006]],
+      "twist_points_deg": [[0.0, 34.0], [0.33, 25.0], [0.72, 14.0], [1.0, 7.0]]
+    },
+    {
+      "id": "slender-300mm-3b",
+      "diameter_m": 0.3,
+      "blades": 3,
+      "chord_points": [[0.0, 0.024], [0.3, 0.026], [0.7, 0.015], [1.0, 0.005]],
+      "twist_points_deg": [[0.0, 31.0], [0.3, 23.0], [0.7, 13.0], [1.0, 6.0]]
+    }
+  ]
+}

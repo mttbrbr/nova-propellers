@@ -122,6 +122,109 @@ function AirfoilShapeChart({ coordinates, title = 'Normalized coordinates' }) {
   </div>;
 }
 
+function downloadDiagnostics(analysis) {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    schema_version: analysis.schema_version || 'legacy',
+    solver: analysis.solver || { id: analysis.model },
+    operating_point: analysis.operating_point || null,
+    performance: analysis.performance || analysis.summary || null,
+    units: analysis.units || {},
+    warnings: analysis.warnings || [],
+    convergence: analysis.convergence || null,
+  };
+  const url = URL.createObjectURL(new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `nova-${analysis.model || 'solver'}-diagnostics.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function ConvergenceDiagnostics({ analysis }) {
+  const convergence = analysis?.convergence;
+  const diagnostics = convergence?.diagnostics;
+  if (!convergence) return <div className="rounded border border-zinc-800 p-4 text-xs text-zinc-500">This solver does not expose iterative convergence diagnostics.</div>;
+  const history = diagnostics?.history || [];
+  const residualFields = ['residual', 'axial_residual', 'tangential_residual'];
+  const logResiduals = history.flatMap((item) => residualFields.map((field) =>
+    Math.log10(Math.max(Number(item[field]), 1e-16))
+  ));
+  const minLog = Math.min(...logResiduals, -6);
+  const maxLog = Math.max(...logResiduals, 0);
+  const logRange = Math.max(maxLog - minLog, 1e-9);
+  const lastIteration = Math.max(history.at(-1)?.iteration || 1, 1);
+  const finalSample = history.at(-1);
+  const makePoints = (field) => history.map((item) => {
+    const x = 6 + Number(item.iteration) / lastIteration * 188;
+    const logValue = Math.log10(Math.max(Number(item[field]), 1e-16));
+    const y = 8 + (maxLog - logValue) / logRange * 64;
+    return `${x},${y}`;
+  }).join(' ');
+  const statusColor = convergence.converged ? 'text-emerald-300' : 'text-amber-300';
+  return <details className="rounded-xl border border-white/[0.07] bg-zinc-950/70" open={!convergence.converged}>
+    <summary className="cursor-pointer px-4 py-3 text-xs text-zinc-300">
+      Advanced diagnostics · <span className={statusColor}>{diagnostics?.classification || convergence.termination_reason}</span>
+    </summary>
+    <div className="space-y-4 border-t border-zinc-800 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[10px] leading-4 text-zinc-500">Diagnostics belong to this exact solver run and are stored with the project.</p>
+        <button onClick={() => downloadDiagnostics(analysis)} className="rounded border border-zinc-700 px-3 py-2 text-[10px] text-zinc-300 hover:border-zinc-500">
+          <Download size={12} className="mr-1 inline" />Export diagnostics JSON
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6">
+        {[
+          ['Converged', convergence.converged ? 'yes' : 'no'],
+          ['Iterations', convergence.iterations],
+          ['Final residual', Number(convergence.residual).toExponential(3)],
+          ['Tolerance', Number(convergence.tolerance).toExponential(1)],
+          ['Classification', diagnostics?.classification || 'legacy'],
+          ['Relaxation', diagnostics ? `${diagnostics.relaxation_strategy} · ${Number(diagnostics.final_relaxation_factor).toFixed(3)}` : '—'],
+        ].map(([label, value]) => <div key={label} className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="text-[9px] uppercase text-zinc-600">{label}</div><div className="mt-1 text-xs">{value}</div>
+        </div>)}
+      </div>
+      {history.length > 1 && <div>
+        <div className="mb-2 flex justify-between text-[10px] text-zinc-500"><span>Residual history · logarithmic scale</span><span>{diagnostics.history_sampling}</span></div>
+        <svg viewBox="0 0 200 80" preserveAspectRatio="none" className="h-36 w-full rounded border border-zinc-800 bg-black/30 p-2">
+          <polyline points={makePoints('residual')} fill="none" stroke="#f4f4f5" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          <polyline points={makePoints('axial_residual')} fill="none" stroke="#38bdf8" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />
+          <polyline points={makePoints('tangential_residual')} fill="none" stroke="#f59e0b" strokeWidth="1.3" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <div className="mt-2 flex flex-wrap gap-4 text-[10px]"><span className="text-zinc-100">Total</span><span className="text-sky-400">Axial</span><span className="text-amber-400">Tangential</span></div>
+      </div>}
+      {diagnostics && <div className="grid gap-2 text-[10px] text-zinc-500 md:grid-cols-3">
+        <span>Total reduction: {Number(diagnostics.total_reduction_ratio).toExponential(3)}</span>
+        <span>Recent reduction: {Number(diagnostics.recent_reduction_ratio).toExponential(3)}</span>
+        <span>Tail variation: {Number(diagnostics.tail_variation_ratio).toFixed(4)}×</span>
+      </div>}
+      {finalSample?.polar_context && <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {[
+          ['Limiting component', finalSample.limiting_component],
+          ['Limiting station', `r/R ${Number(finalSample.limiting_r_over_R).toFixed(3)}`],
+          ['Local alpha', `${Number(finalSample.limiting_alpha_deg).toFixed(3)}°`],
+          ['Local Reynolds', Number(finalSample.limiting_reynolds).toFixed(0)],
+          ['Polar alpha segment', finalSample.polar_context.alpha_segment_deg.join(' → ')],
+          ['Polar Re segment', finalSample.polar_context.reynolds_segment.join(' → ')],
+          ['Low-Re treatment', finalSample.polar_context.low_re_strategy || 'legacy'],
+          ['Tangential cap', finalSample.max_tangential_induction_ratio == null ? 'legacy' : Number(finalSample.max_tangential_induction_ratio).toFixed(2)],
+          ['Alpha clipped', finalSample.polar_context.alpha_clipped ? 'yes' : 'no'],
+          ['Reynolds clipped', finalSample.polar_context.reynolds_clipped ? 'yes' : 'no'],
+        ].map(([label, value]) => <div key={label} className="rounded border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="text-[9px] uppercase text-zinc-600">{label}</div><div className="mt-1 text-xs">{value}</div>
+        </div>)}
+      </div>}
+      {history.length > 0 && <div className="max-h-56 overflow-auto rounded border border-zinc-800">
+        <div className="grid min-w-[980px] grid-cols-9 bg-zinc-950 p-2 text-[9px] uppercase text-zinc-600"><span>Iteration</span><span>Residual</span><span>Axial</span><span>Tangential</span><span>r/R</span><span>Alpha</span><span>Re</span><span>Loss F</span><span>Relaxation</span></div>
+        {history.map((row) => <div key={row.iteration} className="grid min-w-[980px] grid-cols-9 border-t border-zinc-900 p-2 text-[10px] text-zinc-400">
+          <span>{row.iteration}</span><span>{Number(row.residual).toExponential(2)}</span><span>{Number(row.axial_residual).toExponential(2)}</span><span>{Number(row.tangential_residual).toExponential(2)}</span><span>{Number(row.limiting_r_over_R).toFixed(3)}</span><span>{row.limiting_alpha_deg == null ? '—' : Number(row.limiting_alpha_deg).toFixed(2)}</span><span>{row.limiting_reynolds == null ? '—' : Number(row.limiting_reynolds).toFixed(0)}</span><span>{row.limiting_loss_factor == null ? '—' : Number(row.limiting_loss_factor).toFixed(3)}</span><span>{row.relaxation_factor == null ? '—' : Number(row.relaxation_factor).toFixed(3)}</span>
+        </div>)}
+      </div>}
+    </div>
+  </details>;
+}
+
 function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectModel, stlUrl }) {
   const analysis = analyses.find((item) => item.model === selectedModel) || analyses[0];
   const stations = analysis?.stations || geometry?.stations?.map((station) => ({
@@ -146,6 +249,7 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
         <div className={`rounded-md border p-3 text-xs ${analysis.curve_source === 'native' ? 'border-emerald-900 text-emerald-300' : 'border-amber-900 text-amber-300'}`}>
           Curves {analysis.curve_source === 'native' ? 'provided by the solver' : 'reconstructed from global results'}.
         </div>
+        <ConvergenceDiagnostics analysis={analysis} />
       </> : <div className="rounded border border-zinc-800 p-4 text-sm text-zinc-500">No saved analyses.</div>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         <DistributionChart title="Chord" stations={stations} field="chord_mm" unit="mm" />

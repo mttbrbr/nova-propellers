@@ -16,6 +16,12 @@ class BEMTSolver(BaseSolver):
         axial_velocity_m_s: float = 0.0,
         air_density: float = 1.225,
         air_viscosity: float = 1.81e-5,
+        max_iterations: int = 200,
+        tolerance: float = 1e-5,
+        relaxation_factor: float = 0.08,
+        relaxation_strategy: str = "fixed",
+        low_re_strategy: str = "clip",
+        max_tangential_induction_ratio: float = 0.75,
     ) -> None:
         # Retained only for API compatibility. Analysis must not depend on a
         # requested thrust value.
@@ -23,6 +29,12 @@ class BEMTSolver(BaseSolver):
         self.axial_velocity = axial_velocity_m_s
         self.rho = air_density
         self.viscosity = air_viscosity
+        self.max_iterations = max_iterations
+        self.tolerance = tolerance
+        self.relaxation_factor = relaxation_factor
+        self.relaxation_strategy = relaxation_strategy
+        self.low_re_strategy = low_re_strategy
+        self.max_tangential_induction_ratio = max_tangential_induction_ratio
 
     def evaluate(self, geometry_data: GeometryData, rpm: float) -> SolverResult:
         return self.evaluate_detailed(geometry_data, rpm)["performance"]
@@ -44,6 +56,12 @@ class BEMTSolver(BaseSolver):
             axial_velocity=self.axial_velocity,
             air_density=self.rho,
             air_viscosity=self.viscosity,
+            max_iterations=self.max_iterations,
+            tolerance=self.tolerance,
+            relaxation_factor=self.relaxation_factor,
+            relaxation_strategy=self.relaxation_strategy,
+            low_re_strategy=self.low_re_strategy,
+            max_tangential_induction_ratio=self.max_tangential_induction_ratio,
         )
         omega = 2.0 * np.pi * rpm / 60.0
         performance = {
@@ -90,5 +108,6 @@ class BEMTSolver(BaseSolver):
                 "residual": result["residual"],
                 "tolerance": result["tolerance"],
                 "termination_reason": result["termination_reason"],
+                "diagnostics": result["diagnostics"],
             },
         }

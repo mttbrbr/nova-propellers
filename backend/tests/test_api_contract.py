@@ -58,12 +58,21 @@ class ApiContractTests(unittest.TestCase):
         inputs = GeometryRequest(**self.geometry_payload())
         geometry = create_geometry(inputs)["geometry"]
         result = run_analysis(AnalysisRequest(model="bemt", inputs=inputs, geometry=geometry))
+        self.assertEqual(result["schema_version"], "1.0")
         self.assertEqual(result["solver"]["version"], "0.1.0-alpha.2")
         self.assertEqual(result["fidelity"], "preliminary")
         self.assertEqual(result["units"]["thrust"], "N")
         self.assertTrue(result["warnings"])
         self.assertIsInstance(result["convergence"]["converged"], bool)
         self.assertIn("residual", result["convergence"])
+        self.assertIn("diagnostics", result["convergence"])
+        self.assertTrue(result["convergence"]["diagnostics"]["history"])
+        self.assertEqual(result["operating_point"]["rpm"], 5000)
+        self.assertAlmostEqual(
+            result["performance"]["power_w"],
+            result["performance"]["torque_nm"]
+            * result["operating_point"]["angular_velocity_rad_s"],
+        )
         if not result["convergence"]["converged"]:
             self.assertIn("did not converge", result["warnings"][-1])
 

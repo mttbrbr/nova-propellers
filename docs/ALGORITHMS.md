@@ -41,6 +41,12 @@ validation milestone, maturity labels remain:
 - BEMT and LLT: preliminary;
 - VLM and BEM: experimental.
 
+The first BEMT contract, deterministic regression case and physics-consistency
+checks are now implemented. They verify software behavior but do not yet
+qualify predictive accuracy. See [Solver verification and validation](VALIDATION.md)
+for the evidence levels, acceptance rules, reproducibility procedure and known
+limitations.
+
 ## Synthetic polars
 
 `backend/polar_database.py` generates demonstration-only values from an
