@@ -18,9 +18,10 @@ APC 10×5 was selected because it combines a moderate pitch, complete static
 and dynamic measurements, multiple RPM/Reynolds regimes, direct CT/CP/eta
 columns, and a simple two-blade geometry. UIUC also uses APC 10×5E and 10×7E
 in its comparison with Ohio State data, adding independent usefulness for a
-later cross-facility check. Benchmark 1 deliberately starts with one 4005 rpm
-dynamic series; the manifest architecture supports adding the remaining runs
-without changing the engine.
+later cross-facility check. Benchmark 1 evaluates all seven published dynamic
+runs (4005, 4993, 5000, 6005, 6018, 6707 and 6710 rpm). Results include both
+overall metrics and an RPM breakdown so Reynolds/RPM trends cannot be hidden
+by one aggregate.
 
 The selection is scientific, not licensing-driven. UIUC's downloadable file
 and approximate geometry have no explicit redistribution license identified,
