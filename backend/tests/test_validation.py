@@ -16,6 +16,7 @@ from validation.experimental import (
     Prediction,
     compare_grouped,
     metric_summary,
+    resample_geometry,
 )
 from validation.runner import validate_case
 from validation.sensitivity import render_markdown
@@ -66,6 +67,28 @@ class ValidationTests(unittest.TestCase):
         result = compare_grouped(series, predictions)
         self.assertEqual(set(result["by_rpm"]), {"4000.0", "5000.0"})
         self.assertEqual(result["by_rpm"]["4000.0"]["successful_points"], 1)
+
+    def test_measured_geometry_can_be_resampled_for_convergence_study(self) -> None:
+        points = BezierControlPoints(
+            chord=np.array([[0, 0.026], [1, 0.006]]),
+            twist=np.array([[0, 34], [1, 7]]),
+        )
+        geometry = BezierBladeGeometry(0.25, 2, station_count=8).build(points)
+        refined = resample_geometry(geometry, 32)
+        self.assertEqual(len(refined.radius_m), 32)
+        self.assertAlmostEqual(refined.radius_m[0], geometry.radius_m[0])
+        self.assertAlmostEqual(refined.radius_m[-1], geometry.radius_m[-1])
+
+    def test_uiuc_adapter_rejects_inconsistent_efficiency_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic-inconsistent.txt"
+            path.write_text("J CT CP eta\n0.2 0.1 0.05 0.9\n", encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "eta = J CT / CP"):
+                UIUCVolume1Adapter().parse_dynamic(
+                    path,
+                    rpm=3000,
+                    provenance={"case_id": "synthetic", "propeller_id": "none"},
+                )
 
     def test_bemt_baseline_passes_all_declared_checks(self) -> None:
         path = Path(__file__).parents[1] / "validation" / "cases" / "bemt_baseline.json"

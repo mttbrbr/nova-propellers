@@ -36,7 +36,27 @@ class UIUCVolume1Adapter:
         return rows
 
     def parse_dynamic(self, path: Path, *, rpm: float, provenance: dict) -> ExperimentalSeries:
-        points = tuple(ExperimentalPoint(j, ct, cp, eta, rpm) for j, ct, cp, eta in self._rows(path, 4))
+        points = tuple(
+            ExperimentalPoint(j, ct, cp, eta, rpm)
+            for j, ct, cp, eta in self._rows(path, 4)
+        )
+        inconsistent = [
+            point
+            for point in points
+            if abs(point.power_coefficient) > 1e-12
+            and abs(
+                point.efficiency
+                - point.advance_ratio
+                * point.thrust_coefficient
+                / point.power_coefficient
+            )
+            > 0.01
+        ]
+        if inconsistent:
+            raise ValueError(
+                f"{path}: {len(inconsistent)} rows violate eta = J CT / CP "
+                "beyond the declared 0.01 rounding tolerance"
+            )
         return ExperimentalSeries(self.dataset, provenance["case_id"], provenance["propeller_id"], points, provenance)
 
     def parse_geometry(self, path: Path, *, diameter_m: float, blades: int, airfoil: str) -> GeometryData:

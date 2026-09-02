@@ -138,3 +138,19 @@ def compare_grouped(series: ExperimentalSeries, predictions: list[Prediction]) -
             subset, [predictions[index] for index in indices]
         )
     return result
+
+
+def resample_geometry(geometry: GeometryData, station_count: int) -> GeometryData:
+    """Resample measured radial geometry without changing its physical span."""
+    if station_count < 4:
+        raise ValueError("A convergence geometry needs at least four stations")
+    radius = np.linspace(geometry.radius_m[0], geometry.radius_m[-1], station_count)
+    return GeometryData(
+        radius_m=radius,
+        chord_m=np.interp(radius, geometry.radius_m, geometry.chord_m),
+        twist_rad=np.interp(radius, geometry.radius_m, geometry.twist_rad),
+        diameter_m=geometry.diameter_m,
+        blades=geometry.blades,
+        airfoil=geometry.airfoil,
+        propeller_type=geometry.propeller_type,
+    )
