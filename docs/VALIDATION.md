@@ -429,16 +429,49 @@ held-out evaluation points.
 At least one dataset should be reserved from calibration. Otherwise the
 comparison only demonstrates fit to the tuning data, not predictive evidence.
 
-Before modifying BEMT to improve agreement, Nova will first capture the
-unmodified solver's results as a baseline report. This prevents the reference
-dataset from silently becoming both the target used to design a correction and
-the evidence claimed to validate that correction.
+Before modifying BEMT to improve agreement, Nova captures the unmodified
+solver's results as a baseline report. This prevents the reference dataset
+from silently becoming both the target used to design a correction and the
+evidence claimed to validate that correction.
+
+## Running experimental validation
+
+The first end-to-end pipeline targets UIUC APC Thin Electric 10×5. This means
+the infrastructure exists; it does not promote BEMT to qualified status. See
+[`VALIDATION_BENCHMARK_1.md`](VALIDATION_BENCHMARK_1.md) and
+[`THIRD_PARTY_DATA.md`](THIRD_PARTY_DATA.md).
+
+From `backend/`, explicitly acquire only the two declared official files and
+then run the case:
+
+```bash
+python -m validation.experimental_report --acquire
+python -m validation.experimental_report
+```
+
+Acquisition requires network access, refuses to overwrite files, and accepts
+only the official UIUC HTTPS path. It prints retrieval SHA-256 checksums.
+Inputs go to gitignored `validation/reference_data/`; JSON, Markdown and SVG
+outputs go to gitignored `validation/generated/`. Unit tests use only original
+synthetic values and never access the network.
+
+The JSON evidence records solver controls, geometry, every operating point
+(including failures), metrics, timestamp and Git commit. Percentage metrics
+exclude only denominators with absolute value below `1e-3`; those points stay
+in absolute metrics and the exclusion count remains visible.
+
+To add a dataset, implement its source-specific parsing, units and conventions
+behind `DatasetAdapter`, returning canonical `ExperimentalSeries` objects.
+Provenance must record measurements, geometry and airfoil separately, always
+including license and redistribution status. New solvers use the existing
+`BaseSolver`/`GeometryData` API, so the comparison engine is not BEMT-specific.
 
 ## Known limitations
 
 - The current baseline uses synthetic polars, so polar-model error is not
   separated from BEMT error.
-- Only static axial operation is covered.
+- Existing numerical verification is static; Benchmark 1 adds axial
+  forward-flight operating points.
 - The RPM trend contains two points and is a sanity check, not a performance
   map.
 - Geometry, Reynolds-number and advance-ratio coverage are not yet sufficient

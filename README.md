@@ -165,6 +165,11 @@ python tools/check_source_archive.py
 
 ## Architecture
 
+Experimental-validation process, data governance and Benchmark 1 are
+documented in [VALIDATION.md](docs/VALIDATION.md),
+[THIRD_PARTY_DATA.md](docs/THIRD_PARTY_DATA.md), and
+[VALIDATION_BENCHMARK_1.md](docs/VALIDATION_BENCHMARK_1.md).
+
 ```text
 frontend/            React, Vite and Three.js interface
 backend/             FastAPI application and SQLite persistence

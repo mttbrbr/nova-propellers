@@ -10,12 +10,43 @@ import database
 from inverse_design import BEMTSolver, BezierBladeGeometry, BezierControlPoints
 from polar_database import interpolate_polar
 from validation import ConvergenceInfo
+from validation.experimental import metric_summary
 from validation.runner import validate_case
 from validation.sensitivity import render_markdown
+from validation.uiuc import UIUCVolume1Adapter
 from validation.verification_report import render_markdown as render_verification_markdown
 
 
 class ValidationTests(unittest.TestCase):
+    def test_uiuc_adapter_parses_original_synthetic_fixture(self) -> None:
+        # Original Nova fixture: values are invented solely to test the parser.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic-not-experimental.txt"
+            path.write_text("J CT CP eta\n0.1 0.2 0.3 0.0666667\n", encoding="ascii")
+            series = UIUCVolume1Adapter().parse_dynamic(
+                path,
+                rpm=3000,
+                provenance={"case_id": "synthetic", "propeller_id": "none"},
+            )
+            self.assertEqual(series.points[0].rpm, 3000)
+            self.assertAlmostEqual(series.points[0].thrust_coefficient, 0.2)
+
+    def test_uiuc_adapter_reports_missing_file(self) -> None:
+        with self.assertRaisesRegex(FileNotFoundError, "Required local UIUC file"):
+            UIUCVolume1Adapter().parse_dynamic(
+                Path("does-not-exist.txt"),
+                rpm=3000,
+                provenance={"case_id": "synthetic", "propeller_id": "none"},
+            )
+
+    def test_metrics_exclude_near_zero_only_from_relative_metrics(self) -> None:
+        metrics = metric_summary([0.0, 0.1], [0.02, 0.12], zero_floor=0.01)
+        self.assertEqual(metrics["count"], 2)
+        self.assertEqual(metrics["relative_count"], 1)
+        self.assertEqual(metrics["relative_excluded_near_zero"], 1)
+        self.assertAlmostEqual(metrics["mae"], 0.02)
+        self.assertAlmostEqual(metrics["mape"], 20.0)
+
     def test_bemt_baseline_passes_all_declared_checks(self) -> None:
         path = Path(__file__).parents[1] / "validation" / "cases" / "bemt_baseline.json"
         case = json.loads(path.read_text(encoding="utf-8"))

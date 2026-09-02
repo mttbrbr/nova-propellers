@@ -85,6 +85,12 @@ backend/.venv/
 backend/.venv-desktop/
 reports/
 
+# Third-party validation material and derived artifacts are local-only.
+# Keep the explanatory marker, but never allow downloaded reference files.
+backend/validation/reference_data/*
+!backend/validation/reference_data/README.md
+backend/validation/generated/
+
 # Temporary files
 tmp/
 temp/
