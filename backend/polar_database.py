@@ -20,10 +20,13 @@ def interpolate_polar(
     airfoil_name: str,
     alpha_deg: np.ndarray,
     reynolds: np.ndarray,
+    low_re_strategy: str = "clip",
 ) -> tuple[np.ndarray, np.ndarray]:
+    if low_re_strategy not in {"clip", "linear_extrapolation", "smooth_transition"}:
+        raise ValueError(f"Unknown low-Reynolds strategy: {low_re_strategy}")
     table = _load_polar_table(airfoil_name)
     alpha = np.clip(alpha_deg, ALPHA_GRID[0], ALPHA_GRID[-1])
-    re = np.clip(reynolds, REYNOLDS_GRID[0], REYNOLDS_GRID[-1])
+    re = np.minimum(reynolds, REYNOLDS_GRID[-1])
 
     cl_by_re = np.vstack(
         [np.interp(alpha, ALPHA_GRID, table["cl"][row_index]) for row_index in range(len(REYNOLDS_GRID))]
@@ -32,16 +35,45 @@ def interpolate_polar(
         [np.interp(alpha, ALPHA_GRID, table["cd"][row_index]) for row_index in range(len(REYNOLDS_GRID))]
     )
 
-    cl = _interp_reynolds(cl_by_re, re)
-    cd = _interp_reynolds(cd_by_re, re)
-    return cl, cd
+    cl = _interp_reynolds(cl_by_re, re, low_re_strategy)
+    cd = _interp_reynolds(cd_by_re, re, low_re_strategy)
+    return np.clip(cl, -2.0, 2.0), np.clip(cd, 1e-5, 1.0)
 
 
-def _interp_reynolds(values_by_re: np.ndarray, reynolds: np.ndarray) -> np.ndarray:
+def _interp_reynolds(
+    values_by_re: np.ndarray, reynolds: np.ndarray, low_re_strategy: str
+) -> np.ndarray:
     output = np.empty_like(reynolds, dtype=float)
     for index, re_value in np.ndenumerate(reynolds):
-        output[index] = np.interp(re_value, REYNOLDS_GRID, values_by_re[:, index[0]])
+        values = values_by_re[:, index[0]]
+        if re_value >= REYNOLDS_GRID[0] or low_re_strategy == "clip":
+            output[index] = np.interp(re_value, REYNOLDS_GRID, values)
+        elif low_re_strategy == "linear_extrapolation":
+            slope = (values[1] - values[0]) / (REYNOLDS_GRID[1] - REYNOLDS_GRID[0])
+            effective_re = max(float(re_value), 10000.0)
+            output[index] = values[0] + slope * (effective_re - REYNOLDS_GRID[0])
+        else:
+            output[index] = _smooth_low_re_value(float(re_value), values)
     return output
+
+
+def _smooth_low_re_value(reynolds: float, values: np.ndarray) -> float:
+    """C1 transition from the first polar interval to a constant low-Re limit."""
+    upper_re = float(REYNOLDS_GRID[0])
+    lower_re = 15000.0
+    slope = float((values[1] - values[0]) / (REYNOLDS_GRID[1] - REYNOLDS_GRID[0]))
+    lower_value = float(values[0] + 0.5 * slope * (lower_re - upper_re))
+    if reynolds <= lower_re:
+        return lower_value
+    normalized = (reynolds - lower_re) / (upper_re - lower_re)
+    h00 = 2 * normalized**3 - 3 * normalized**2 + 1
+    h01 = -2 * normalized**3 + 3 * normalized**2
+    h11 = normalized**3 - normalized**2
+    return float(
+        h00 * lower_value
+        + h01 * values[0]
+        + h11 * (upper_re - lower_re) * slope
+    )
 
 
 @lru_cache(maxsize=16)

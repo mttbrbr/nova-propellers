@@ -13,11 +13,14 @@ release gates, not promises of engineering qualification.
 
 ## v0.2 — Validation Foundation
 
-- Canonical solver result and unit contract.
+- Canonical solver result and unit contract. Initial schema `1.0` implemented.
 - Versioned API boundary.
 - Open reference datasets with provenance and reusable licenses.
-- BEMT convergence, polar interpolation and correction qualification.
-- Physics invariants, golden cases and acceptance thresholds.
+- BEMT convergence, polar interpolation and correction qualification. Initial
+  convergence contract and supported numerical domain implemented; experimental
+  reference qualification remains open.
+- Physics invariants, golden cases and acceptance thresholds. Initial internal
+  BEMT regression case implemented; experimental thresholds remain open.
 
 Only a solver that passes the declared reference thresholds may move from
 `preliminary` to `qualified`.

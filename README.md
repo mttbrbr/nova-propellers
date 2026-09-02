@@ -122,6 +122,10 @@ change `NOVA_FRONTEND_PORT` or `NOVA_BACKEND_PORT` before starting the stack.
 The deterministic benchmark checks software consistency and expected trends;
 it is not experimental validation. The assumptions and provenance of each
 method are documented in [docs/ALGORITHMS.md](docs/ALGORITHMS.md).
+The validation protocol, current BEMT evidence and exact claim boundaries are
+documented in [docs/VALIDATION.md](docs/VALIDATION.md).
+The latest reviewed pre-experimental result is
+[PASS](docs/verification/bemt-pre-experimental-verification.md).
 
 ## Development
 
@@ -143,6 +147,12 @@ Run the same checks used by CI:
 # Backend
 docker compose run --rm --no-deps backend python -m unittest discover -s tests -v
 docker compose run --rm --no-deps backend python -m inverse_design.benchmark
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps backend python -m validation.runner
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps --user 1000:1000 backend python -m validation.sensitivity --output-dir /app/reports/bemt-sensitivity
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps --user 1000:1000 backend python -m validation.relaxation_study --output-dir /app/reports/bemt-relaxation
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps --user 1000:1000 backend python -m validation.low_re_study --output-dir /app/reports/bemt-low-re
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps --user 1000:1000 backend python -m validation.root_induction_study --output-dir /app/reports/bemt-root-induction
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps --user 1000:1000 backend python -m validation.verification_report --output-dir /app/reports/bemt-verification
 
 # Frontend
 docker compose run --rm --no-deps frontend npm run lint
