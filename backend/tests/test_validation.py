@@ -10,7 +10,13 @@ import database
 from inverse_design import BEMTSolver, BezierBladeGeometry, BezierControlPoints
 from polar_database import interpolate_polar
 from validation import ConvergenceInfo
-from validation.experimental import metric_summary
+from validation.experimental import (
+    ExperimentalPoint,
+    ExperimentalSeries,
+    Prediction,
+    compare_grouped,
+    metric_summary,
+)
 from validation.runner import validate_case
 from validation.sensitivity import render_markdown
 from validation.uiuc import UIUCVolume1Adapter
@@ -46,6 +52,20 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(metrics["relative_excluded_near_zero"], 1)
         self.assertAlmostEqual(metrics["mae"], 0.02)
         self.assertAlmostEqual(metrics["mape"], 20.0)
+
+    def test_metrics_can_be_broken_down_by_rpm(self) -> None:
+        points = tuple(
+            ExperimentalPoint(0.2, 0.1, 0.05, 0.4, rpm)
+            for rpm in (4000.0, 5000.0)
+        )
+        series = ExperimentalSeries("synthetic", "synthetic", "none", points, {})
+        predictions = [
+            Prediction(0.2, rpm, 0.11, 0.055, 0.4, True)
+            for rpm in (4000.0, 5000.0)
+        ]
+        result = compare_grouped(series, predictions)
+        self.assertEqual(set(result["by_rpm"]), {"4000.0", "5000.0"})
+        self.assertEqual(result["by_rpm"]["4000.0"]["successful_points"], 1)
 
     def test_bemt_baseline_passes_all_declared_checks(self) -> None:
         path = Path(__file__).parents[1] / "validation" / "cases" / "bemt_baseline.json"

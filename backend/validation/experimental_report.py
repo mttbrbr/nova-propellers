@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from inverse_design import BEMTSolver
-from validation.experimental import compare, evaluate_series
+from validation.experimental import ExperimentalSeries, compare_grouped, evaluate_series
 from validation.uiuc import UIUCVolume1Adapter, acquire
 
 ROOT = Path(__file__).parent
@@ -67,7 +67,25 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
     case = load_case(case_path)
     local = REFERENCE_ROOT / "uiuc" / case["case_id"]
     adapter = UIUCVolume1Adapter()
-    series = adapter.parse_dynamic(local / case["measurement_file"], rpm=case["rpm"], provenance={"case_id": case["case_id"], "propeller_id": case["propeller_id"], **case["sources"]})
+    parsed = [
+        adapter.parse_dynamic(
+            local / item["file"],
+            rpm=item["rpm"],
+            provenance={
+                "case_id": case["case_id"],
+                "propeller_id": case["propeller_id"],
+                **case["sources"],
+            },
+        )
+        for item in case["measurement_series"]
+    ]
+    series = ExperimentalSeries(
+        parsed[0].dataset,
+        parsed[0].case_id,
+        parsed[0].propeller_id,
+        tuple(point for item in parsed for point in item.points),
+        parsed[0].provenance,
+    )
     geometry = adapter.parse_geometry(local / case["geometry_file"], diameter_m=case["diameter_m"], blades=case["blades"], airfoil=case["solver"]["airfoil"])
     config = case["solver"]
     def factory(velocity, density):
@@ -81,7 +99,7 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
             low_re_strategy=config["low_re_strategy"],
         )
     predictions = evaluate_series(factory, geometry, series, density_kg_m3=case["environment"]["air_density_kg_m3"])
-    comparison = compare(series, predictions)
+    comparison = compare_grouped(series, predictions)
     output = output_root / case["case_id"]
     output.mkdir(parents=True, exist_ok=True)
     record = {"schema_version": "1.0", "generated_at_utc": datetime.now(timezone.utc).isoformat(), "nova_git_commit": _git_commit(), "case": case, "geometry": geometry.to_dict(), "comparison": comparison}
@@ -92,6 +110,13 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
     for key in ("ct", "cp", "eta"):
         metric = comparison["metrics"][key]
         lines.append(f"| {key.upper()} | {metric['mae']:.6g} | {metric['rmse']:.6g} | {metric['mape']:.3g}% | {metric['relative_excluded_near_zero']} |" if metric else f"| {key.upper()} | n/a | n/a | n/a | n/a |")
+    lines += ["", "## Breakdown by RPM", "", "| RPM | successful | CT MAE | CP MAE | eta MAE |", "| ---: | ---: | ---: | ---: | ---: |"]
+    for rpm, group in comparison["by_rpm"].items():
+        lines.append(
+            f"| {rpm} | {group['successful_points']}/{group['experimental_points']} "
+            f"| {group['metrics']['ct']['mae']:.6g} | {group['metrics']['cp']['mae']:.6g} "
+            f"| {group['metrics']['eta']['mae']:.6g} |"
+        )
     lines += ["", "## Plots", "", "![CT](ct.svg)", "![CP](cp.svg)", "![eta](eta.svg)", "", "## Provenance and limitations", "", case["solver"]["airfoil_note"], "UIUC geometry is an approximate digitization. Source licenses are unspecified and redistribution is not assumed. Raw inputs and this report remain local-only by policy."]
     (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output
@@ -105,7 +130,12 @@ def main() -> None:
     case = load_case(args.case)
     local = REFERENCE_ROOT / "uiuc" / case["case_id"]
     if args.acquire:
-        for source, filename in ((case["sources"]["experimental"]["file_url"], case["measurement_file"]), (case["sources"]["geometry"]["file_url"], case["geometry_file"])):
+        downloads = [(item["url"], item["file"]) for item in case["measurement_series"]]
+        downloads.append((case["sources"]["geometry"]["file_url"], case["geometry_file"]))
+        for source, filename in downloads:
+            if (local / filename).exists():
+                print(json.dumps({"path": str(local / filename), "status": "already present"}))
+                continue
             print(json.dumps(acquire(source, local / filename)))
         return
     print(run(args.case))

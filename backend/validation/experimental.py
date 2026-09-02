@@ -119,3 +119,22 @@ def compare(series: ExperimentalSeries, predictions: list[Prediction]) -> dict:
         "metrics": metrics,
         "predictions": [asdict(value) for value in predictions],
     }
+
+
+def compare_grouped(series: ExperimentalSeries, predictions: list[Prediction]) -> dict:
+    """Return overall evidence plus independently inspectable RPM groups."""
+    result = compare(series, predictions)
+    result["by_rpm"] = {}
+    for rpm in sorted({point.rpm for point in series.points}):
+        indices = [index for index, point in enumerate(series.points) if point.rpm == rpm]
+        subset = ExperimentalSeries(
+            series.dataset,
+            series.case_id,
+            series.propeller_id,
+            tuple(series.points[index] for index in indices),
+            series.provenance,
+        )
+        result["by_rpm"][str(rpm)] = compare(
+            subset, [predictions[index] for index in indices]
+        )
+    return result

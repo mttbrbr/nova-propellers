@@ -6,9 +6,16 @@
   "propeller_id": "APC Thin Electric 10x5",
   "diameter_m": 0.254,
   "blades": 2,
-  "measurement_file": "apce_10x5_pg0820_4005.txt",
+  "measurement_series": [
+    {"rpm": 4005, "file": "apce_10x5_pg0820_4005.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_pg0820_4005.txt"},
+    {"rpm": 4993, "file": "apce_10x5_kt0822_4993.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0822_4993.txt"},
+    {"rpm": 5000, "file": "apce_10x5_kt0821_5000.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0821_5000.txt"},
+    {"rpm": 6005, "file": "apce_10x5_kt0823_6005.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0823_6005.txt"},
+    {"rpm": 6018, "file": "apce_10x5_kt0824_6018.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0824_6018.txt"},
+    {"rpm": 6707, "file": "apce_10x5_kt0825_6707.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0825_6707.txt"},
+    {"rpm": 6710, "file": "apce_10x5_kt0826_6710.txt", "url": "https://m-selig.ae.illinois.edu/props/volume-1/data/apce_10x5_kt0826_6710.txt"}
+  ],
   "geometry_file": "apce_10x5_geom.txt",
-  "rpm": 4005,
   "environment": {
     "air_density_kg_m3": 1.225,
     "air_viscosity_pa_s": 1.81e-5,
