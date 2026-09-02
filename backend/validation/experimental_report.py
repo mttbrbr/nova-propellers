@@ -1,0 +1,115 @@
+"""Run a declared experimental case and create local JSON/Markdown/SVG evidence."""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+from inverse_design import BEMTSolver
+from validation.experimental import compare, evaluate_series
+from validation.uiuc import UIUCVolume1Adapter, acquire
+
+ROOT = Path(__file__).parent
+REFERENCE_ROOT = ROOT / "reference_data"
+GENERATED_ROOT = ROOT / "generated"
+
+
+def _git_commit() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
+            cwd=ROOT.parents[1],
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def load_case(path: Path) -> dict:
+    case = json.loads(path.read_text(encoding="utf-8"))
+    for required in ("case_id", "dataset", "propeller_id", "sources", "coefficient_definitions"):
+        if required not in case:
+            raise ValueError(f"Case metadata missing required field: {required}")
+    for source_name, source in case["sources"].items():
+        if "license" not in source:
+            raise ValueError(f"Provenance source {source_name!r} has no license status")
+    return case
+
+
+def _svg(series, predictions, field: str, label: str) -> str:
+    pairs = [(e.advance_ratio, getattr(e, field), getattr(p, field)) for e, p in zip(series.points, predictions)]
+    all_y = [value for _, exp, pred in pairs for value in (exp, pred) if value is not None]
+    min_x, max_x = min(x for x, _, _ in pairs), max(x for x, _, _ in pairs)
+    min_y, max_y = min(all_y), max(all_y)
+    def xscale(value):
+        return 70 + (value - min_x) / max(max_x - min_x, 1e-12) * 650
+
+    def yscale(value):
+        return 350 - (value - min_y) / max(max_y - min_y, 1e-12) * 290
+    experimental = " ".join(f"{xscale(x):.1f},{yscale(y):.1f}" for x, y, _ in pairs)
+    predicted = " ".join(f"{xscale(x):.1f},{yscale(y):.1f}" for x, _, y in pairs if y is not None)
+    circles = "".join(f'<circle cx="{xscale(x):.1f}" cy="{yscale(y):.1f}" r="3" fill="#1565c0"/>' for x, y, _ in pairs)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420">
+<rect width="800" height="420" fill="white"/><text x="400" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">{html.escape(label)} vs J</text>
+<line x1="70" y1="350" x2="720" y2="350" stroke="black"/><line x1="70" y1="60" x2="70" y2="350" stroke="black"/>
+<polyline points="{experimental}" fill="none" stroke="#1565c0" stroke-width="2"/>{circles}
+<polyline points="{predicted}" fill="none" stroke="#d84315" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="395" y="395" text-anchor="middle" font-family="sans-serif">advance ratio J</text><text x="15" y="205" font-family="sans-serif" transform="rotate(-90 15 205)">{html.escape(label)}</text>
+<text x="585" y="55" fill="#1565c0" font-family="sans-serif">experiment</text><text x="680" y="55" fill="#d84315" font-family="sans-serif">Nova</text>
+<text x="70" y="370" font-family="sans-serif" font-size="11">{min_x:.3g}</text><text x="700" y="370" font-family="sans-serif" font-size="11">{max_x:.3g}</text>
+<text x="30" y="350" font-family="sans-serif" font-size="11">{min_y:.3g}</text><text x="30" y="65" font-family="sans-serif" font-size="11">{max_y:.3g}</text></svg>'''
+
+
+def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
+    case = load_case(case_path)
+    local = REFERENCE_ROOT / "uiuc" / case["case_id"]
+    adapter = UIUCVolume1Adapter()
+    series = adapter.parse_dynamic(local / case["measurement_file"], rpm=case["rpm"], provenance={"case_id": case["case_id"], "propeller_id": case["propeller_id"], **case["sources"]})
+    geometry = adapter.parse_geometry(local / case["geometry_file"], diameter_m=case["diameter_m"], blades=case["blades"], airfoil=case["solver"]["airfoil"])
+    config = case["solver"]
+    def factory(velocity, density):
+        return BEMTSolver(
+            axial_velocity_m_s=velocity,
+            air_density=density,
+            air_viscosity=case["environment"]["air_viscosity_pa_s"],
+            max_iterations=config["max_iterations"],
+            tolerance=config["tolerance"],
+            relaxation_factor=config["relaxation_factor"],
+            low_re_strategy=config["low_re_strategy"],
+        )
+    predictions = evaluate_series(factory, geometry, series, density_kg_m3=case["environment"]["air_density_kg_m3"])
+    comparison = compare(series, predictions)
+    output = output_root / case["case_id"]
+    output.mkdir(parents=True, exist_ok=True)
+    record = {"schema_version": "1.0", "generated_at_utc": datetime.now(timezone.utc).isoformat(), "nova_git_commit": _git_commit(), "case": case, "geometry": geometry.to_dict(), "comparison": comparison}
+    (output / "results.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    for field, label in (("thrust_coefficient", "CT"), ("power_coefficient", "CP"), ("efficiency", "eta")):
+        (output / f"{label.lower()}.svg").write_text(_svg(series, predictions, field, label), encoding="utf-8")
+    lines = [f"# Validation report: {case['case_id']}", "", "> Local generated artifact: redistribution is not assumed because it derives from third-party measurements.", "", f"- Propeller: {case['propeller_id']}", f"- Dataset: {case['dataset']}", f"- Solver: {config['id']} (no calibration performed)", f"- Points: {comparison['successful_points']}/{comparison['experimental_points']} successful; {comparison['failed_points']} failed", f"- Git commit: `{record['nova_git_commit'] or 'unavailable'}`", "", "## Metrics", "", "| quantity | MAE | RMSE | MAPE | near-zero exclusions |", "| --- | ---: | ---: | ---: | ---: |"]
+    for key in ("ct", "cp", "eta"):
+        metric = comparison["metrics"][key]
+        lines.append(f"| {key.upper()} | {metric['mae']:.6g} | {metric['rmse']:.6g} | {metric['mape']:.3g}% | {metric['relative_excluded_near_zero']} |" if metric else f"| {key.upper()} | n/a | n/a | n/a | n/a |")
+    lines += ["", "## Plots", "", "![CT](ct.svg)", "![CP](cp.svg)", "![eta](eta.svg)", "", "## Provenance and limitations", "", case["solver"]["airfoil_note"], "UIUC geometry is an approximate digitization. Source licenses are unspecified and redistribution is not assumed. Raw inputs and this report remain local-only by policy."]
+    (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--case", type=Path, default=ROOT / "cases" / "uiuc_apce_10x5.json")
+    parser.add_argument("--acquire", action="store_true", help="download only the two declared official UIUC files")
+    args = parser.parse_args()
+    case = load_case(args.case)
+    local = REFERENCE_ROOT / "uiuc" / case["case_id"]
+    if args.acquire:
+        for source, filename in ((case["sources"]["experimental"]["file_url"], case["measurement_file"]), (case["sources"]["geometry"]["file_url"], case["geometry_file"])):
+            print(json.dumps(acquire(source, local / filename)))
+        return
+    print(run(args.case))
+
+
+if __name__ == "__main__":
+    main()
