@@ -80,3 +80,23 @@ experimental discrepancy. The evidence does not support changing Nova's
 production `clip` default, and suggests that low-Re boundary handling is not
 the dominant error source for this corpus. Geometry fidelity and the underlying
 section/polar assumptions remain higher-priority uncertainties.
+
+## Radial diagnostic evidence
+
+Four representative conditions were evaluated at 36 stations using the fixed
+UIUC planform and twist. At `J=0.149`, where CT is strongly underpredicted,
+section angles remain inside the synthetic polar's −8°…16° alpha grid, while
+10/36 stations fall below its minimum Reynolds value. The earlier low-Re
+treatment study nevertheless showed negligible aggregate response, so merely
+changing the boundary extrapolation is not supported as a remedy.
+
+The load does not concentrate at the root: at the low-J diagnostic point,
+approximately 4% of thrust comes from `0.15 ≤ r/R < 0.40`, 46% from the middle
+region and 50% from `r/R ≥ 0.75`. This weakens the hypothesis that root-only
+modeling is the dominant cause. It increases the priority of the assumed
+section lift/drag behavior across the middle and outer blade.
+
+At `J=0.549` and near zero thrust around `J=0.671`, some inner stations operate
+below the alpha grid. Near zero total thrust, normalized regional percentages
+are intentionally not interpreted because positive and negative station loads
+cancel. The raw signed loads remain available locally.

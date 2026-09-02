@@ -127,6 +127,12 @@ class ValidationTests(unittest.TestCase):
             ],
             0.75,
         )
+        station = result["curves"][4]
+        self.assertIn("radius_over_tip_radius", station)
+        self.assertIn("relative_velocity_m_s", station)
+        self.assertIn("prandtl_loss_factor", station)
+        self.assertIn("induction_a", station)
+        self.assertIn("induction_aprime", station)
 
     def test_nonconverged_bemt_has_actionable_diagnostics(self) -> None:
         points = BezierControlPoints(

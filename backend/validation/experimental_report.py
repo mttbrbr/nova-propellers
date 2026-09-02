@@ -9,6 +9,11 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
 from inverse_design import BEMTSolver
 from validation.experimental import ExperimentalSeries, compare_grouped, evaluate_series
 from validation.uiuc import UIUCVolume1Adapter, acquire
@@ -91,6 +96,42 @@ def _svg(series, predictions, field: str, label: str) -> str:
 <text x="30" y="350" font-family="sans-serif" font-size="11">{min_y:.3g}</text><text x="30" y="65" font-family="sans-serif" font-size="11">{max_y:.3g}</text></svg>'''
 
 
+def _png(series, predictions, field: str, label: str, destination: Path) -> None:
+    figure, axis = plt.subplots(figsize=(9, 5.4), constrained_layout=True)
+    rpms = sorted({point.rpm for point in series.points})
+    color_map = plt.get_cmap("tab10")
+    for index, rpm in enumerate(rpms):
+        pairs = [
+            (experimental, prediction)
+            for experimental, prediction in zip(series.points, predictions)
+            if experimental.rpm == rpm
+        ]
+        color = color_map(index % 10)
+        axis.plot(
+            [item.advance_ratio for item, _ in pairs],
+            [getattr(item, field) for item, _ in pairs],
+            color=color,
+            marker="o",
+            markersize=3,
+            linewidth=1.5,
+            label=f"UIUC {rpm:g} rpm",
+        )
+        converged = [pair for pair in pairs if pair[1].converged]
+        axis.plot(
+            [item.advance_ratio for item, _ in converged],
+            [getattr(prediction, field) for _, prediction in converged],
+            color=color,
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Nova {rpm:g} rpm",
+        )
+    axis.set(title=f"{label} vs advance ratio", xlabel="Advance ratio J", ylabel=label)
+    axis.grid(True, alpha=0.25)
+    axis.legend(ncols=2, fontsize=7)
+    figure.savefig(destination, dpi=180, metadata={"Software": "Nova Propellers"})
+    plt.close(figure)
+
+
 def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
     case = load_case(case_path)
     local = REFERENCE_ROOT / "uiuc" / case["case_id"]
@@ -134,6 +175,7 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
     (output / "results.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     for field, label in (("thrust_coefficient", "CT"), ("power_coefficient", "CP"), ("efficiency", "eta")):
         (output / f"{label.lower()}.svg").write_text(_svg(series, predictions, field, label), encoding="utf-8")
+        _png(series, predictions, field, label, output / f"{label.lower()}.png")
     lines = [f"# Validation report: {case['case_id']}", "", "> Local generated artifact: redistribution is not assumed because it derives from third-party measurements.", "", f"- Propeller: {case['propeller_id']}", f"- Dataset: {case['dataset']}", f"- Solver: {config['id']} (no calibration performed)", f"- Points: {comparison['successful_points']}/{comparison['experimental_points']} successful; {comparison['failed_points']} failed", f"- Git commit: `{record['nova_git_commit'] or 'unavailable'}`", "", "## Metrics", "", "| quantity | MAE | RMSE | MAPE | near-zero exclusions |", "| --- | ---: | ---: | ---: | ---: |"]
     for key in ("ct", "cp", "eta"):
         metric = comparison["metrics"][key]
@@ -145,7 +187,7 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
             f"| {group['metrics']['ct']['mae']:.6g} | {group['metrics']['cp']['mae']:.6g} "
             f"| {group['metrics']['eta']['mae']:.6g} |"
         )
-    lines += ["", "## Plots", "", "![CT](ct.svg)", "![CP](cp.svg)", "![eta](eta.svg)", "", "## Provenance and limitations", "", case["solver"]["airfoil_note"], "UIUC geometry is an approximate digitization. Source licenses are unspecified and redistribution is not assumed. Raw inputs and this report remain local-only by policy."]
+    lines += ["", "## Plots", "", "![CT](ct.png)", "![CP](cp.png)", "![eta](eta.png)", "", "## Provenance and limitations", "", case["solver"]["airfoil_note"], "UIUC geometry is an approximate digitization. Source licenses are unspecified and redistribution is not assumed. Raw inputs and this report remain local-only by policy."]
     (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output
 

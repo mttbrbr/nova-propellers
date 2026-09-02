@@ -12,6 +12,7 @@ source-only release archive.
 | FastAPI and Pydantic | HTTP API and validation | MIT |
 | Uvicorn and Starlette | ASGI runtime | BSD-3-Clause |
 | NumPy and SciPy | Numerical computing | BSD-style; binary wheels contain additional notices |
+| Matplotlib and Pillow | Local validation plots and PNG rendering | Matplotlib license / MIT-CMU |
 | Trimesh | Mesh generation and STL export | MIT |
 | React and React DOM | User interface | MIT |
 | Three.js and React Three Fiber | 3D rendering | MIT |

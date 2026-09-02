@@ -74,13 +74,26 @@ class BEMTSolver(BaseSolver):
         curves = [
             {
                 "r_over_R": round(float(fraction), 5),
+                "radius_over_tip_radius": round(
+                    float(geometry_data.radius_m[index] / (geometry_data.diameter_m / 2.0)),
+                    5,
+                ),
                 "radius_m": round(float(geometry_data.radius_m[index]), 7),
                 "chord_mm": round(float(geometry_data.chord_m[index] * 1000), 4),
                 "twist_deg": round(float(np.degrees(geometry_data.twist_rad[index])), 4),
                 "alpha_deg": round(float(result["alpha_deg"][index]), 4),
+                "phi_deg": round(float(result["phi_deg"][index]), 4),
                 "cl": round(float(result["cl"][index]), 5),
                 "cd": round(float(result["cd"][index]), 6),
                 "reynolds": round(float(result["reynolds"][index]), 1),
+                "relative_velocity_m_s": round(
+                    float(result["relative_velocity"][index]), 5
+                ),
+                "prandtl_loss_factor": round(float(result["loss_factor"][index]), 6),
+                "induction_a": round(float(result["induction_a"][index]), 6),
+                "induction_aprime": round(
+                    float(result["induction_aprime"][index]), 6
+                ),
                 "circulation": round(float(result["circulation"][index]), 7),
                 "d_thrust_n": round(float(result["d_thrust"][index]), 7),
                 "d_torque_nm": round(float(d_torque[index]), 8),
