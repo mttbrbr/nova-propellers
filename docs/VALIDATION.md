@@ -488,6 +488,23 @@ be selected solely because it reduces error on the same benchmark inspected
 during development; promotion requires a physical justification and held-out
 experimental evidence.
 
+Representative radial diagnostics are generated as PNG with:
+
+```bash
+python -m validation.radial_diagnostics --stations 36
+```
+
+They retain physical `radius_over_tip_radius`, angle of attack, inflow angle,
+Reynolds number, relative velocity, section coefficients, Prandtl factor,
+induction and radial thrust/power. The four declared targets cover low,
+intermediate and high J plus the vicinity of zero thrust. Regional load
+fractions are suppressed near zero totals when cancellation would make a
+percentage misleading; signed station loads remain available in JSON.
+
+Engineering plots are emitted as PNG at 180 dpi. SVG files remain a secondary
+machine-scalable output for the main comparison, but reports display PNG by
+default.
+
 To add a dataset, implement its source-specific parsing, units and conventions
 behind `DatasetAdapter`, returning canonical `ExperimentalSeries` objects.
 Provenance must record measurements, geometry and airfoil separately, always
