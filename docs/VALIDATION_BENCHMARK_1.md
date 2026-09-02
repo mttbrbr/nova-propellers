@@ -55,3 +55,28 @@ case.
 - No solver coefficient, loss model or polar is calibrated to this benchmark.
 - The online data include UIUC's later mounting-fixture drag correction and
   supersede the older thesis tables.
+
+## Numerical convergence evidence
+
+The full 104-point corpus was evaluated with 18, 36 and 72 radial stations;
+all 312 solver calls converged. Relative to the 72-station numerical reference,
+the 36-station mean relative changes were 0.291% for CT, 0.553% for CP and
+0.279% for efficiency. Maximum relative changes, after the declared near-zero
+exclusion, were 0.583%, 1.123% and 1.235% respectively.
+
+The 72-station result is not physical truth. This evidence only shows that the
+observed experimental discrepancies are substantially larger than the measured
+36-to-72-station sensitivity. It does not validate the aerodynamic model.
+
+The next controlled study compares the already implemented `clip`, bounded
+linear-extrapolation and smooth-transition low-Re polar strategies at 36
+stations. It is diagnostic: no strategy may be promoted merely because it
+fits this same benchmark better.
+
+That study completed with 104/104 converged points for every treatment. CT
+MAE was 0.0236292–0.0236319, CP MAE 0.0124026–0.0124060 and efficiency MAE
+0.0463229–0.0464239. These differences are negligible relative to the
+experimental discrepancy. The evidence does not support changing Nova's
+production `clip` default, and suggests that low-Re boundary handling is not
+the dominant error source for this corpus. Geometry fidelity and the underlying
+section/polar assumptions remain higher-priority uncertainties.

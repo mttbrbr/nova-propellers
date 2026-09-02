@@ -460,6 +460,34 @@ The JSON evidence records solver controls, geometry, every operating point
 exclude only denominators with absolute value below `1e-3`; those points stay
 in absolute metrics and the exclusion count remains visible.
 
+UIUC dynamic rows are checked against `eta = J CT / CP`. A tolerance of
+`0.01` is allowed solely for the precision of the published decimal columns;
+larger inconsistencies stop the import. Multi-RPM plots render each RPM as a
+separate colored curve: solid lines are measurements and dashed lines are Nova
+predictions. Curves from different runs are never joined.
+
+Numerical radial sensitivity is evaluated explicitly with:
+
+```bash
+python -m validation.experimental_convergence --stations 18 36 72
+```
+
+The local `convergence.json` compares every operating point with the declared
+finest grid. It states that the finest grid is a numerical reference, not
+physical truth, and applies the same near-zero policy as the experimental
+metrics.
+
+Low-Re polar sensitivity can be evaluated without changing production defaults:
+
+```bash
+python -m validation.experimental_polar_study --stations 36
+```
+
+This comparison is explicitly diagnostic, not calibration. A treatment cannot
+be selected solely because it reduces error on the same benchmark inspected
+during development; promotion requires a physical justification and held-out
+experimental evidence.
+
 To add a dataset, implement its source-specific parsing, units and conventions
 behind `DatasetAdapter`, returning canonical `ExperimentalSeries` objects.
 Provenance must record measurements, geometry and airfoil separately, always

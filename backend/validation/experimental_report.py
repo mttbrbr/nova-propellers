@@ -40,25 +40,53 @@ def load_case(path: Path) -> dict:
 
 
 def _svg(series, predictions, field: str, label: str) -> str:
-    pairs = [(e.advance_ratio, getattr(e, field), getattr(p, field)) for e, p in zip(series.points, predictions)]
-    all_y = [value for _, exp, pred in pairs for value in (exp, pred) if value is not None]
-    min_x, max_x = min(x for x, _, _ in pairs), max(x for x, _, _ in pairs)
+    pairs = [
+        (e.rpm, e.advance_ratio, getattr(e, field), getattr(p, field))
+        for e, p in zip(series.points, predictions)
+    ]
+    all_y = [
+        value
+        for _, _, experimental, predicted in pairs
+        for value in (experimental, predicted)
+        if value is not None
+    ]
+    min_x = min(x for _, x, _, _ in pairs)
+    max_x = max(x for _, x, _, _ in pairs)
     min_y, max_y = min(all_y), max(all_y)
     def xscale(value):
         return 70 + (value - min_x) / max(max_x - min_x, 1e-12) * 650
 
     def yscale(value):
         return 350 - (value - min_y) / max(max_y - min_y, 1e-12) * 290
-    experimental = " ".join(f"{xscale(x):.1f},{yscale(y):.1f}" for x, y, _ in pairs)
-    predicted = " ".join(f"{xscale(x):.1f},{yscale(y):.1f}" for x, _, y in pairs if y is not None)
-    circles = "".join(f'<circle cx="{xscale(x):.1f}" cy="{yscale(y):.1f}" r="3" fill="#1565c0"/>' for x, y, _ in pairs)
+    colors = ("#1565c0", "#00897b", "#7b1fa2", "#ef6c00", "#2e7d32", "#c62828", "#455a64")
+    curves = []
+    legends = []
+    for index, rpm in enumerate(sorted({rpm for rpm, _, _, _ in pairs})):
+        color = colors[index % len(colors)]
+        group = [(x, exp, pred) for item_rpm, x, exp, pred in pairs if item_rpm == rpm]
+        experimental = " ".join(
+            f"{xscale(x):.1f},{yscale(value):.1f}" for x, value, _ in group
+        )
+        predicted = " ".join(
+            f"{xscale(x):.1f},{yscale(value):.1f}"
+            for x, _, value in group
+            if value is not None
+        )
+        curves.append(
+            f'<polyline points="{experimental}" fill="none" stroke="{color}" '
+            f'stroke-width="2"/><polyline points="{predicted}" fill="none" '
+            f'stroke="{color}" stroke-width="2" stroke-dasharray="7 4"/>'
+        )
+        legends.append(
+            f'<text x="{90 + index * 95}" y="52" fill="{color}" '
+            f'font-family="sans-serif" font-size="11">{rpm:g} rpm</text>'
+        )
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420">
 <rect width="800" height="420" fill="white"/><text x="400" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">{html.escape(label)} vs J</text>
 <line x1="70" y1="350" x2="720" y2="350" stroke="black"/><line x1="70" y1="60" x2="70" y2="350" stroke="black"/>
-<polyline points="{experimental}" fill="none" stroke="#1565c0" stroke-width="2"/>{circles}
-<polyline points="{predicted}" fill="none" stroke="#d84315" stroke-width="2" stroke-dasharray="7 4"/>
+{''.join(curves)}{''.join(legends)}
 <text x="395" y="395" text-anchor="middle" font-family="sans-serif">advance ratio J</text><text x="15" y="205" font-family="sans-serif" transform="rotate(-90 15 205)">{html.escape(label)}</text>
-<text x="585" y="55" fill="#1565c0" font-family="sans-serif">experiment</text><text x="680" y="55" fill="#d84315" font-family="sans-serif">Nova</text>
+<text x="570" y="385" font-family="sans-serif" font-size="11">solid: experiment; dashed: Nova</text>
 <text x="70" y="370" font-family="sans-serif" font-size="11">{min_x:.3g}</text><text x="700" y="370" font-family="sans-serif" font-size="11">{max_x:.3g}</text>
 <text x="30" y="350" font-family="sans-serif" font-size="11">{min_y:.3g}</text><text x="30" y="65" font-family="sans-serif" font-size="11">{max_y:.3g}</text></svg>'''
 
