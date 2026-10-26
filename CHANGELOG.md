@@ -14,6 +14,13 @@ All notable changes to Nova are documented in this file.
 
 ### Changed
 
+- Redesigned interface for 16:9 screens: one header with project and
+  simulation selectors, stage stepper, Save, More actions and Run; an icon
+  rail for workspaces; each stage laid out as inputs, data and a square 3D
+  render. Geometry previews update automatically, curves gained axes, hover
+  values and a shared station selection, Results colours the blade by a chosen
+  quantity, and out-of-date runs say what changed. Models and the legacy
+  archive moved into Library. See `docs/UI_NAVIGATION.md`.
 - Local non-Docker persistence follows XDG data directory conventions.
 - The frontend discovers its desktop backend while retaining `/api` for the
   existing web and Docker workflow.

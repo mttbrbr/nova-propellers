@@ -25,28 +25,43 @@ const externalDefaults = (kind) => kind === 'pywake' ? { demonstration: true, no
   layout: { x_m: [0,500], y_m: [0,0] }, wind: { directions_deg: [270], speeds_m_s: [8,12], probabilities: [[.5,.5]], turbulence_intensity: .1 }, wake_model: 'noj', timeout_seconds: 300,
 } } : { case: { case_directory: '', input_file: '', output_file: '', timeout_seconds: 300 } };
 
-const button = 'rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs disabled:opacity-40';
-const field = 'w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-xs';
+const button = 'inline-flex min-h-[34px] items-center justify-center rounded-[7px] border border-nv-edge px-3 text-[13px] text-nv-ink hover:bg-nv-hover disabled:cursor-not-allowed disabled:opacity-40';
+const field = 'h-[34px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2.5 text-[13px] text-nv-ink focus:border-nv-accent focus:outline-none disabled:opacity-50';
+const menuItem = 'flex h-[34px] w-full items-center rounded-md px-2.5 text-left text-[13px] text-nv-ink hover:bg-nv-active disabled:cursor-not-allowed disabled:opacity-40';
 const running = (run) => ['queued', 'running', 'cancelling'].includes(run?.state);
 const ordered = (value) => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, ordered(value[key])])) : value;
 const stable = (value) => JSON.stringify(ordered(value));
 const modelNames = (graph) => [...new Set((graph?.nodes || []).filter((n) => n.type === 'analysis').map((n) => n.config?.model || 'bemt'))];
+const inputLabels = [['diameter', 'diameter'], ['blades', 'blade count'], ['rpm', 'rotation speed'], ['airfoil', 'airfoil'], ['propeller_type', 'propeller type'],
+  ['geometry_method', 'geometry method'], ['geometry_parameters', 'blade shape'], ['airfoil_assignments', 'airfoil loft']];
+// Human-readable reasons why a stored run no longer matches the editable configuration.
+const changedFields = (run, current) => {
+  const changed = inputLabels.filter(([key]) => stable(run.inputs?.[key] ?? null) !== stable(current.inputs?.[key] ?? null)).map(([, label]) => label);
+  if (stable(modelNames(run.workflow)) !== stable(modelNames(current.workflow))) changed.push('solver');
+  if (stable(run.conditions) !== stable(current.conditions)) changed.push('air properties');
+  if ((run.polar_asset_id || '') !== (current.polar_asset_id || '')) changed.push('airfoil data');
+  return changed.length ? changed : ['workflow'];
+};
+const newestFirst = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
 
 function Operation({ data }) {
   const input = ['sizing', 'geometry'].includes(data.type) ? 'design'
     : data.type === 'analysis' ? 'geometry' : 'result';
   const output = ['parameters', 'sizing'].includes(data.type) ? 'design'
     : data.type === 'geometry' ? 'geometry' : 'result';
-  return <div className="rounded border border-zinc-600 bg-zinc-900 p-4 text-zinc-100">
+  return <div className="rounded-lg border border-nv-edge-strong bg-nv-raised px-4 py-3 text-nv-ink">
     {data.type !== 'parameters' && <Handle type="target" position={Position.Left} id={input} />}
-    <div className="text-sm">{data.id}</div><div className="mt-1 text-xs text-zinc-400">{data.type}{data.model ? ` · ${data.model}` : ''}</div>
+    <div className="text-[13px]">{data.id}</div><div className="mt-1 text-xs text-nv-muted">{data.type}{data.model ? ` · ${data.model}` : ''}</div>
     <Handle type="source" position={Position.Right} id={output} />
   </div>;
 }
 const nodeTypes = { operation: Operation };
 
-const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, menuTarget, showGeometry = false, uiBusy = false, projectSelectorTarget, simulationSelectorTarget, showGraph, graphTarget, showData = true }, ref) {
+// The controller stays mounted for the whole session; its controls are rendered
+// into the slots of whichever workspace is visible (header, Geometry, Analysis,
+// Workflow), so switching workspaces never resets project or run state.
+const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, uiBusy = false, slots = {} }, ref) {
   const activation = useRef(0);
   const [workflow, setWorkflow] = useState(null);
   const [project, setProject] = useState(null);
@@ -100,6 +115,12 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   }, []);
 
   useEffect(() => { onProjectChange?.(project?.id || null); }, [project, onProjectChange]);
+  // Confirmations fade on their own; errors stay until dismissed.
+  useEffect(() => {
+    if (!message) return undefined;
+    const timer = window.setTimeout(() => setMessage(''), 8000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
   const configuredWorkflow = () => {
     if (!workflow) throw new Error('Workflow is still loading');
     return workflow.template ? { ...workflow, nodes: workflow.nodes.map((n) => n.id === 'analysis'
@@ -120,12 +141,18 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
       setBaselineVersion((v) => v + 1);
     }
   }, [draftStamp, simulation, workflow]);
+  const projectRunsForContext = history.filter((r) => r.project_id === project?.id);
+  const simulationRuns = simulation ? projectRunsForContext.filter((r) => r.simulation_id === simulation.id && !r.study && !r.comparison && !r.optimization && !r.external_job).sort(newestFirst) : [];
+  const lastRun = simulationRuns.find((r) => r.state === 'succeeded' && r.result) || null;
+  const lastRunStale = Boolean(lastRun && workflow && signature(lastRun.inputs, lastRun.workflow, lastRun.conditions, lastRun.polar_asset_id) !== configurationStamp);
+  const changedSinceRun = lastRunStale ? changedFields(lastRun, { inputs, workflow: currentGraph, conditions, polar_asset_id: assetId }) : [];
   useEffect(() => {
     onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
-      models: external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error });
+      models: external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error,
+      geometry, selectedAsset: assets.find((a) => a.id === assetId) || null, conditions, projectRuns: projectRunsForContext, simulationRuns, lastRun, lastRunStale, changedSinceRun });
     // Derived strings track configuration values, not parent object identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, simulation, simulationName, kind, externalText, configurationStamp, simulationDirty, draftDirty, baselineVersion, busy, uiBusy, savingConfiguration, activeRun, error, onContextChange]);
+  }, [project, simulation, simulationName, kind, externalText, configurationStamp, simulationDirty, draftDirty, baselineVersion, busy, uiBusy, savingConfiguration, activeRun, error, onContextChange, geometry, assets, assetId, history]);
   useEffect(() => {
     if (workflow) onConfigChange?.(signature(inputs, workflow.template ? { ...workflow, nodes: workflow.nodes.map((n) => n.id === 'analysis' ? { ...n, config: { ...n.config, model } } : n) } : workflow, conditions, assetId));
   }, [inputs, workflow, conditions, assetId, model, onConfigChange]);
@@ -221,7 +248,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     await onResult?.(run.result, snapshot.inputs, run.id, signature(snapshot.inputs, snapshot.workflow, snapshot.conditions, snapshot.polar_asset_id), undefined, run);
     return run.result;
   };
-  useImperativeHandle(ref, () => ({ execute, optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
+  useImperativeHandle(ref, () => ({ execute, openRun: (r) => act(() => openExecution(r)), optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
     setModel: (value) => setWorkflow((w) => w && !w.template ? { ...w, nodes: w.nodes.map((n) => n.type === 'analysis' ? { ...n, config: { ...n.config, model: value } } : n) } : w),
     reset: () => {
     const epoch = ++activation.current;
@@ -405,108 +432,124 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     if (r.result) { await onResult(r.result, r.inputs, r.id, signature(r.inputs, r.workflow, r.conditions, r.polar_asset_id), undefined, r); onShowResults?.(); }
     else setMessage(`${r.simulation_name || r.name} · ${r.state}${r.error ? ` · ${r.error}` : ''}`);
   };
-  const projectPicker = <select aria-label="Open saved project" className={field} disabled={locked} value={project?.id || ''} onChange={(e) => {
+  const portal = (name, content) => slots[name] ? createPortal(content, slots[name]) : null;
+  const headerSelect = 'h-8 w-full min-w-0 max-w-[220px] cursor-pointer appearance-none truncate rounded-md bg-transparent px-2 text-[13px] hover:bg-nv-hover disabled:cursor-not-allowed disabled:opacity-50';
+  const projectPicker = <select aria-label="Open saved project" className={`${headerSelect} text-nv-muted`} disabled={locked} value={project?.id || ''} onChange={(e) => {
     const saved = projects.find((p) => p.id === e.target.value); if (saved) act(() => openProject(saved));
-  }}><option value="" disabled={Boolean(project)}>No project open · select project…</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>;
-  const simulationPicker = <select aria-label="Open saved simulation" className={field} disabled={locked || !project} value={simulation?.id || ''} onChange={(e) => {
+  }}><option value="" disabled={Boolean(project)} className="bg-nv-panel">No project · select…</option>{projects.map((p) => <option key={p.id} value={p.id} className="bg-nv-panel">{p.name}</option>)}</select>;
+  const simulationPicker = <select aria-label="Open saved simulation" className={`${headerSelect} text-nv-ink`} disabled={locked || !project} value={simulation?.id || ''} onChange={(e) => {
     const saved = simulations.find((s) => s.id === e.target.value); if (saved) act(() => openSimulation(saved));
-  }}><option value="" disabled={Boolean(simulation)}>Draft: {simulationName}</option>{simulations.map((s) => <option key={s.id} value={s.id}>{s.name} · r{s.revision}</option>)}</select>;
+  }}><option value="" disabled={Boolean(simulation)} className="bg-nv-panel">Draft: {simulationName}</option>{simulations.map((s) => <option key={s.id} value={s.id} className="bg-nv-panel">{s.name} · r{s.revision}</option>)}</select>;
+  const geometryEdited = geometry && stable(geometry.definition) !== stable(Object.fromEntries(geometryFields.map((key) => [key, inputs[key]])));
+  const selectedAsset = assets.find((a) => a.id === assetId);
 
-  return <section className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-    <ProjectExplorer key={project?.id || 'draft'} project={project} simulations={simulations} geometries={geometries} assets={assets.filter((a) => referencedAssets.has(a.id))} runs={projectRuns}
-      simulationId={simulation?.id} geometryId={geometry?.id} selectedPolar={assetId} locked={locked} onSimulation={(s) => act(() => openSimulation(s))} onGeometry={(id) => act(() => chooseGeometry(id))} onRun={(r) => act(() => openExecution(r))} onStudies={() => onShowStudies?.()}
-      onUsePolar={(a) => { if (a.airfoil !== inputs.airfoil) setError('These polars belong to a different airfoil; select matching geometry first.'); else { setAssetId(a.id); setMessage(`Selected polars: ${a.filename}`); } }} />
-    {menuTarget && createPortal(<>
-      <button className={`${button} block w-full text-left`} disabled={!project || locked} onClick={() => act(() => download(`/v2/projects/${project.id}/archive`, `${project.name}.nova`))}>Export saved project .nova</button>
-      <label className={`${button} block cursor-pointer`}>Open .nova<input aria-label="Open .nova" type="file" accept=".nova" disabled={locked} className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file) act(() => importArchive(file)); e.target.value = ''; }} /></label>
-    </>, menuTarget)}
-    {guard && createPortal(<div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6"><div role="dialog" aria-modal="true" aria-labelledby="unsaved-title" className="max-w-md space-y-4 rounded-xl border border-zinc-700 bg-zinc-950 p-6">
-      <h2 id="unsaved-title" className="text-lg">Unsaved simulation changes</h2><p className="text-sm text-zinc-400">Save the current draft, discard its changes, or keep editing.</p>
-      <div className="flex gap-2"><button className={button} disabled={guardSaving} onClick={() => decide('save')}>Save changes</button><button className={button} disabled={guardSaving} onClick={() => decide('discard')}>Discard changes</button><button className={button} disabled={guardSaving} onClick={() => decide('cancel')}>Keep editing</button></div>
-      {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-    </div></div>, document.body)}
-    {projectSelectorTarget ? createPortal(projectPicker, projectSelectorTarget) : projectPicker}
-    <div className="space-y-3 border-t border-zinc-800 pt-4">
-      <h3 className="text-xs font-medium">Simulation configuration</h3>
-      {simulationSelectorTarget ? createPortal(simulationPicker, simulationSelectorTarget) : simulationPicker}
-      <label className="block text-xs text-zinc-400">Simulation name<input aria-label="Simulation name" maxLength={120} className={`${field} mt-1`} value={simulationName} disabled={locked} onChange={(e) => setSimulationName(e.target.value)} /></label>
-      <p className="text-[10px] text-zinc-500">{simulation ? `Revision ${simulation.revision} · ${simulationDirty ? 'unsaved changes' : 'saved configuration'}` : 'New configuration · saved separately within the project'} · Models: {(external ? [kind] : modelNames(currentGraph)).map((m) => m.toUpperCase()).join(' + ') || 'geometry only'}</p>
-      <div className="flex flex-wrap gap-2"><button className={button} disabled={locked} onClick={() => act(() => newSimulation())}>New simulation</button>
+  return <>
+    {portal('projectSelector', projectPicker)}
+    {portal('simulationSelector', simulationPicker)}
+    {portal('manage', <>
+      <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Simulation name
+        <input aria-label="Simulation name" maxLength={120} className={field} value={simulationName} disabled={locked} onChange={(e) => setSimulationName(e.target.value)} /></label>
+      <p className="m-0 text-xs text-nv-muted">{simulation ? `Revision ${simulation.revision} · ${simulationDirty ? 'unsaved changes' : 'saved configuration'}` : 'New configuration · saved separately within the project'} · {(external ? [kind] : modelNames(currentGraph)).map((m) => m.toUpperCase()).join(' + ') || 'geometry only'}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button className={button} disabled={locked} onClick={() => act(() => newSimulation())}>New simulation</button>
         <button className={button} disabled={locked} onClick={() => act(cloneSimulation)}>Duplicate simulation</button>
         <button className={button} disabled={locked} onClick={() => act(() => newSimulation('pywake'))}>New PyWake simulation</button>
-        <button className={button} disabled={locked} onClick={() => act(() => newSimulation('openfast'))}>New OpenFAST simulation</button></div>
-      <p className="text-[10px] text-zinc-500">New keeps the selected geometry and resets analysis settings to defaults. Duplicate copies the current configuration.</p>
-    </div>
-    {!external && <div className="space-y-3 border-t border-zinc-800 pt-4"><h3 className="text-xs font-medium">Shared project geometry</h3>
-      <select aria-label="Geometry revision" className={field} value={geometry?.id || ''} disabled={locked || !project} onChange={(e) => act(() => chooseGeometry(e.target.value))}><option value="">Unpublished geometry draft</option>{geometries.map((g) => <option key={g.id} value={g.id}>{g.name} · r{g.geometry_revision}</option>)}</select>
-      {geometry && stable(geometry.definition) !== stable(Object.fromEntries(geometryFields.map((key) => [key, inputs[key]]))) && <p className="text-xs text-amber-400">Geometry edits are unpublished. Save or Run publishes a revision for this simulation only; other configurations keep their selected geometry.</p>}
-      {showGeometry && <><label className="block text-xs text-zinc-400">Geometry name<input aria-label="Geometry name" className={`${field} mt-1`} value={geometryName} onChange={(e) => setGeometryName(e.target.value)} /></label>
-        <button className={button} disabled={locked} onClick={() => act(publishGeometry)}>Publish geometry revision</button>
-        {geometry && simulations.length > 0 && <details><summary className="cursor-pointer text-xs text-zinc-400">Apply revision to saved simulations</summary><div className="mt-3 space-y-2">{simulations.filter((item) => !item.kind || item.kind === 'propeller').map((item) => <label key={item.id} className="flex items-center gap-2 text-xs"><input aria-label={`Adopt geometry for ${item.name}`} type="checkbox" checked={adoption.includes(item.id)} onChange={(e) => { const checked = e.target.checked; setAdoption((ids) => checked ? [...new Set([...ids, item.id])] : ids.filter((id) => id !== item.id)); }} />{item.name} · currently geometry r{item.geometry_revision || '—'}</label>)}<button className={button} disabled={locked || !adoption.length} onClick={() => act(adoptGeometry)}>Apply to selected simulations</button></div></details>}
-        <p className="text-[10px] text-zinc-500">Publishing creates an immutable revision. Applying it changes only the selected saved configurations; previous execution results retain their original geometry.</p>
+        <button className={button} disabled={locked} onClick={() => act(() => newSimulation('openfast'))}>New OpenFAST simulation</button>
+      </div>
+      <p className="m-0 text-xs leading-relaxed text-nv-muted">New keeps the selected geometry and resets analysis settings to defaults. Duplicate copies the current configuration, including unsaved edits.</p>
+    </>)}
+    {portal('menu', <>
+      <span aria-hidden="true" className="mx-1.5 my-1 h-px bg-nv-edge" />
+      <button className={menuItem} disabled={!project || locked} onClick={() => act(() => download(`/v2/projects/${project.id}/archive`, `${project.name}.nova`))}>Export saved project .nova</button>
+      <label className={`${menuItem} cursor-pointer`}>Open .nova<input aria-label="Open .nova" type="file" accept=".nova" disabled={locked} className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file) act(() => importArchive(file)); e.target.value = ''; }} /></label>
+    </>)}
+    {portal('explorer', <ProjectExplorer key={project?.id || 'draft'} project={project} simulations={simulations} geometries={geometries} assets={assets.filter((a) => referencedAssets.has(a.id))} runs={projectRuns}
+      simulationId={simulation?.id} geometryId={geometry?.id} selectedPolar={assetId} locked={locked} onSimulation={(s) => act(() => openSimulation(s))} onGeometry={(id) => act(() => chooseGeometry(id))} onRun={(r) => act(() => openExecution(r))} onStudies={() => onShowStudies?.()}
+      onUsePolar={(a) => { if (a.airfoil !== inputs.airfoil) setError('These polars belong to a different airfoil; select matching geometry first.'); else { setAssetId(a.id); setMessage(`Selected polars: ${a.filename}`); } }} />)}
+    {guard && createPortal(<div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6"><div role="dialog" aria-modal="true" aria-labelledby="unsaved-title" className="max-w-md space-y-4 rounded-xl border border-nv-edge bg-nv-panel p-6">
+      <h2 id="unsaved-title" className="m-0 text-lg">Unsaved simulation changes</h2><p className="text-[13px] text-nv-muted">Save the current draft, discard its changes, or keep editing.</p>
+      <div className="flex flex-wrap gap-2"><button className={button} disabled={guardSaving} onClick={() => decide('save')}>Save changes</button><button className={button} disabled={guardSaving} onClick={() => decide('discard')}>Discard changes</button><button className={button} disabled={guardSaving} onClick={() => decide('cancel')}>Keep editing</button></div>
+      {error && <p role="alert" className="text-xs text-nv-err-ink">{error}</p>}
+    </div></div>, document.body)}
+    {!external && portal('revision', <>
+      <label className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3 text-[13px] text-nv-muted">Revision
+        <select aria-label="Geometry revision" className={field} value={geometry?.id || ''} disabled={locked || !project} onChange={(e) => act(() => chooseGeometry(e.target.value))}><option value="">Unpublished draft</option>{geometries.map((g) => <option key={g.id} value={g.id}>{g.name} · r{g.geometry_revision}</option>)}</select></label>
+      {geometryEdited && <p className="m-0 text-xs leading-relaxed text-nv-warn-ink">Edits are not published yet. Save or Run publishes a revision for this simulation only; other simulations keep their geometry.</p>}
+      <label className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3 text-[13px] text-nv-muted">Name<input aria-label="Geometry name" className={field} value={geometryName} onChange={(e) => setGeometryName(e.target.value)} /></label>
+      <button className={button} disabled={locked} onClick={() => act(publishGeometry)}>Publish geometry revision</button>
+      {geometry && simulations.length > 0 && <details className="text-[13px]"><summary className="cursor-pointer py-1 text-nv-reference">Apply revision to saved simulations</summary><div className="mt-2 flex flex-col gap-2">{simulations.filter((item) => !item.kind || item.kind === 'propeller').map((item) => <label key={item.id} className="flex items-center gap-2 text-[13px]"><input aria-label={`Adopt geometry for ${item.name}`} type="checkbox" className="accent-nv-accent" checked={adoption.includes(item.id)} onChange={(e) => { const checked = e.target.checked; setAdoption((ids) => checked ? [...new Set([...ids, item.id])] : ids.filter((id) => id !== item.id)); }} />{item.name} <span className="text-nv-muted">· now r{item.geometry_revision || '—'}</span></label>)}<button className={button} disabled={locked || !adoption.length} onClick={() => act(adoptGeometry)}>Apply to selected simulations</button></div></details>}
+      <p className="m-0 text-xs leading-relaxed text-nv-muted">Publishing creates an immutable revision. Applying it changes only the selected simulations; earlier results keep their original geometry.</p>
+    </>)}
+    {!external && portal('data', <>
+      <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Aerodynamic data<select className={field} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+        <option value="">Select polar asset…</option>{assets.filter((a) => a.airfoil === inputs.airfoil).map((a) => <option key={a.id} value={a.id}>{a.filename}{a.demonstration ? ' — demonstration only' : ''}</option>)}</select></label>
+      {selectedAsset?.demonstration && <p className="m-0 text-xs leading-relaxed text-nv-warn-ink">Demonstration data. Results are not physically meaningful.</p>}
+      {!assetId && <p className="m-0 text-xs leading-relaxed text-nv-warn-ink">BEMT needs polars: import data or explicitly choose the demonstration set.</p>}
+      <div className="grid grid-cols-1 gap-2">
+        <label className={`${button} cursor-pointer text-center`}>Import polars<input type="file" accept=".csv,.txt,.pol,.dat" className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file) act(() => importFile(file)); e.target.value = ''; }} /></label>
+        <button className={button} onClick={() => act(async () => { const asset = await request('/v1/assets/demonstration-polar', { airfoil: inputs.airfoil });
+          setAssetId(asset.id); await refresh(); })}>Use synthetic demonstration</button>
+      </div>
+      <label className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3 text-[13px] text-nv-muted">Default Re<input aria-label="Reynolds number if absent from file" className={`${field} font-mono`} type="number" value={reynolds} onChange={(e) => setReynolds(e.target.value)} /></label>
+      <p className="m-0 text-xs leading-relaxed text-nv-muted">Used when the file has no Reynolds column. CSV headers: reynolds, alpha_deg, cl, cd; optional mach, ncrit, cm. XFOIL headers are read automatically. DAT coordinates are imported in Library.</p>
+      {preview && <div className="rounded-lg border border-nv-edge p-3 text-[13px]"><div>{preview.parsed.points.length} points · Mach {preview.parsed.mach} · Ncrit {preview.parsed.ncrit}</div>
+        <button className={`${button} mt-2`} onClick={() => act(async () => { const asset = await request('/v1/assets/import-polar', { ...preview.document, commit: true }); setAssetId(asset.id); setPreview(null); await refresh(); })}>Confirm import</button></div>}
+      {[['air_density_kg_m3', 'Air density', 'kg/m³', 'Density [kg/m³]'], ['air_viscosity_pa_s', 'Viscosity', 'Pa·s', 'Viscosity [Pa·s]']].map(([key, label, unit, ariaLabel]) =>
+        <label key={key} className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3 text-[13px] text-nv-muted">{label}
+          <span className="flex h-[34px] items-center gap-1.5 rounded-md border border-nv-edge bg-nv-chrome px-2.5 focus-within:border-nv-accent"><input aria-label={ariaLabel} type="number" step="any" className="h-8 min-w-0 flex-1 bg-transparent font-mono text-[13px] text-nv-ink outline-none" value={conditions[key]} onChange={(e) => setConditions((c) => ({ ...c, [key]: Number(e.target.value) }))} /><span className="text-xs">{unit}</span></span></label>)}
+      <p className="m-0 text-xs leading-relaxed text-nv-muted">Static (hover) axial analysis. Coordinate lofting does not assign spanwise polars. Imported polars use disclosed endpoint clipping.</p>
+    </>)}
+    {portal('graphSide', <>
+      {!external && <>
+        <h2 className="m-0 text-[13px] font-semibold">Selected block</h2>
+        {chosen ? <p className="m-0 text-[13px] text-nv-muted">{chosen.id} · {chosen.type}</p> : <p className="m-0 text-[13px] text-nv-muted">Select a block to inspect its settings.</p>}
+        {chosen?.type === 'analysis' && editable && <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Solver<select className={field} aria-label="Node solver" value={chosen.config.model} onChange={(e) => updateConfig({ ...chosen.config, model: e.target.value })}>
+          {['bemt', 'llt', 'vlm', 'bem'].map((id) => <option key={id}>{id}</option>)}</select></label>}
       </>}
-    </div>
-    }
-    {!external && !showData && assetId && <p className="truncate text-[10px] text-zinc-500" title={assets.find((a) => a.id === assetId)?.filename}>Polars: {assets.find((a) => a.id === assetId)?.filename || 'Selected asset'}</p>}
-    {!external && showData && <div className="space-y-3 border-t border-zinc-800 pt-4">
-    <h3 className="text-xs font-medium text-zinc-300">Analysis inputs</h3>
-    <label className="block text-xs text-zinc-400">Aerodynamic data<select className={`${field} mt-1`} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-      <option value="">Select polar asset…</option>{assets.filter((a) => a.airfoil === inputs.airfoil).map((a) => <option key={a.id} value={a.id}>{a.filename}{a.demonstration ? ' — demonstration only' : ''}</option>)}</select></label>
-    <div className="flex flex-wrap gap-2">
-      <label className={button}>Import polars<input type="file" accept=".csv,.txt,.pol,.dat" className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file) act(() => importFile(file)); e.target.value = ''; }} /></label>
-      <button className={button} onClick={() => act(async () => { const asset = await request('/v1/assets/demonstration-polar', { airfoil: inputs.airfoil });
-        setAssetId(asset.id); await refresh(); })}>Use synthetic demonstration</button>
-    </div>
-    <label className="block text-xs text-zinc-400">Reynolds number if absent from file<input className={`${field} mt-1`} type="number" value={reynolds} onChange={(e) => setReynolds(e.target.value)} /></label>
-    <p className="text-[10px] text-zinc-500">CSV headers: reynolds, alpha_deg, cl, cd; optional mach, ncrit, cm. XFOIL headers are read automatically. DAT coordinates are imported in Database.</p>
-    {preview && <div className="rounded border border-zinc-700 p-3 text-xs"><div>{preview.parsed.points.length} points · Mach {preview.parsed.mach} · Ncrit {preview.parsed.ncrit}</div>
-      <button className={`${button} mt-2`} onClick={() => act(async () => { const asset = await request('/v1/assets/import-polar', { ...preview.document, commit: true }); setAssetId(asset.id); setPreview(null); await refresh(); })}>Confirm import</button></div>}
-    <div className="grid grid-cols-2 gap-2">{[['air_density_kg_m3', 'Density [kg/m³]'], ['air_viscosity_pa_s', 'Viscosity [Pa·s]']].map(([key, label]) =>
-      <label key={key} className="text-xs text-zinc-400">{label}<input type="number" step="any" className={`${field} mt-1`} value={conditions[key]} onChange={(e) => setConditions((c) => ({ ...c, [key]: Number(e.target.value) }))} /></label>)}</div>
-    <p className="text-[10px] text-zinc-500">Static axial analysis. Coordinate lofting does not assign spanwise polars. Imported polars use disclosed endpoint clipping.</p>
-    </div>}
-    {!external && showGraph && <div className="space-y-3 border-t border-zinc-800 pt-4">
-      <h3 className="text-xs font-medium text-zinc-300">Selected node</h3>
-      {chosen ? <p className="text-xs text-zinc-400">{chosen.id} · {chosen.type}</p> : <p className="text-xs text-zinc-500">Select a block to inspect its settings.</p>}
-      {chosen?.type === 'analysis' && editable && <label className="block text-xs text-zinc-400">Solver<select className={`${field} mt-1`} aria-label="Node solver" value={chosen.config.model} onChange={(e) => updateConfig({ ...chosen.config, model: e.target.value })}>
-        {['bemt', 'llt', 'vlm', 'bem'].map((id) => <option key={id}>{id}</option>)}</select></label>}
-    </div>}
-    {!external && showGraph && graphTarget && createPortal(<div className="flex h-full min-h-[600px] min-w-0 flex-col lg:min-h-0">
-      <div className="shrink-0 space-y-3 border-b border-zinc-800 bg-zinc-950 px-5 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-medium">Execution graph</h2>
-          <p className="mt-1 text-xs text-zinc-500">{editable ? 'Customized workflow · connect and configure blocks' : 'Default workflow · customize to edit'}</p></div>
+      {external && <>
+        <h2 className="m-0 text-[13px] font-semibold">{kind === 'pywake' ? 'Wind farm · PyWake' : 'Aeroelastic turbine · OpenFAST'}</h2>
+        <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Execution environment<select aria-label="Simulation execution environment" className={field} value={integrationId} onFocus={() => backendRequest('/v1/integrations').then(setIntegrations).catch((e) => setError(e.message))} onChange={(e) => setIntegrationId(e.target.value)}><option value="">Select configured environment…</option>{integrations.filter((i) => (i.adapter_id || i.adapter) === kind).map((i) => <option key={i.id} value={i.id}>{i.name || i.id}</option>)}</select></label>
+        <p className="m-0 text-xs leading-relaxed text-nv-muted">Configure execution environments in Integrations. Save preserves this case in the project; Run saves changes before execution.</p>
+      </>}
+    </>)}
+    {!external && portal('graph', <div className="flex h-full min-h-[600px] min-w-0 flex-col lg:min-h-0">
+      <div className="shrink-0 space-y-3 border-b border-nv-line px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-[15px] font-semibold">Execution graph</h2>
+          <p className="m-0 mt-1 text-[13px] text-nv-muted">{editable ? 'Customized workflow · connect and configure blocks' : 'Default workflow · customize to edit'}</p></div>
         <div className="flex flex-wrap gap-2"><button className={button} disabled={locked || !workflow || editable} onClick={() => act(async () => { setWorkflow(await request('/v1/workflows/clone', configuredWorkflow())); setMessage('Independent workflow copy created'); })}>Customize workflow</button>
         <button className={button} onClick={() => act(async () => { const result = await request('/v1/workflows/validate', configuredWorkflow()); setValidation(result); })}>Validate</button>
-</div></div>
-        {editable && <details className="relative"><summary className={`${button} inline-block cursor-pointer`}>Add block</summary><div className="mt-2 flex flex-wrap gap-2">{['analysis', 'collect', 'export'].map((type) => <button key={type} className={button} disabled={locked} onClick={(e) => { setWorkflow((w) => ({ ...w, nodes: [...w.nodes, { id: `${type}-${crypto.randomUUID().slice(0, 8)}`, type, config: type === 'analysis' ? { model: 'bemt' } : {}, position: { x: 300, y: 250 } }] })); e.currentTarget.closest('details').open = false; }}>Add {type}</button>)}</div></details>}
-        {!validation && <p className="text-xs text-zinc-500">Checking workflow…</p>}
-        {validation && <details><summary className={`cursor-pointer text-xs ${validation.valid ? 'text-emerald-400' : 'text-amber-400'}`}>{validation.valid ? `Valid · ${validation.guided_compatible ? 'Guided compatible' : 'Advanced workflow'}` : 'Workflow needs attention'}</summary><p className="mt-2 text-xs text-zinc-400">{validation.error || `Execution order: ${validation.order.join(' → ')}`}</p></details>}
+        </div></div>
+        {editable && <details className="relative"><summary className={`${button} inline-flex cursor-pointer`}>Add block</summary><div className="mt-2 flex flex-wrap gap-2">{['analysis', 'collect', 'export'].map((type) => <button key={type} className={button} disabled={locked} onClick={(e) => { setWorkflow((w) => ({ ...w, nodes: [...w.nodes, { id: `${type}-${crypto.randomUUID().slice(0, 8)}`, type, config: type === 'analysis' ? { model: 'bemt' } : {}, position: { x: 300, y: 250 } }] })); e.currentTarget.closest('details').open = false; }}>Add {type}</button>)}</div></details>}
+        {!validation && <p className="m-0 text-[13px] text-nv-muted">Checking workflow…</p>}
+        {validation && <details><summary className={`cursor-pointer text-[13px] ${validation.valid ? 'text-nv-ok-ink' : 'text-nv-warn-ink'}`}>{validation.valid ? `Valid · ${validation.guided_compatible ? 'Guided compatible' : 'Advanced workflow'}` : 'Workflow needs attention'}</summary><p className="mt-2 text-[13px] text-nv-muted">{validation.error || `Execution order: ${validation.order.join(' → ')}`}</p></details>}
       </div>
-      <div aria-label="Workflow canvas" className="min-h-[440px] min-w-0 flex-1 bg-[#08080a] lg:min-h-0"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView colorMode="dark" minZoom={.15} maxZoom={2}
+      <div aria-label="Workflow canvas" className="min-h-[440px] min-w-0 flex-1 bg-nv-canvas lg:min-h-0"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView colorMode="dark" minZoom={.15} maxZoom={2}
         deleteKeyCode={editable ? ['Backspace', 'Delete'] : null} nodesDraggable={Boolean(editable)} nodesConnectable={Boolean(editable)} edgesReconnectable={false}
         onNodeClick={(_, n) => setSelected(n.id)}
         onNodeDragStop={(_, node) => setWorkflow((w) => ({ ...w, nodes: w.nodes.map((n) => n.id === node.id ? { ...n, position: node.position } : n) }))}
         onConnect={(c) => setWorkflow((w) => ({ ...w, edges: [...w.edges, { source: c.source, source_port: c.sourceHandle, target: c.target, target_port: c.targetHandle }] }))}
         onEdgesDelete={(deleted) => editable && setWorkflow((w) => ({ ...w, edges: w.edges.filter((_, i) => !deleted.some((e) => e.id === String(i))) }))}
         onNodesDelete={(deleted) => editable && setWorkflow((w) => ({ ...w, nodes: w.nodes.filter((n) => !deleted.some((d) => d.id === n.id)), edges: w.edges.filter((e) => !deleted.some((d) => [e.source, e.target].includes(d.id))) }))}>
-        <Background /><Controls /></ReactFlow></div>
-    </div>, graphTarget)}
-    {external && <div className="space-y-3 border-t border-zinc-800 pt-3">
-      <p className="text-xs">{kind === 'pywake' ? 'Wind farm · PyWake' : 'Aeroelastic turbine · OpenFAST'}</p>
-      <label className="block text-xs">Execution environment<select aria-label="Simulation execution environment" className={field} value={integrationId} onFocus={() => backendRequest('/v1/integrations').then(setIntegrations).catch((e) => setError(e.message))} onChange={(e) => setIntegrationId(e.target.value)}><option value="">Select configured environment…</option>{integrations.filter((i) => (i.adapter_id || i.adapter) === kind).map((i) => <option key={i.id} value={i.id}>{i.name || i.id}</option>)}</select></label>
-      <p className="text-xs text-zinc-500">Configure execution environments in Integrations. Save preserves this case in the project; Run saves changes before execution.</p>
-    </div>}
-    {external && showGraph && graphTarget && createPortal(<section className="h-full space-y-4 overflow-auto p-6">
-      <h2 className="text-lg">{simulationName} · {kind === 'pywake' ? 'PyWake wind farm' : 'OpenFAST turbine'}</h2>
-      <p className="text-sm text-zinc-400">Edit the case configuration below. Distances use metres, wind speeds m/s, power W and angles degrees. OpenFAST source files are frozen when saved.</p>
+        <Background color="#1C2027" /><Controls /></ReactFlow></div>
+    </div>)}
+    {external && portal('graph', <section className="h-full space-y-4 overflow-auto p-6">
+      <h2 className="m-0 text-lg">{simulationName} · {kind === 'pywake' ? 'PyWake wind farm' : 'OpenFAST turbine'}</h2>
+      <p className="text-[13px] text-nv-muted">Edit the case configuration below. Distances use metres, wind speeds m/s, power W and angles degrees. OpenFAST source files are frozen when saved.</p>
       <SimulationCaseEditor kind={kind} text={externalText} onChange={setExternalText} disabled={locked} />
       {activeRun?.external_job && <div className="space-y-3"><h3>Execution · {activeRun.state}</h3>{activeRun.result?.data ? (activeRun.result.adapter_id === 'pywake' ? <PyWakeResult data={activeRun.result.data} /> : <OpenFastResult data={activeRun.result.data} />) : <pre className="overflow-auto text-xs">{JSON.stringify({ error: activeRun.error, logs: activeRun.logs }, null, 2)}</pre>}{activeRun.state === 'succeeded' && <button className={button} onClick={() => act(() => download(`/v1/external-runs/${activeRun.id}/csv`, `${simulationName}.csv`))}>Export results CSV</button>}</div>}
-    </section>, graphTarget)}
-    {activeRun && <div className="rounded border border-zinc-700 p-3 text-xs"><p className="mb-2 text-zinc-400">{activeRun.simulation_name || 'Unassigned execution'} · {activeRun.optimization ? `optimization using ${activeRun.optimization.solver.toUpperCase()}` : modelNames(activeRun.workflow).map((m) => m.toUpperCase()).join(' + ')}</p><div>{activeRun.state} · {Math.round(activeRun.progress * 100)}%</div>
-      <details className="mt-2"><summary className="cursor-pointer text-xs text-zinc-500">Execution logs</summary><pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[10px] text-zinc-400">{(activeRun.logs || []).join('\n')}</pre></details>
-      {activeRun.state === 'succeeded' && !activeRun.optimization && !activeRun.study && !activeRun.external_job && <button className={`${button} mt-2`} onClick={() => act(() => download(`/v1/runs/${activeRun.id}/results.csv`, 'performance.csv'))}>Export CSV</button>}
-      {activeRun.diagnostics && <div>Residual: {activeRun.diagnostics.convergence?.residual}. Diagnostics retained in run history.</div>}</div>}
-    {message && <p className="text-xs text-emerald-400">{message}</p>}{error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-  </section>;
+    </section>)}
+    {activeRun && portal('run', <div className="flex flex-col gap-2 rounded-lg border border-nv-edge p-3.5 text-[13px]">
+      <p className="m-0 text-nv-muted">{activeRun.simulation_name || 'Unassigned execution'} · {activeRun.optimization ? `optimization using ${activeRun.optimization.solver.toUpperCase()}` : modelNames(activeRun.workflow).map((m) => m.toUpperCase()).join(' + ')}</p>
+      <div className="flex items-center gap-3"><span className="flex-1">{activeRun.state} · {Math.round(activeRun.progress * 100)}%</span>
+        {activeRun.state === 'succeeded' && !activeRun.optimization && !activeRun.study && !activeRun.external_job && <button className={button} onClick={() => act(() => download(`/v1/runs/${activeRun.id}/results.csv`, 'performance.csv'))}>Export CSV</button>}</div>
+      <div className="h-1 overflow-hidden rounded-full bg-nv-edge"><div className="h-full bg-nv-accent transition-all" style={{ width: `${Math.round(activeRun.progress * 100)}%` }} /></div>
+      {activeRun.diagnostics && <p className="m-0 text-xs text-nv-muted">Residual: {activeRun.diagnostics.convergence?.residual}. Diagnostics retained in run history.</p>}
+      <details><summary className="cursor-pointer text-xs text-nv-muted">Execution logs</summary><pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-nv-muted">{(activeRun.logs || []).join('\n')}</pre></details>
+    </div>)}
+    {portal('notices', <>
+      {message && <div role="status" className="flex items-start gap-3 rounded-lg border border-nv-ok/30 bg-nv-panel px-3.5 py-2.5 text-[13px] text-nv-ok-ink shadow-xl shadow-black/40"><span className="flex-1">{message}</span><button type="button" aria-label="Dismiss message" className="text-nv-muted hover:text-nv-ink" onClick={() => setMessage('')}>×</button></div>}
+      {error && <div role="alert" className="flex items-start gap-3 rounded-lg border border-nv-err/40 bg-nv-panel px-3.5 py-2.5 text-[13px] text-nv-err-ink shadow-xl shadow-black/40"><span className="flex-1">{error}</span><button type="button" aria-label="Dismiss error" className="text-nv-muted hover:text-nv-ink" onClick={() => setError('')}>×</button></div>}
+    </>)}
+  </>;
 });
 export default EngineeringWorkspace;

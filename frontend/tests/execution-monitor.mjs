@@ -24,7 +24,7 @@ try {
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   await page.getByRole('combobox', { name: 'Open saved project', exact: true }).selectOption(project.id);
   const context = page.locator('[aria-label="Project and simulation context"]');
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   let submissions = 0;
   let failedPolls = 0;
   let resumedPolls = 0;
@@ -44,10 +44,11 @@ try {
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   submitted = await (await response).json();
   assert.ok(['queued', 'running'].includes(submitted.state));
-  await context.getByRole('alert').filter({ hasText: 'Connection interrupted while monitoring the run. Retrying; the submitted job is unchanged.' }).waitFor();
+  await page.getByRole('alert').filter({ hasText: 'Connection interrupted while monitoring the run. Retrying; the submitted job is unchanged.' }).waitFor();
+  await page.getByRole('navigation', { name: 'Design stages' }).getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 30000 });
   const run = page.getByRole('button', { name: 'Run simulation', exact: true });
-  await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === 'Run simulation'); return Boolean(button && !button.disabled); });
+  await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === 'Run simulation'); return Boolean(button && !button.disabled); });
   assert.equal(await run.isEnabled(), true);
   assert.equal(await page.getByText('Connection interrupted while monitoring the run. Retrying; the submitted job is unchanged.', { exact: true }).count(), 0);
   assert.equal(submissions, 1, 'Monitoring retry must not submit another numerical execution');
@@ -59,9 +60,9 @@ try {
   assert.equal(persisted.result.analyses[0].model, 'llt');
   const projectRuns = (await (await page.request.get(`${api}/v1/runs`)).json()).filter((record) => record.project_id === project.id);
   assert.equal(projectRuns.length, 1);
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Results', exact: true }).click();
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Results', exact: true }).click();
   await page.getByText('Technical report', { exact: true }).waitFor();
-  await context.getByText(new RegExp(`Viewing LLT monitoring recovery.*LLT.*run ${submitted.id.slice(0, 8)}`)).waitFor();
+  await page.getByText(new RegExp(`Viewing LLT monitoring recovery.*LLT.*run ${submitted.id.slice(0, 8)}`)).waitFor();
   assert.deepEqual(errors, []);
   console.log('Native execution monitoring recovered after one HTTP 503: visible retry notice, one submission, successful same-run LLT result and unlocked controls.');
 } finally { await browser.close(); }

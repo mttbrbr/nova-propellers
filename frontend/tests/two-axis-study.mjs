@@ -28,8 +28,8 @@ try {
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   await page.getByRole('combobox', { name: 'Open saved project', exact: true }).selectOption(project.id);
   const context = page.locator('[aria-label="Project and simulation context"]');
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Studies', exact: true }).click();
+  await context.getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Studies', exact: true }).click();
   assert.equal(await page.getByRole('checkbox', { name: 'Use second sweep axis', exact: true }).isChecked(), false);
   assert.equal(await page.getByRole('combobox', { name: 'Second sweep parameter', exact: true }).count(), 0);
   await page.getByRole('textbox', { name: 'Sweep values', exact: true }).fill('4000, 5000');
@@ -77,26 +77,27 @@ try {
   const snapshotGeometry = page.waitForResponse((response) => response.url().endsWith(`/runs/${queued.id}/cases/3/stl`) && response.request().method() === 'GET');
   await grid.getByRole('button', { name: 'Inspect grid case 4', exact: true }).click();
   await page.getByText('Technical report', { exact: true }).waitFor();
-  await context.getByText(/Viewing LLT grid baseline.*5000 rpm/).waitFor();
-  await context.getByText(/air_density_kg_m3.*1\.225/).waitFor();
+  await page.getByText(/Viewing LLT grid baseline.*5000 rpm/).waitFor();
+  await page.getByText(/air_density_kg_m3.*1\.225/).waitFor();
   const geometryResponse = await snapshotGeometry;
   assert.equal(geometryResponse.ok(), true);
   assert.ok(geometryResponse.headers()['content-type']?.includes('model/stl'));
   const exactGeometry = await page.request.get(`${api}/v1/runs/${queued.id}/cases/3/stl`);
   assert.equal(exactGeometry.ok(), true);
   assert.ok((await exactGeometry.body()).length > 84);
+  // The project explorer lives in Analysis (and Workflow) next to the execution history.
+  await page.getByRole('navigation', { name: 'Design stages' }).getByRole('button', { name: 'Analysis', exact: true }).click();
   const explorer = page.locator('[aria-label="Project explorer"]');
   await explorer.getByRole('textbox', { name: 'Search project explorer', exact: true }).fill('LLT grid baseline');
   await explorer.getByRole('button', { name: 'Open simulation LLT grid baseline', exact: true }).waitFor();
   await explorer.getByRole('button', { name: `View execution ${queued.id}`, exact: true }).waitFor();
   // The tree opens the current source configuration independently from its earlier frozen study.
   await explorer.getByRole('button', { name: 'Open simulation LLT grid baseline', exact: true }).click();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   await explorer.getByRole('button', { name: `View execution ${queued.id}`, exact: true }).click();
   await page.getByRole('region', { name: 'Two-axis study grid', exact: true }).getByRole('button', { name: 'Inspect grid case 4', exact: true }).waitFor();
   assert.equal(await page.getByRole('region', { name: 'Two-axis study grid', exact: true }).getByRole('button', { name: /^Inspect grid case / }).count(), 4);
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Workflow', exact: true }).click();
-  await page.getByRole('complementary', { name: 'Project controls' }).evaluate((panel) => { panel.scrollTop = 0; });
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Workflow', exact: true }).click();
   await page.screenshot({ path: fileURLToPath(new URL('explorer-workflow-1440.png', screenshots)), animations: 'disabled' });
   assert.deepEqual(errors, []);
   console.log('Real LLT 2×2 study passed: optional axes, normalized grid and CSV, frozen inputs/conditions, exact-case geometry and both-axis report context.');

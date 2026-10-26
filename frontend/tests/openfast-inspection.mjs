@@ -24,7 +24,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => { if (request.method() === 'POST' && (/\/adapters\/openfast\/(probe|configure)$/.test(request.url()) || request.url().endsWith('/external-runs'))) executableRequests += 1; });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Integrations', exact: true }).click();
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Integrations', exact: true }).click();
   await page.getByRole('combobox', { name: 'External adapter', exact: true }).selectOption('openfast');
   await page.getByRole('textbox', { name: 'Case directory', exact: true }).fill(directory);
   await page.getByRole('textbox', { name: 'Input .fst file (relative to case)', exact: true }).fill('main.fst');

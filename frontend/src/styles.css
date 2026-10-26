@@ -14,11 +14,25 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #09090b;
+  background: #0B0D10;
+  color: #E6E8EB;
+  font-size: 13px;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #4CC9F0;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 }

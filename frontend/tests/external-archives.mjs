@@ -19,7 +19,7 @@ try {
   const source = Buffer.from('NOVA archive browser fixture\nTime GenPwr\n(s) (kW)\n0 10\n1 20\n');
   const imported = await post('/v1/openfast/import', { filename: 'portable.out', content_base64: source.toString('base64') });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  const navigation = page.getByRole('navigation', { name: 'Workspace navigation' });
+  const navigation = page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ });
   await navigation.getByRole('button', { name: 'Integrations', exact: true }).click();
   const history = page.getByRole('combobox', { name: 'Saved external run', exact: true });
   await history.locator(`option[value="${imported.id}"]`).waitFor({ state: 'attached' });

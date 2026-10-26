@@ -1,0 +1,82 @@
+import { ChevronDown, Ellipsis, Loader2, Play, Save, Square } from 'lucide-react';
+import { Button, IconButton, MenuItem, Popover, StatusDot } from '../ui/controls.jsx';
+
+export const stages = [
+  { id: 'sizing', label: 'Sizing', key: '1' },
+  { id: 'geometry', label: 'Geometry', key: '2' },
+  { id: 'analysis', label: 'Analysis', key: '3' },
+  { id: 'results', label: 'Results', key: '4' },
+];
+
+function Logo() {
+  return <div className="flex items-center gap-2.5">
+    <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true"><g fill="none" stroke="#4CC9F0" strokeWidth="1.6" strokeLinecap="round">
+      {[0, 120, 240].map((angle) => <path key={angle} d="M12 12 C 13 6, 16 3, 19 3 C 19 6, 16 9, 12 12" transform={`rotate(${angle} 12 12)`} />)}
+    </g><circle cx="12" cy="12" r="2" fill="#4CC9F0" /></svg>
+    <span className="font-semibold tracking-[0.22em]">NOVA</span>
+  </div>;
+}
+
+export function StageStepper({ phase, onNavigate, guidedCompatible, completed }) {
+  return <nav aria-label="Design stages" className="flex min-w-0 justify-center">
+    <ol className="m-0 flex list-none items-center gap-0.5 p-0">
+      {stages.map((stage, index) => {
+        const current = phase === stage.id;
+        const blocked = !guidedCompatible && index < 3;
+        return <li key={stage.id}><button type="button" aria-current={current ? 'step' : undefined} disabled={blocked}
+          title={blocked ? 'This customized project uses the Workflow workspace' : `${stage.label} · Alt+${stage.key}`}
+          onClick={() => onNavigate(stage.id)}
+          className={`flex h-8 items-center gap-2 rounded-full px-3 text-[13px] transition disabled:cursor-not-allowed disabled:opacity-35 ${current ? 'bg-nv-hover text-nv-ink-strong' : 'text-nv-muted hover:text-nv-ink'}`}>
+          <span className={`font-mono ${current ? 'text-nv-accent' : completed?.[stage.id] ? 'text-nv-ok' : ''}`} aria-hidden="true">{completed?.[stage.id] && !current ? '✓' : index + 1}</span>{stage.label}
+        </button></li>;
+      })}
+    </ol>
+  </nav>;
+}
+
+const statusLabel = (context) => {
+  if (!context?.project) return ['warn', 'Unsaved draft'];
+  if (context.simulationStatus === 'modified') return ['warn', 'Unsaved changes'];
+  if (context.simulationStatus === 'saved') return ['ok', 'Saved'];
+  return ['warn', 'Draft'];
+};
+
+export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot, phase, onNavigate, guidedCompatible, completed,
+  onSave, saveDisabled, run, onRun, onCancel, runDisabled, onNewProject, onCloseProject, projectActionsDisabled }) {
+  const [tone, status] = statusLabel(context);
+  const models = context?.models?.map((m) => m.toUpperCase()).join(' + ');
+  const running = run && ['queued', 'running', 'cancelling'].includes(run.state);
+  return <header className="relative z-30 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-nv-line bg-nv-canvas py-2 pl-[18px] pr-3">
+    <Logo />
+    <div aria-label="Project and simulation context" role="group" className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+      <div ref={projectSlot} className="min-w-0 max-w-[220px]" />
+      <span className="text-nv-edge-strong" aria-hidden="true">/</span>
+      <div ref={simulationSlot} className="min-w-0 max-w-[220px]" />
+      <span className="ml-1 inline-flex items-center gap-1.5 text-xs text-nv-muted"><StatusDot tone={tone} />{status}</span>
+      {models && <span className="ml-2 rounded border border-nv-edge px-1.5 py-0.5 font-mono text-[11px] text-nv-reference" title="Configured models">{models}</span>}
+      <Popover label="Simulation options" width="w-[360px]" trigger={({ ref, open, toggle }) =>
+        <IconButton ref={ref} label="Simulation options" icon={ChevronDown} active={open} aria-expanded={open} onClick={toggle} />}>
+        <div ref={manageSlot} className="flex flex-col gap-3 p-4" />
+      </Popover>
+    </div>
+    <div className="order-last w-full min-w-0 overflow-x-auto xl:order-none xl:w-auto xl:flex-1"><StageStepper phase={phase} onNavigate={onNavigate} guidedCompatible={guidedCompatible} completed={completed} /></div>
+    <div className="ml-auto flex items-center gap-1">
+      {running && <span role="status" className="mr-2 hidden items-center gap-2 text-xs text-nv-warn-ink sm:inline-flex"><Loader2 size={14} className="animate-spin" aria-hidden="true" />
+        {run.external_job ? 'External analysis' : run.comparison ? 'Comparison' : run.study ? 'Study' : run.optimization ? 'Optimization' : 'Simulation'} · {run.state}{Number.isFinite(run.progress) ? ` · ${Math.round(run.progress * 100)}%` : ''}</span>}
+      <IconButton label="Save" shortcut="Ctrl+S" icon={Save} badge={Boolean(context?.dirty)} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Control+S" />
+      <Popover label="More actions" align="right" width="w-72" trigger={({ ref, open, toggle }) =>
+        <IconButton ref={ref} label="More actions" icon={Ellipsis} active={open} aria-expanded={open} onClick={toggle} />}>
+        {(close) => <div className="flex flex-col p-1.5" onClick={(event) => { if (event.target.closest('button')) close(); }}>
+          <p className="m-0 px-2.5 pb-1 pt-1.5 text-xs text-nv-muted">Project</p>
+          <MenuItem disabled={projectActionsDisabled} onClick={onNewProject}>New project</MenuItem>
+          <MenuItem disabled={projectActionsDisabled || !context?.project} onClick={onCloseProject}>Close project</MenuItem>
+          <div ref={menuSlot} className="flex flex-col" />
+        </div>}
+      </Popover>
+      {running
+        ? <Button variant="secondary" className="ml-1.5" onClick={onCancel} disabled={run.state === 'cancelling'}><Square size={13} aria-hidden="true" />Cancel</Button>
+        : <Button variant="primary" className="ml-1.5" aria-label="Run simulation" aria-keyshortcuts="Control+Enter" title="Run simulation · Ctrl+Enter" disabled={runDisabled} onClick={onRun}>
+          <Play size={14} fill="currentColor" aria-hidden="true" />Run</Button>}
+    </div>
+  </header>;
+}

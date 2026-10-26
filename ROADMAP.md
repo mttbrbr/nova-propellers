@@ -31,6 +31,11 @@ Only a solver that passes the declared reference thresholds may move from
 - Operating-envelope sweeps and performance maps.
 - Traceable reports and CSV exports.
 - Design comparison, manufacturability checks and constrained optimization.
+- Planform shaping beyond chord and twist: user-defined sweep (scimitar
+  blades) and canted or swept tips (winglet-like). Today the STL mesh applies
+  only a fixed cosmetic offset of 0.035·R·sin(π·span) and no solver accounts
+  for sweep, so this needs geometry parameters, mesh support and solver
+  treatment (or an explicit "not modelled" warning) together.
 
 ## v1.0 and later
 
