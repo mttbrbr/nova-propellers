@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
       - run: python tools/check_licenses.py
       - run: python tools/check_source_archive.py
-      - uses: fsfe/reuse-action@v5
+      - uses: fsfe/reuse-action@v6
 
   backend:
     runs-on: ubuntu-latest
