@@ -93,6 +93,8 @@ def build_canonical_geometry(
     else:
         raise ValueError(f"Unsupported geometry method: {method}")
 
+    clipped_chord_stations = int(np.count_nonzero((chord < spec.diameter * .012) | (chord > spec.diameter * .16)))
+    clipped_twist_stations = int(np.count_nonzero((twist_deg < 2) | (twist_deg > 45)))
     chord = np.clip(chord, spec.diameter * 0.012, spec.diameter * 0.16)
     twist_deg = np.clip(twist_deg, 2.0, 45.0)
     airfoil = AIRFOILS.get(spec.airfoil, AIRFOILS["NACA 4412"])
@@ -101,13 +103,16 @@ def build_canonical_geometry(
         "propeller_type": "traditional",
         "method": method,
         "parameters": normalized_parameters,
+        "constraints": {"chord_limits_m": [spec.diameter * .012, spec.diameter * .16],
+                        "twist_limits_deg": [2., 45.], "clipped_chord_stations": clipped_chord_stations,
+                        "clipped_twist_stations": clipped_twist_stations},
         "diameter_m": spec.diameter,
         "blades": spec.blades,
         "airfoil": spec.airfoil,
         "stations": [
             {
                 "r_over_R": round(float(fractions[index]), 6),
-                "radius_m": round(float(radii[index]), 7),
+                "radius_m": min(round(float(radii[index]), 7), radius),
                 "chord_m": round(float(chord[index]), 7),
                 "twist_deg": round(float(twist_deg[index]), 5),
                 "airfoil_m": airfoil["m"],
@@ -435,6 +440,7 @@ def _evaluate_bemt_arrays(
     relaxation_strategy: str = "fixed",
     low_re_strategy: str = "clip",
     max_tangential_induction_ratio: float = 0.75,
+    polar_provider=None,
 ) -> dict:
     """Evaluate an axial-flow propeller with blade-element/momentum theory.
 
@@ -445,6 +451,11 @@ def _evaluate_bemt_arrays(
     """
     radius = spec.diameter / 2.0
     omega = 2.0 * pi * spec.rpm / 60.0
+    if not np.all(np.isfinite([spec.rpm, axial_velocity, air_density, air_viscosity,
+                              tolerance, relaxation_factor])):
+        raise ValueError("BEMT inputs must be finite")
+    if max_iterations < 1 or tolerance <= 0:
+        raise ValueError("BEMT requires positive iteration budget and tolerance")
     if omega <= 0 or axial_velocity < 0 or air_density <= 0 or air_viscosity <= 0:
         raise ValueError("BEMT requires positive RPM and fluid properties, with non-negative axial velocity")
     if not 0 < relaxation_factor <= 1:
@@ -470,7 +481,8 @@ def _evaluate_bemt_arrays(
         phi = np.arctan2(axial, np.maximum(tangential, 1e-6))
         alpha = twist - phi
         reynolds = air_density * relative_velocity * chord / air_viscosity
-        cl, cd = _polar_coefficients(spec, alpha, reynolds, low_re_strategy)
+        cl, cd = (polar_provider(np.degrees(alpha), reynolds, low_re_strategy)
+                  if polar_provider else _polar_coefficients(spec, alpha, reynolds, low_re_strategy))
         cn = cl * np.cos(phi) - cd * np.sin(phi)
         ct = cl * np.sin(phi) + cd * np.cos(phi)
         loss = _prandtl_loss(spec.blades, radii, radius, phi)
@@ -521,9 +533,9 @@ def _evaluate_bemt_arrays(
             limiting_index = int(np.argmax(tangential_residuals)) + 1
         limiting_alpha_deg = float(np.degrees(alpha[limiting_index]))
         limiting_reynolds = float(reynolds[limiting_index])
-        polar_context = _polar_grid_context(
-            limiting_alpha_deg, limiting_reynolds, low_re_strategy
-        )
+        polar_context = (polar_provider.context(limiting_alpha_deg, limiting_reynolds)
+                         if polar_provider and hasattr(polar_provider, "context") else
+                         _polar_grid_context(limiting_alpha_deg, limiting_reynolds, low_re_strategy))
         residual_history.append(
             {
                 "iteration": iteration,
@@ -565,7 +577,8 @@ def _evaluate_bemt_arrays(
     alpha = twist - phi
     alpha_deg = np.degrees(alpha)
     reynolds = air_density * relative_velocity * chord / air_viscosity
-    cl, cd = _polar_coefficients(spec, alpha, reynolds, low_re_strategy)
+    cl, cd = (polar_provider(np.degrees(alpha), reynolds, low_re_strategy)
+              if polar_provider else _polar_coefficients(spec, alpha, reynolds, low_re_strategy))
     loss = _prandtl_loss(spec.blades, radii, radius, phi)
     dr = np.gradient(radii)
 

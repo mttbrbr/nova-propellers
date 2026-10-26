@@ -1,11 +1,12 @@
 import os
+import secrets
 from io import BytesIO
 from typing import Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from airfoil_management import AirfoilLoft, AirfoilManager
@@ -29,20 +30,22 @@ from database import (
 )
 from geometry_engine import (
     AIR_DENSITY,
-    PropellerSpec,
-    build_canonical_geometry,
     generate_mesh_from_geometry,
 )
 from inverse_design import (
-    BezierBladeGeometry,
-    BezierControlPoints,
-    GeometryConstraints,
-    GeometryData,
-    InverseDesignOptimizer,
-    create_solver,
     list_methods,
 )
-from validation import CanonicalSolverResult
+from nova.application.analysis import run_propeller_analysis
+from nova.application.geometry import create_propeller_geometry
+from nova.application.optimization import run_inverse_design
+from nova.core.design import GeometryRequest, InverseDesignRequest
+from nova.infrastructure import jobs, library
+from nova.transport.api import router as nova_router
+from nova.transport.external_api import router as external_router
+from nova.transport.external_archive_api import router as external_archive_router
+from nova.transport.external_case_api import router as external_case_router
+from nova.transport.simulation_api import router as simulation_router
+from nova.transport.mixed_api import router as mixed_router
 
 
 class AirfoilCreate(BaseModel):
@@ -79,17 +82,6 @@ class SizingRequest(BaseModel):
     disk_loading: float = Field(..., gt=1, le=5000, description="Target disk loading in N/m²")
 
 
-class GeometryRequest(BaseModel):
-    project_name: str = Field("Untitled propeller", max_length=120)
-    propeller_type: Literal["traditional", "toroidal"] = "traditional"
-    thrust_target: float = Field(..., gt=0, le=200)
-    rpm: float = Field(..., gt=0, le=60000)
-    diameter: float = Field(..., gt=0.02, le=2.0)
-    blades: int = Field(..., ge=2, le=8)
-    airfoil: str = Field("NACA 4412", max_length=80)
-    geometry_method: Literal["bezier", "laguerre"]
-    geometry_parameters: dict = Field(default_factory=dict)
-    airfoil_assignments: list[dict] = Field(default_factory=list)
 
 
 class AnalysisRequest(BaseModel):
@@ -105,20 +97,6 @@ class ProjectBundleSave(BaseModel):
     analyses: list[dict] = Field(default_factory=list)
 
 
-class InverseDesignRequest(BaseModel):
-    target_thrust: float = Field(..., gt=0, le=200)
-    rpm: float = Field(..., gt=0, le=60000)
-    diameter: float = Field(..., gt=0.02, le=2.0)
-    blades: int = Field(..., ge=1, le=8)
-    airfoil: str = Field("NACA 4412", max_length=80)
-    solver: Literal["bemt", "llt", "vlm", "bem"] = "bemt"
-    chord_points: list[dict]
-    twist_points: list[dict]
-    min_chord_m: float = Field(0.003, gt=0)
-    max_chord_m: float | None = Field(None, gt=0)
-    min_twist_deg: float = Field(2.0, ge=-20, le=45)
-    max_twist_deg: float = Field(45.0, ge=0, le=80)
-    max_iterations: int = Field(180, ge=10, le=1000)
 
 
 class AirfoilDatImport(BaseModel):
@@ -145,6 +123,8 @@ app = FastAPI(
 @app.on_event("startup")
 def startup() -> None:
     init_database()
+    library.initialize()
+    jobs.start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -163,6 +143,15 @@ app.add_middleware(
         "X-Design-Method",
     ],
 )
+
+
+@app.middleware("http")
+async def authorize_desktop(request, call_next):
+    token = os.getenv("NOVA_SESSION_TOKEN")
+    if token and request.url.path != "/api/health" and request.method != "OPTIONS":
+        if not secrets.compare_digest(request.headers.get("X-Nova-Session", ""), token):
+            return JSONResponse({"detail": "Local session authorization required"}, status_code=401)
+    return await call_next(request)
 
 
 @app.get("/api/health")
@@ -259,7 +248,10 @@ def import_airfoil_dat(payload: AirfoilDatImport) -> dict:
                 }
             )
         detail = save_airfoil_coordinates(payload.name, profile.coordinates.tolist())
-        return {
+        asset = library.make_asset({"kind": "airfoil_geometry", "airfoil": payload.name,
+                                    "source": payload.content, "coordinates": profile.coordinates.tolist(),
+                                    "source_type": "dat", "notes": payload.notes})
+        return {"asset_id": asset["id"],
             "airfoil": detail,
             "point_count": len(profile.coordinates),
         }
@@ -303,16 +295,6 @@ def remove_propeller(run_id: int) -> dict:
     return {"deleted": run_id}
 
 
-def _geometry_to_spec(payload: GeometryRequest) -> PropellerSpec:
-    return PropellerSpec(
-        thrust_target=payload.thrust_target,
-        rpm=payload.rpm,
-        diameter=payload.diameter,
-        blades=payload.blades,
-        airfoil=payload.airfoil,
-    )
-
-
 def _build_airfoil_loft(assignments: list[dict]) -> AirfoilLoft:
     if len(assignments) < 2:
         raise ValueError("At least two airfoil stations are required")
@@ -329,17 +311,6 @@ def _build_airfoil_loft(assignments: list[dict]) -> AirfoilLoft:
             raise ValueError(f"{detail['name']} has no imported DAT coordinates")
         profiles[radial_fraction] = np.asarray(detail["coordinates"], dtype=float)
     return AirfoilLoft(profiles)
-
-
-def _apply_airfoil_loft(geometry: dict, assignments: list[dict]) -> dict:
-    if not assignments:
-        return geometry
-    loft = _build_airfoil_loft(assignments)
-    for station in geometry["stations"]:
-        section = loft.section(float(station["r_over_R"]), "linear")
-        station["airfoil_coordinates"] = np.round(section, 8).tolist()
-    geometry["airfoil_loft"] = assignments
-    return geometry
 
 
 @app.post("/api/sizing/actuator-disk")
@@ -362,10 +333,7 @@ def create_geometry(payload: GeometryRequest) -> dict:
     if payload.propeller_type != "traditional":
         raise HTTPException(status_code=501, detail="Toroidal geometry is planned but not available.")
     try:
-        geometry = build_canonical_geometry(
-            _geometry_to_spec(payload), payload.geometry_method, payload.geometry_parameters
-        )
-        geometry = _apply_airfoil_loft(geometry, payload.airfoil_assignments)
+        geometry = create_propeller_geometry(payload.model_dump())
         mesh = generate_mesh_from_geometry(geometry)
         return {
             "geometry": geometry,
@@ -384,10 +352,7 @@ def download_geometry(payload: GeometryRequest) -> Response:
     if payload.propeller_type != "traditional":
         raise HTTPException(status_code=501, detail="Toroidal geometry is planned but not available.")
     try:
-        geometry = build_canonical_geometry(
-            _geometry_to_spec(payload), payload.geometry_method, payload.geometry_parameters
-        )
-        geometry = _apply_airfoil_loft(geometry, payload.airfoil_assignments)
+        geometry = create_propeller_geometry(payload.model_dump())
         mesh = generate_mesh_from_geometry(geometry)
         buffer = BytesIO()
         mesh.export(buffer, file_type="stl")
@@ -403,77 +368,27 @@ def download_geometry(payload: GeometryRequest) -> Response:
     )
 
 
+def validate_geometry_inputs(inputs, geometry):
+    expected = create_propeller_geometry(inputs.model_dump())
+    if any(expected.get(key) != geometry.get(key) for key in ("diameter_m", "blades", "airfoil", "propeller_type")):
+        raise ValueError("Geometry belongs to a different input revision; regenerate it")
+    if len(expected["stations"]) != len(geometry.get("stations", [])):
+        raise ValueError("Geometry station count does not match inputs")
+    for left, right in zip(expected["stations"], geometry["stations"]):
+        for key in ("radius_m", "chord_m", "twist_deg"):
+            if not np.isclose(left[key], right[key], rtol=1e-7, atol=1e-9):
+                raise ValueError("Geometry belongs to a different input revision; regenerate it")
+
+
 @app.post("/api/analyses")
 def run_analysis(payload: AnalysisRequest) -> dict:
     try:
-        descriptor = next(item for item in list_methods() if item["id"] == payload.model)
-        if payload.inputs.propeller_type not in descriptor["suitable_for"]:
-            raise ValueError(
-                f"{descriptor['name']} does not support {payload.inputs.propeller_type} geometry"
-            )
-        geometry = GeometryData.from_dict(payload.geometry)
-        solver = create_solver(payload.model, target_thrust_n=payload.inputs.thrust_target)
-        detailed = solver.evaluate_detailed(geometry, payload.inputs.rpm)
-        performance = detailed["performance"]
-        convergence = detailed.get("convergence")
-        warnings = list(descriptor["warnings"])
-        if convergence and not convergence.get("converged", False):
-            warnings.append(
-                f"Solver did not converge: {convergence.get('termination_reason', 'unknown')} "
-                f"after {convergence.get('iterations', 'unknown')} iterations "
-                f"(residual={convergence.get('residual', 'unknown')})."
-            )
-        omega = 2.0 * np.pi * payload.inputs.rpm / 60.0
-        power_w = performance["torque"] * omega
-        result = CanonicalSolverResult(
-            schema_version="1.0",
-            model=payload.model,
-            method=descriptor["name"],
-            role=descriptor["role"],
-            fidelity=descriptor["fidelity"],
-            description=descriptor["description"],
-            solver={
-                "id": payload.model,
-                "version": app.version,
-                "fidelity": descriptor["fidelity"],
-            },
-            operating_point={
-                "rpm": payload.inputs.rpm,
-                "angular_velocity_rad_s": omega,
-                "air_density_kg_m3": getattr(solver, "rho", AIR_DENSITY),
-                "axial_velocity_m_s": getattr(solver, "axial_velocity", 0.0),
-            },
-            performance={
-                "thrust_n": performance["thrust"],
-                "torque_nm": performance["torque"],
-                "power_w": power_w,
-                "efficiency": performance["efficiency"],
-            },
-            units={
-                "thrust": "N",
-                "torque": "N*m",
-                "power": "W",
-                "efficiency": "dimensionless",
-            },
-            warnings=warnings,
-            convergence=convergence,
-            curve_source=detailed["curve_source"],
-            summary={
-                "target_thrust_n": round(payload.inputs.thrust_target, 4),
-                "estimated_thrust_n": round(performance["thrust"], 4),
-                "thrust_error_pct": round(
-                    100.0
-                    * (performance["thrust"] - payload.inputs.thrust_target)
-                    / payload.inputs.thrust_target,
-                    3,
-                ),
-                "torque_nm": round(performance["torque"], 6),
-                "power_w": round(performance["torque"] * omega, 4),
-                "efficiency": round(performance["efficiency"], 4),
-            },
-            stations=detailed["curves"],
+        validate_geometry_inputs(payload.inputs, payload.geometry)
+        return run_propeller_analysis(
+            model=payload.model, geometry_data=payload.geometry,
+            rpm=payload.inputs.rpm, target_thrust_n=payload.inputs.thrust_target,
+            propeller_type=payload.inputs.propeller_type, solver_version=app.version,
         )
-        return result.model_dump()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"{payload.model} analysis failed: {exc}") from exc
 
@@ -486,6 +401,7 @@ def computational_methods() -> list[dict]:
 @app.post("/api/projects")
 def save_project(payload: ProjectBundleSave) -> dict:
     try:
+        validate_geometry_inputs(payload.inputs, payload.geometry)
         mesh = generate_mesh_from_geometry(payload.geometry)
         buffer = BytesIO()
         mesh.export(buffer, file_type="stl")
@@ -504,61 +420,7 @@ def save_project(payload: ProjectBundleSave) -> dict:
 @app.post("/api/inverse-design")
 def inverse_design(payload: InverseDesignRequest) -> dict:
     try:
-        chord = np.array(
-            [[float(point["x"]), float(point["y"])] for point in payload.chord_points],
-            dtype=float,
-        )
-        twist = np.array(
-            [[float(point["x"]), float(point["y"])] for point in payload.twist_points],
-            dtype=float,
-        )
-        initial = BezierControlPoints(chord=chord, twist=twist)
-        parameterization = BezierBladeGeometry(
-            diameter_m=payload.diameter,
-            blades=payload.blades,
-            airfoil=payload.airfoil,
-            station_count=24 if payload.solver == "vlm" else 40,
-        )
-        max_chord = payload.max_chord_m or payload.diameter * 0.16
-        bounds = (
-            *((payload.min_chord_m, max_chord) for _ in range(len(chord))),
-            *((payload.min_twist_deg, payload.max_twist_deg) for _ in range(len(twist))),
-        )
-        solver = create_solver(payload.solver, target_thrust_n=payload.target_thrust)
-        initial_performance = solver.evaluate(parameterization.build(initial), payload.rpm)
-        optimizer = InverseDesignOptimizer(
-            solver=solver,
-            parameterization=parameterization,
-            initial_parameters=initial,
-            constraints=GeometryConstraints(
-                parameter_bounds=bounds,
-                min_chord_m=payload.min_chord_m,
-                max_chord_m=max_chord,
-                min_twist_deg=payload.min_twist_deg,
-                max_twist_deg=payload.max_twist_deg,
-            ),
-            options={"maxiter": payload.max_iterations},
-        )
-        result = optimizer.optimize(payload.target_thrust, payload.rpm)
-        optimized = result.parameters
-        return {
-            "success": result.success,
-            "message": result.message,
-            "iterations": result.iterations,
-            "loss": result.loss,
-            "solver": payload.solver,
-            "initial_performance": initial_performance,
-            "performance": result.performance,
-            "geometry_parameters": {
-                "chord_points": [
-                    {"x": float(x), "y": float(y)} for x, y in optimized.chord
-                ],
-                "twist_points": [
-                    {"x": float(x), "y": float(y)} for x, y in optimized.twist
-                ],
-            },
-            "geometry": result.geometry.to_dict(),
-        }
+        return run_inverse_design(payload.model_dump())
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Inverse design failed: {exc}") from exc
 
@@ -574,3 +436,16 @@ def saved_project_stl(run_id: int) -> Response:
         media_type="model/stl",
         headers={"Content-Disposition": f'attachment; filename="nova_project_{run_id}.stl"'},
     )
+
+
+app.include_router(nova_router)
+app.include_router(external_router)
+app.include_router(external_archive_router)
+app.include_router(external_case_router)
+app.include_router(simulation_router)
+app.include_router(mixed_router)
+
+
+@app.on_event("shutdown")
+def shutdown_workflows():
+    jobs.shutdown()

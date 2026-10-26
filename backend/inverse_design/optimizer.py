@@ -92,16 +92,19 @@ class InverseDesignOptimizer:
         self._evaluations = 0
 
         def objective(vector: FloatArray) -> float:
-            parameters = self.parameterization.decode(np.asarray(vector, dtype=float))
-            geometry = self.parameterization.build(parameters)
             try:
-                performance = self.solver.evaluate(geometry, rpm)
+                parameters = self.parameterization.decode(np.asarray(vector, dtype=float))
+                geometry = self.parameterization.build(parameters)
+                detailed = self.solver.evaluate_detailed(geometry, rpm)
+                if detailed.get("convergence") and not detailed["convergence"]["converged"]:
+                    raise RuntimeError("Aerodynamic state did not converge")
+                performance = detailed["performance"]
                 thrust_error = (performance["thrust"] - target_thrust) / target_thrust
                 loss = thrust_error**2 + self.constraints.penalty(vector, geometry)
             except (RuntimeError, ValueError, FloatingPointError):
                 # A non-convergent aerodynamic state is outside the feasible
                 # design domain, not a valid objective sample.
-                loss = 1e6 + self.constraints.penalty(vector, geometry)
+                loss = 1e6
             self._evaluations += 1
             if self.progress_callback is not None:
                 self.progress_callback(self._evaluations, float(loss))
@@ -116,7 +119,10 @@ class InverseDesignOptimizer:
         )
         parameters = self.parameterization.decode(np.asarray(scipy_result.x, dtype=float))
         geometry = self.parameterization.build(parameters)
-        performance = self.solver.evaluate(geometry, rpm)
+        detailed = self.solver.evaluate_detailed(geometry, rpm)
+        if detailed.get("convergence") and not detailed["convergence"]["converged"]:
+            raise RuntimeError("Final optimized aerodynamic state did not converge")
+        performance = detailed["performance"]
         return OptimizationResult(
             success=bool(scipy_result.success),
             message=str(scipy_result.message),

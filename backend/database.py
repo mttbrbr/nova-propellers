@@ -389,20 +389,14 @@ def get_polar_table(name: str) -> dict[str, np.ndarray] | None:
         return None
 
     reynolds_values = sorted({float(row["reynolds"]) for row in rows})
-    alpha_values = sorted({float(row["alpha_deg"]) for row in rows})
-    cl = np.zeros((len(reynolds_values), len(alpha_values)))
-    cd = np.zeros((len(reynolds_values), len(alpha_values)))
-    alpha_lookup = {value: index for index, value in enumerate(alpha_values)}
-    reynolds_lookup = {value: index for index, value in enumerate(reynolds_values)}
-
-    for row in rows:
-        re_index = reynolds_lookup[float(row["reynolds"])]
-        alpha_index = alpha_lookup[float(row["alpha_deg"])]
-        cl[re_index, alpha_index] = float(row["cl"])
-        cd[re_index, alpha_index] = float(row["cd"])
-
-    cl_grid = np.vstack([np.interp(ALPHA_GRID, alpha_values, cl_row) for cl_row in cl])
-    cd_grid = np.vstack([np.interp(ALPHA_GRID, alpha_values, cd_row) for cd_row in cd])
+    # Each condition has its own sampled alpha grid. Missing samples are not
+    # measured zero coefficients.
+    slices = [[row for row in rows if float(row["reynolds"]) == re]
+              for re in reynolds_values]
+    cl_grid = np.vstack([np.interp(ALPHA_GRID, [r["alpha_deg"] for r in part],
+                                  [r["cl"] for r in part]) for part in slices])
+    cd_grid = np.vstack([np.interp(ALPHA_GRID, [r["alpha_deg"] for r in part],
+                                  [r["cd"] for r in part]) for part in slices])
     cl_grid = np.vstack(
         [np.interp(REYNOLDS_GRID, reynolds_values, cl_grid[:, alpha_index]) for alpha_index in range(len(ALPHA_GRID))]
     ).T
