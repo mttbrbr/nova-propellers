@@ -10,11 +10,21 @@
     "preview": "vite preview",
     "desktop:live": "../tools/dev_desktop.sh",
     "desktop:dev": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri dev",
-    "desktop:build": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri build"
+    "desktop:build": "cd ../src-tauri && ../frontend/node_modules/.bin/tauri build",
+    "test:e2e": "node tests/workflow.mjs",
+    "test:mixed-projects": "node tests/mixed-projects.mjs",
+    "test:simulations": "node tests/project-simulations.mjs",
+    "test:comparison": "node tests/simulation-comparison.mjs",
+    "test:studies2d": "node tests/two-axis-study.mjs",
+    "test:external-archives": "node tests/external-archives.mjs",
+    "test:external-cases": "node tests/external-cases.mjs",
+    "test:execution-monitor": "node tests/execution-monitor.mjs",
+    "test:openfast-inspection": "node tests/openfast-inspection.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",
     "@tauri-apps/api": "2.11.1",
+    "@xyflow/react": "^12.12.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -28,6 +38,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
+    "playwright": "^1.64.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.5"

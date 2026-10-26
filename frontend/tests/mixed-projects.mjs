@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+
+const browser = await chromium.launch({ executablePath: process.env.NOVA_CHROMIUM_PATH === 'managed' ? undefined : process.env.NOVA_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
+  await page.getByLabel('Project name', { exact: true }).fill(`Mixed project ${Date.now()}`);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const context = page.getByLabel('Project and simulation context');
+  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  const nativeId = await page.getByLabel('Open saved simulation').inputValue();
+  const projectId = await page.getByLabel('Open saved project').inputValue();
+  await page.getByRole('button', { name: 'New PyWake simulation', exact: true }).click();
+  await page.getByLabel('Simulation name', { exact: true }).fill('Wind farm');
+  await page.getByLabel('Turbine 2 x [m]', { exact: true }).fill('700');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  const wakeId = await page.getByLabel('Open saved simulation').inputValue();
+  assert.notEqual(wakeId, nativeId);
+  assert.equal(await page.getByLabel('Open saved project').inputValue(), projectId);
+  await page.getByLabel('Turbine 2 x [m]', { exact: true }).fill('900');
+  await page.getByLabel('Open saved simulation').selectOption(nativeId);
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+  assert.equal(await page.getByLabel('Turbine 2 x [m]', { exact: true }).inputValue(), '900');
+  await page.getByLabel('Open saved simulation').selectOption(nativeId);
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await page.getByLabel('Open saved simulation').selectOption(wakeId);
+  await page.getByLabel('Turbine 2 x [m]', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Turbine 2 x [m]', { exact: true }).inputValue(), '700');
+  await page.getByLabel('Turbine 2 x [m]', { exact: true }).fill('850');
+  await page.getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
+  await page.getByLabel('Simulation name', { exact: true }).filter({ visible: true }).waitFor();
+  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  assert.notEqual(await page.getByLabel('Open saved simulation').inputValue(), wakeId);
+  assert.equal(await page.getByLabel('Turbine 2 x [m]', { exact: true }).inputValue(), '850');
+  await page.getByLabel('Open saved simulation').selectOption(wakeId);
+  assert.equal(await page.getByLabel('Turbine 2 x [m]', { exact: true }).inputValue(), '700');
+  assert.deepEqual(errors, []);
+  console.log('Mixed native/PyWake project persistence and draft protection passed');
+} finally { await browser.close(); }

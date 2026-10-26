@@ -51,7 +51,36 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npm run build
+      - run: VITE_API_BASE_URL=http://127.0.0.1:8777/api npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --requirement ../backend/requirements-dev.txt
+      - run: npx playwright install --with-deps chromium
+      - name: Guided and advanced workflow browser journey
+        run: |
+          NOVA_DB_PATH="$RUNNER_TEMP/nova-e2e.db" \
+          NOVA_ALLOWED_ORIGINS=http://127.0.0.1:5174 \
+            python -m uvicorn main:app --app-dir ../backend --host 127.0.0.1 --port 8777 &
+          backend_pid=$!
+          python -m http.server 5174 --bind 127.0.0.1 --directory dist &
+          frontend_pid=$!
+          trap 'kill "$backend_pid" "$frontend_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8777/api/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          NOVA_CHROMIUM_PATH=managed npm run test:e2e
+          NOVA_CHROMIUM_PATH=managed npm run test:simulations
+          NOVA_CHROMIUM_PATH=managed npm run test:comparison
+          NOVA_CHROMIUM_PATH=managed npm run test:studies2d
+          NOVA_CHROMIUM_PATH=managed npm run test:external-archives
+          NOVA_CHROMIUM_PATH=managed npm run test:external-cases
+          NOVA_CHROMIUM_PATH=managed npm run test:execution-monitor
+          NOVA_CHROMIUM_PATH=managed npm run test:openfast-inspection
+          NOVA_CHROMIUM_PATH=managed npm run test:mixed-projects
 
   compose:
     runs-on: ubuntu-latest
