@@ -254,3 +254,48 @@ class SolverComparisonTests(unittest.TestCase):
         self.assertEqual(restored['result']['comparison_status'], 'interrupted')
         records = library.read_archive(library.export_project(self.project['id']))
         self.assertEqual(self.client.post('/api/v1/projects/import', json=self.archive_request(records)).status_code, 200)
+
+    def test_one_simulation_with_several_solvers_needs_no_extra_simulations(self):
+        baseline = self.save()
+        response = self.client.post(f"/api/v1/simulations/{baseline['id']}/solver-comparison",
+                                    json={'expected_revision': baseline['revision'], 'models': ['bemt', 'llt']})
+        self.assertEqual(response.status_code, 200, response.text)
+        run = self.wait(response.json())
+        self.assertEqual(run['state'], 'succeeded', run.get('error'))
+        self.assertEqual(run['comparison']['kind'], 'solver')
+        self.assertEqual(run['comparison']['source_simulation_id'], baseline['id'])
+        self.assertEqual([r['model'] for r in run['result']['rows']], ['bemt', 'llt'])
+        self.assertEqual({c['simulation_id'] for c in run['result']['cases']}, {baseline['id']})
+        self.assertEqual(run['result']['rows'][0]['baseline_differences_pct']['thrust_n'], 0)
+        simulations = self.client.get(f"/api/v1/projects/{self.project['id']}/simulations").json()
+        self.assertEqual([s['id'] for s in simulations], [baseline['id']])
+        # The frozen batch survives a portable archive round trip.
+        records = library.read_archive(library.export_project(self.project['id']))
+        imported = self.client.post('/api/v1/projects/import', json=self.archive_request(records))
+        self.assertEqual(imported.status_code, 200, imported.text)
+
+    def test_solver_comparison_rejects_duplicates_and_stale_revisions(self):
+        baseline = self.save()
+        url = f"/api/v1/simulations/{baseline['id']}/solver-comparison"
+        self.assertEqual(self.client.post(url, json={'expected_revision': baseline['revision'], 'models': ['llt', 'llt']}).status_code, 422)
+        self.assertEqual(self.client.post(url, json={'expected_revision': baseline['revision'] + 1, 'models': ['bemt', 'llt']}).status_code, 409)
+        self.assertEqual(self.client.post(url, json={'models': ['bemt']}).status_code, 422)
+
+    def test_project_index_and_delete(self):
+        baseline = self.save()
+        run = self.wait(self.client.post(f"/api/v1/simulations/{baseline['id']}/run", json={'expected_revision': baseline['revision']}).json())
+        self.assertEqual(run['state'], 'succeeded', run.get('error'))
+        other = self.client.post('/api/v1/projects', json={**self.payload, 'name': 'Other project'}).json()
+        index = {row['id']: row for row in self.client.get('/api/v2/project-index').json()}
+        row = index[self.project['id']]
+        self.assertEqual((row['simulations'], row['runs'], row['models']), (1, 1, ['bemt']))
+        self.assertEqual(row['last_result']['run_id'], run['id'])
+        self.assertEqual(row['last_run_state'], 'succeeded')
+        self.assertIn(other['id'], index)
+        deleted = self.client.delete(f"/api/v2/projects/{self.project['id']}")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(self.client.get(f"/api/v1/runs/{run['id']}").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/v1/simulations/{baseline['id']}").status_code, 404)
+        self.assertNotIn(self.project['id'], {p['id'] for p in self.client.get('/api/v2/projects').json()})
+        self.assertIn(other['id'], {p['id'] for p in self.client.get('/api/v2/projects').json()})
+        self.assertEqual(self.client.delete(f"/api/v2/projects/{self.project['id']}").status_code, 404)

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { currentProjectId } from './helpers.mjs';
 
 const browser = await chromium.launch({ executablePath: process.env.NOVA_CHROMIUM_PATH === 'managed' ? undefined : process.env.NOVA_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 try {
@@ -17,7 +18,7 @@ try {
   const context = page.getByLabel('Project and simulation context');
   await context.getByText('Saved', { exact: true }).waitFor();
   const nativeId = await page.getByLabel('Open saved simulation').inputValue();
-  const projectId = await page.getByLabel('Open saved project').inputValue();
+  const projectId = await currentProjectId(page);
   await (await simulationOptions()).getByRole('button', { name: 'New PyWake simulation', exact: true }).click();
   await (await simulationOptions()).getByLabel('Simulation name', { exact: true }).fill('Wind farm');
   await page.getByLabel('Turbine 2 x [m]', { exact: true }).fill('700');
@@ -25,7 +26,7 @@ try {
   await context.getByText('Saved', { exact: true }).waitFor();
   const wakeId = await page.getByLabel('Open saved simulation').inputValue();
   assert.notEqual(wakeId, nativeId);
-  assert.equal(await page.getByLabel('Open saved project').inputValue(), projectId);
+  assert.equal(await currentProjectId(page), projectId);
   await page.getByLabel('Turbine 2 x [m]', { exact: true }).fill('900');
   await page.getByLabel('Open saved simulation').selectOption(nativeId);
   await page.getByRole('dialog', { name: 'Unsaved simulation changes' }).waitFor();

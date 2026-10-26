@@ -174,7 +174,7 @@ export function Metric({ label, value, unit, sub, size = 'lg' }) {
   return <div className="min-w-0">
     <dt className="text-[12.5px] text-nv-muted">{label}</dt>
     <dd className={`m-0 mt-1 truncate font-mono tabular text-nv-ink-strong ${size === 'lg' ? 'text-[22px]' : 'text-lg'}`}>{value}{unit && <span className="ml-1 text-xs text-nv-muted">{unit}</span>}</dd>
-    {sub && <p className="m-0 mt-1 truncate font-mono text-xs text-nv-muted">{sub}</p>}
+    {sub && <p className={`m-0 mt-1 font-mono text-xs text-nv-muted ${String(sub).includes('\n') ? 'whitespace-pre-line' : 'truncate'}`}>{sub}</p>}
   </div>;
 }
 

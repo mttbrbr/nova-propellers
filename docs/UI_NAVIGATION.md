@@ -8,11 +8,15 @@ what the current task needs; optional groups open in place.
 
 | Region | Contents |
 | --- | --- |
-| Header | Project and simulation selectors, save state, configured models, **Simulation options**, stage stepper, Save, **More actions**, Run / Cancel |
+| Header | Project picker (Ctrl+P), simulation selector, save state, configured models, **Simulation options**, stage stepper, Save, **More actions**, Run / Cancel |
 | Rail | Design, Studies, Workflow, Library, Integrations (icons with tooltips) |
 | Stage area | Inputs on the left, data in the centre, square 3D render with linked data on the right |
 | Notices | Confirmations bottom-left (fade after 8 s); errors stay until dismissed |
 
+- **Project picker** (Ctrl+P) searches every saved project by name, simulation,
+  airfoil, solver or id and opens a simulation directly. With an empty search it
+  shows pinned and recent projects. Pins and recents are stored in this
+  computer's browser storage.
 - **Simulation options** holds the simulation name, New/Duplicate simulation and
   New PyWake/OpenFAST simulation.
 - **More actions** holds New/Close project and `.nova` export/import. Export
@@ -27,8 +31,8 @@ what the current task needs; optional groups open in place.
 | --- | --- | --- | --- |
 | Sizing | Project, target thrust, diameter (manual or from disk loading) | Ideal actuator-disk trade-off charts, method, presets | Disk schematic and ideal values |
 | Geometry | Blade, shape (approach, method, control points or Laguerre coefficients), inverse design, airfoil loft, shared-geometry revision, STL export | Chord and twist curves with draggable points, published revision dashed underneath, point tables | Render with station ring, geometry summary, section at the selected station |
-| Analysis | Solver with maturity, rotation speed, airfoil polars and air data | Polar curves the solver will use, solver description and warnings, project explorer | Render, last run (faded with a reason when out of date), current execution and CSV export |
-| Results | Runs of the simulation, comparison run, provenance, exports | Performance band, six spanwise distributions, station table, convergence details | Render coloured by dT, α, Re or Cl, residual history, limiting station |
+| Analysis | Solver with maturity, **Also compare with** (extra solvers run on the same frozen inputs after Run), rotation speed, airfoil polars and air data | Polar curves the solver will use, solver description and warnings, project explorer | Render, last run (faded with a reason when out of date), current execution and CSV export |
+| Results | Runs of the simulation, comparison (the newest solver comparison is overlaid by default), provenance, exports | Performance band, six spanwise distributions, station table, convergence details | Render coloured by dT, α, Re or Cl, residual history, limiting station |
 
 - **Live preview.** The geometry preview regenerates automatically about
   350 ms after an edit, so there is no Generate step. A failed request keeps the
@@ -45,8 +49,8 @@ what the current task needs; optional groups open in place.
 | Workspace | Contents |
 | --- | --- |
 | Workflow | Full-height execution graph; selected block, airfoil data and project explorer in the left column; external case editors (PyWake, OpenFAST) in the centre |
-| Studies | Solver comparison, one- and two-axis sweeps, stored runs and comparisons |
-| Library | Airfoils and polars (import `.dat`, create, edit, delete), physical models with maturity and warnings, legacy snapshot archive with its report |
+| Studies | Three study types with a shared history: **Solver comparison** (one saved simulation, 2–4 solvers, no extra simulations; saved-simulation comparisons remain available underneath), **Design comparison** (2–4 finished runs from this or any project, with a like-for-like check, overlaid chord/twist/loading and a to-scale planform) and **Parameter sweep** (one or two axes) |
+| Library | **Projects** (search, filters, sort, multi-select compare/export/delete, detail panel; deleting asks for the project name), airfoils and polars (import `.dat`, create, edit, delete), physical models with maturity and warnings, legacy snapshot archive with its report |
 | Integrations | External software configuration, OpenFAST import and saved external runs |
 
 ## Keyboard
@@ -54,6 +58,7 @@ what the current task needs; optional groups open in place.
 | Action | Keys |
 | --- | --- |
 | Run simulation | Ctrl+Enter |
+| Open project | Ctrl+P |
 | Save | Ctrl+S |
 | Go to stage 1–4 | Alt+1 … Alt+4 |
 | Previous / next station | ← / → (Geometry, Results) |

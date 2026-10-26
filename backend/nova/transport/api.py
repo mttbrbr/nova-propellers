@@ -6,6 +6,7 @@ import zipfile
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from nova.application.comparisons import without_models
 from nova.application.studies import (
     StudyDefinition,
     build_cases,
@@ -199,6 +200,8 @@ def validate_archive_records(records):
         raise ValueError('Archive record IDs must be unique nonempty strings')
     simulation_lookup = {s['id']: s for s in simulations}
     comparison_sources = [source for r in records.get('runs', []) for source in r.get('comparison', {}).get('simulations', [])]
+    solver_sources = [source for r in records.get('runs', []) if r.get('comparison', {}).get('kind') == 'solver'
+                      for source in r['comparison']['simulations']]
     from nova.application.geometry import create_propeller_geometry
     from nova.core.data import content_hash
     from nova.core.geometry_assets import geometry_definition, geometry_hash
@@ -254,7 +257,11 @@ def validate_archive_records(records):
             raise ValueError('Invalid comparison simulation ownership or historical revision')
         checked_project(ProjectRequest(name=source['name'], inputs=source['inputs'], workflow=source['workflow'],
                                        conditions=source.get('conditions', {}), polar_asset_id=source.get('polar_asset_id')), lookup)
-        if source['revision'] == current['revision'] and any(source.get(k) != current.get(k) for k in ('name', 'inputs', 'workflow', 'conditions', 'geometry_id', 'geometry_revision', 'polar_asset_id')):
+        # Solver comparison cases rename the source and swap only its analysis model.
+        solver_case = any(source is case for case in solver_sources)
+        keys = ('inputs', 'conditions', 'geometry_id', 'geometry_revision', 'polar_asset_id') if solver_case else ('name', 'inputs', 'workflow', 'conditions', 'geometry_id', 'geometry_revision', 'polar_asset_id')
+        if source['revision'] == current['revision'] and (any(source.get(k) != current.get(k) for k in keys)
+                                                          or (solver_case and without_models(source['workflow']) != without_models(current['workflow']))):
             raise ValueError('Comparison source differs from declared saved revision')
         if source.get('polar_asset_id'):
             if source.get('polar_asset') != lookup(source['polar_asset_id']):

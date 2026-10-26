@@ -13,6 +13,7 @@ import GeometryStage from './stages/GeometryStage.jsx';
 import AnalysisStage from './stages/AnalysisStage.jsx';
 import ResultsStage from './stages/ResultsStage.jsx';
 import LibraryWorkspace from './stages/LibraryWorkspace.jsx';
+import { forgetProject } from './lib/preferences.js';
 
 const initial = {
   project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
@@ -87,7 +88,9 @@ function App() {
   const [selectedPoint, setSelectedPoint] = useState({ curve: 'chord', index: 1 });
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [libraryTab, setLibraryTab] = useState('airfoils');
+  const [libraryTab, setLibraryTab] = useState('projects');
+  const [studyRequest, setStudyRequest] = useState(null);
+  const [compareModels, setCompareModels] = useState([]);
   const [selectedAirfoil, setSelectedAirfoil] = useState('NACA 4412');
   const [airfoilDetail, setAirfoilDetail] = useState(null);
   const [airfoilForm, setAirfoilForm] = useState({ name: '', family: 'custom', source: 'user', notes: '' });
@@ -399,7 +402,29 @@ function App() {
   const runActive = activeRun(nativeRun);
   const runDisabled = busy || Boolean(workspaceContext?.busy) || !workspaceContext?.ready;
   const defaultSimulation = (geometryDefinition) => openDraft({ ...initial, project_name: inputs.project_name, ...(geometryDefinition || Object.fromEntries(geometryFields.map((key) => [key, payload[key]]))) });
-  const handleRun = () => { if (!runActive && !runDisabled) run(() => workbench.current.execute()); };
+  const handleRun = () => {
+    if (runActive || runDisabled) return;
+    run(async () => {
+      await workbench.current.execute();
+      // "Also compare with" runs the same frozen simulation with the extra solvers afterwards.
+      const extra = guidedCompatible ? compareModels.filter((id) => id !== model) : [];
+      if (extra.length) trackStudyExecution(await workbench.current.solverComparison([model, ...extra]));
+    });
+  };
+  const openSavedProject = (id, simulationId = null) => { workbench.current?.openProjectById(id, simulationId); go('design'); };
+  const compareProjects = (ids) => { setStudyRequest({ type: 'design', projectIds: ids, nonce: Date.now() }); go('studies'); };
+  const deleteProjects = async (ids) => {
+    for (const id of ids) {
+      await fetch(api(`/v2/projects/${id}`), { method: 'DELETE' });
+      forgetProject(id);
+    }
+    if (ids.includes(workbench.current?.projectId())) {
+      workbench.current.reset();
+      openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] });
+      setModel('bemt'); setGuidedCompatible(true);
+    }
+    await workbench.current?.refresh();
+  };
   const handleCancel = () => run(() => nativeRun.study || nativeRun.comparison || nativeRun.external_job
     ? fetch(api(`/v1/runs/${nativeRun.id}/cancel`), { method: 'POST' }) : workbench.current.cancel());
   const handleSave = () => { if (!runDisabled) workbench.current?.save(); };
@@ -414,6 +439,7 @@ function App() {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); actions.handleRun(); }
       else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); actions.handleSave(); }
       else if (event.altKey && ['1', '2', '3', '4'].includes(event.key)) { event.preventDefault(); actions.go(stageIds[Number(event.key) - 1]); }
+      else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') { event.preventDefault(); window.dispatchEvent(new Event('nova:open-project-picker')); }
       else if (!typing && ['ArrowLeft', 'ArrowRight'].includes(event.key) && ['geometry', 'results'].includes(actions.phase)) {
         event.preventDefault();
         actions.setStation(Math.round((actions.station + (event.key === 'ArrowRight' ? 0.05 : -0.05)) * 100) / 100);
@@ -453,7 +479,7 @@ function App() {
     // Guided workflows have a single analysis node driven by the local model state.
     inputs, set, model, chooseModel, methods: computationalMethods, context: workspaceContext, slotRef, station,
     preview: { canonical, mesh, busy: previewBusy }, openRun: (record) => workbench.current?.openRun(record), onRun: handleRun, runDisabled: runDisabled || runActive,
-    onCompare: () => go('studies'),
+    onCompare: () => { setStudyRequest({ type: 'solver', nonce: Date.now() }); go('studies'); }, compareModels, setCompareModels,
   }} />;
   else if (phase === 'results') body = <ResultsStage r={{
     analyses, context: workspaceContext, resultContext, station, setStation, reportModel, setReportModel, resultGeometry, resultMesh, previewMesh: mesh, resultStlUrl,
@@ -468,13 +494,17 @@ function App() {
       <div ref={slotRef('explorer')} />
     </>}
     content={<section ref={slotRef('graph')} aria-label="Workflow editor" className="min-h-[600px] min-w-0 flex-1 xl:h-full xl:min-h-0" />} />;
-  else if (phase === 'studies') body = <div className="min-h-0 flex-1 overflow-auto"><StudiesWorkspace projectId={activeProjectId} projectControls={workbench}
+  else if (phase === 'studies') body = <StudiesWorkspace projectId={activeProjectId} projectControls={workbench} methods={computationalMethods} studyRequest={studyRequest}
+    onOpenSource={(record) => { workbench.current?.openProjectById(record.project_id, record.simulation_id); go('analysis'); }}
     configurationBusy={busy || workspaceContext?.busy || !workspaceContext?.ready} selectedRun={selectedStudyRun} activeStudy={studyExecution} onExecutionChange={trackStudyExecution}
     onInverseDesign={() => { setDesignMode('inverse'); go('geometry'); }}
-    onInspect={(result, snapshot, runId, index, runContext) => { receiveResult(result, snapshot, runId, `study:${runId}:${index}`, index, runContext).catch((e) => setError(e.message)); go('results'); }} /></div>;
+    onInspect={(result, snapshot, runId, index, runContext) => { receiveResult(result, snapshot, runId, `study:${runId}:${index}`, index, runContext).catch((e) => setError(e.message)); go('results'); }} />;
   else if (phase === 'integrations') body = <div className="min-h-0 flex-1 overflow-auto"><IntegrationsWorkspace activeExecution={externalExecution} onExecutionChange={trackExternalExecution} draft={integrationDraft} onDraftChange={setIntegrationDraft} /></div>;
   else body = <LibraryWorkspace l={{
     tab: libraryTab, setTab: setLibraryTab, methods: computationalMethods,
+    currentProjectId: activeProjectId, openProject: openSavedProject, compareProjects, deleteProjects, newProject: resetProject,
+    exportProject: (row) => run(() => download(`/v2/projects/${row.id}/archive`, `${row.name}.nova`)),
+    importProject: (file) => workbench.current?.importArchive(file),
     configure: (id) => { if (guidedCompatible) chooseModel(id); go('analysis'); },
     airfoils, selectedAirfoil, setSelectedAirfoil, airfoilDetail, airfoilForm, setAirfoilForm, airfoilEdit, setAirfoilEdit,
     importDat: importDatFile, createAirfoil, updateAirfoil, deleteAirfoil, busy,
@@ -499,7 +529,7 @@ function App() {
     <EngineeringWorkspace ref={workbench} inputs={payload} model={model}
       onResult={receiveResult} onOpen={openDraft} onProjectChange={setActiveProjectId} onConfigChange={setExecutionStamp} onCompatibility={setGuidedCompatible} onAdvanced={() => setPhase('workflow')}
       onNewDraft={defaultSimulation} onContextChange={setWorkspaceContext} onLoadedModel={setModel} onShowResults={() => go('results')}
-      onShowStudies={(record) => { setSelectedStudyRun(record || null); go('studies'); }} uiBusy={busy} slots={slots} />
+      onShowStudies={(record) => { setSelectedStudyRun(record || null); go('studies'); }} onBrowseProjects={() => { setLibraryTab('projects'); go('library'); }} uiBusy={busy} slots={slots} />
     <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex w-[min(440px,calc(100vw-32px))] flex-col gap-2 md:left-[72px]">
       <div ref={slotRef('notices')} className="pointer-events-auto flex flex-col gap-2" />
       {error && <div role="alert" className="pointer-events-auto flex items-start gap-3 rounded-lg border border-nv-err/40 bg-nv-panel px-3.5 py-2.5 text-[13px] text-nv-err-ink shadow-xl shadow-black/40">

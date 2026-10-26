@@ -1,7 +1,8 @@
 import { Save, Upload } from 'lucide-react';
 import { useState } from 'react';
+import useProjectsLibrary from './ProjectsLibrary.jsx';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
-import { Button, Field, Metric, Notice, Section, Segmented, StatusDot, buttonClass } from '../ui/controls.jsx';
+import { Button, Field, Metric, Notice, Section, StatusDot, buttonClass } from '../ui/controls.jsx';
 import SectionView from '../ui/SectionView.jsx';
 import { formatValue } from '../lib/blade.js';
 import { PolarCharts } from './AnalysisStage.jsx';
@@ -41,9 +42,21 @@ export default function LibraryWorkspace({ l }) {
   const [station, setStation] = useState(0.7);
   const [showAll, setShowAll] = useState(false);
   const [reportModel, setReportModel] = useState('');
-  const tabs = <Segmented label="Library section" value={l.tab} onChange={l.setTab} size="sm" options={[['airfoils', 'Airfoils'], ['models', 'Models'], ['archives', 'Archives']]} />;
+  const [projectCount, setProjectCount] = useState(null);
+  const projects = useProjectsLibrary({ currentProjectId: l.currentProjectId, onOpen: l.openProject, onCompare: l.compareProjects, onExport: l.exportProject,
+    onDelete: l.deleteProjects, onCount: setProjectCount });
+  const tabs = <nav aria-label="Library sections" className="-mx-2.5 flex flex-col gap-0.5">{[['projects', 'Projects', projectCount], ['airfoils', 'Airfoils & polars', l.airfoils.length],
+    ['models', 'Models', l.methods.length], ['archives', 'Legacy archives', l.projects.length]].map(([id, name, count]) =>
+    <button key={id} type="button" aria-current={l.tab === id ? 'page' : undefined} onClick={() => l.setTab(id)}
+      className={`flex h-9 items-center justify-between rounded-[7px] px-2.5 text-left text-[13px] ${l.tab === id ? 'bg-nv-hover text-nv-ink-strong' : 'text-nv-reference hover:bg-nv-raised'}`}>
+      {name}<span className="font-mono text-nv-muted">{count ?? ''}</span></button>)}</nav>;
+  if (l.tab === 'projects') return <StageLayout inputsLabel="Library navigation" contentLabel="Projects" sideLabel="Project detail"
+    inputs={<><StageTitle title="Library" detail="Everything saved on this computer." />{tabs}{projects.filters}
+      <div className="flex-1" /><div className="flex flex-col gap-2"><Button onClick={l.newProject}>New project</Button>
+        <label className={`${buttonClass('secondary')} cursor-pointer`}>Open .nova…<input aria-label="Import .nova project" type="file" accept=".nova" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) l.importProject(file); event.target.value = ''; }} /></label></div></>}
+    content={projects.main} side={projects.side} />;
   if (l.tab === 'models') return <StageLayout inputsLabel="Library navigation" contentLabel="Physical models"
-    inputs={<><StageTitle title="Library" detail="Airfoils, polars, models and archived projects." />{tabs}
+    inputs={<><StageTitle title="Library" detail="Everything saved on this computer." />{tabs}
       <p className="m-0 text-[13px] leading-relaxed text-nv-muted">Each solver states its role, maturity and the geometry it supports. Only methods that match the implemented geometry and analysis paths are exposed.</p></>}
     content={<>
       <h2 className="m-0 text-[22px] font-semibold">Physical models and solver capabilities</h2>
@@ -61,7 +74,7 @@ export default function LibraryWorkspace({ l }) {
     const analyses = project?.analyses || [];
     const analysis = analyses.find((item) => (item.node_id || item.model) === reportModel) || analyses[0];
     return <StageLayout inputsLabel="Library navigation" contentLabel="Archived project report"
-      inputs={<><StageTitle title="Library" detail="Airfoils, polars, models and archived projects." />{tabs}
+      inputs={<><StageTitle title="Library" detail="Everything saved on this computer." />{tabs}
         <Section title="Legacy snapshot archive">
           <p className="m-0 text-[13px] leading-relaxed text-nv-muted">Compatibility library from Nova Propellers. Projects and named simulations use the global Save action.</p>
           <Button disabled={!l.geometryCurrent || l.busy} onClick={l.save}><Save size={15} aria-hidden="true" />{l.savedId ? `Saved #${l.savedId}` : 'Archive legacy snapshot'}</Button>
@@ -83,7 +96,7 @@ export default function LibraryWorkspace({ l }) {
         : <p className="m-0 text-[13px] text-nv-muted">Select an archived project.</p>} />;
   }
   return <StageLayout inputsLabel="Library navigation" contentLabel="Airfoil detail"
-    inputs={<><StageTitle title="Library" detail="Airfoils, polars, models and archived projects." />{tabs}
+    inputs={<><StageTitle title="Library" detail="Everything saved on this computer." />{tabs}
       <Section title="Import XFOIL/UIUC coordinates">
         <p className="m-0 text-[13px] leading-relaxed text-nv-muted">The .dat file is cleaned and normalized to 100 points.</p>
         <label className={`${buttonClass('secondary')} cursor-pointer`}><Upload size={15} aria-hidden="true" />Select .dat file

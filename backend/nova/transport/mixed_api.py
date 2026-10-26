@@ -57,6 +57,49 @@ def projects():
     return library.list_records('project')
 
 
+@router.get('/project-index')
+def project_index():
+    """Lightweight summaries for searching and listing many projects."""
+    simulations, runs = {}, {}
+    for item in library.list_records('simulation'):
+        simulations.setdefault(item['project_id'], []).append(item)
+    for item in library.list_records('run'):
+        if item.get('project_id'):
+            runs.setdefault(item['project_id'], []).append(item)
+    rows = []
+    for item in library.list_records('project'):
+        own = simulations.get(item['id'], [])
+        executed = runs.get(item['id'], [])
+        native = [s for s in own if s.get('kind', 'propeller') == 'propeller']
+        models = sorted({n.get('config', {}).get('model', 'bemt') for s in native for n in s['workflow']['nodes'] if n['type'] == 'analysis'})
+        finished = sorted((r for r in executed if r.get('state') == 'succeeded' and not r.get('study') and not r.get('comparison')
+                           and ((r.get('result') or {}).get('analyses'))), key=lambda r: r.get('finished_at') or r.get('created_at') or '', reverse=True)
+        native_runs = sorted((r for r in executed if not r.get('study') and not r.get('comparison') and not r.get('optimization')),
+                             key=lambda r: r.get('created_at') or '', reverse=True)
+        last = None
+        if finished:
+            analysis = finished[0]['result']['analyses'][0]
+            last = {'run_id': finished[0]['id'], 'simulation_name': finished[0].get('simulation_name'), 'model': analysis.get('model'),
+                    'thrust_n': (analysis.get('performance') or {}).get('thrust_n'), 'finished_at': finished[0].get('finished_at')}
+        rows.append({'id': item['id'], 'name': item['name'], 'revision': item['revision'], 'updated_at': item.get('updated_at'),
+                     'simulations': len(own), 'kinds': sorted({s.get('kind', 'propeller') for s in own}), 'models': models,
+                     'airfoils': sorted({s['inputs'].get('airfoil') for s in native if s.get('inputs')}),
+                     'simulation_list': [{'id': s['id'], 'name': s['name'], 'kind': s.get('kind', 'propeller')} for s in own], 'runs': len(executed),
+                     'studies': sum(1 for r in executed if r.get('study') or r.get('comparison')), 'last_result': last,
+                     'last_run_state': native_runs[0]['state'] if native_runs else None})
+    return rows
+
+
+@router.delete('/projects/{project_id}')
+def delete_project(project_id: str):
+    try:
+        return library.delete_project(project_id)
+    except KeyError as exc:
+        raise HTTPException(404, 'Project not found') from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.get('/projects/{project_id}')
 def get_project(project_id: str):
     return project(project_id)

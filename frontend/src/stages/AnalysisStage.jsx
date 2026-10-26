@@ -75,7 +75,20 @@ export default function AnalysisStage({ a }) {
           <span className="min-w-0"><span className="block text-[13px]">{method.id.toUpperCase()}</span>{method.description && <span className="mt-0.5 block text-[12.5px] leading-snug text-nv-muted">{method.description}</span>}</span>
           <span className={`text-xs capitalize ${fidelityTone(method.fidelity)}`}>{method.fidelity}</span>
         </label>)}
-        <button type="button" className="mx-2.5 mt-2 text-left text-[13px] text-nv-accent hover:text-nv-accent-soft" onClick={a.onCompare}>Compare several solvers in Studies →</button>
+      </fieldset>
+      <fieldset className="-mt-3 m-0 flex flex-col gap-2.5 border-0 border-t border-nv-line p-0 pt-4">
+        <legend className="float-left mb-1 p-0 text-[13px] font-semibold">Also compare with</legend>
+        <div className="clear-both flex flex-wrap gap-2">{methods.filter((method) => method.id !== a.model).map((method, index) => {
+          const checked = a.compareModels.includes(method.id);
+          return <label key={method.id} className="flex h-8 cursor-pointer items-center gap-2 rounded-full border px-3 text-[13px]" style={{ borderColor: checked ? ['#B49CFB', '#F2A93B', '#46D19A'][index % 3] : '#2A303A' }}>
+            <input type="checkbox" className="accent-nv-accent" checked={checked} aria-label={`Also compare with ${method.name}`}
+              onChange={() => a.setCompareModels((list) => checked ? list.filter((id) => id !== method.id) : [...list, method.id])} />{method.id.toUpperCase()}
+          </label>;
+        })}</div>
+        <p className="m-0 text-xs leading-relaxed text-nv-muted">{a.compareModels.filter((id) => id !== a.model).length
+          ? `Run executes ${a.model.toUpperCase()} and then the same frozen inputs with ${a.compareModels.filter((id) => id !== a.model).map((id) => id.toUpperCase()).join(' and ')}. Results overlays them; the comparison is kept in Studies.`
+          : 'Tick solvers to run them on the same inputs after the main run.'}</p>
+        <button type="button" className="self-start text-[13px] text-nv-accent hover:text-nv-accent-soft" onClick={a.onCompare}>More comparisons in Studies →</button>
       </fieldset>
       <Section title="Operating point">
         <Field label="Speed" ariaLabel="Rotation speed" unit="rpm" value={inputs.rpm} onChange={(v) => set('rpm', v)} />

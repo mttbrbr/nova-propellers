@@ -70,10 +70,15 @@ def save(kind, document, id=None, expected_revision=None, new_asset=None):
             if current.get('project_id') != document.get('project_id') or current.get('revision') != document.get('simulation_revision'):
                 raise ValueError('Revision conflict; simulation changed before queueing')
         if not row and kind == 'run' and document.get('comparison'):
+            from nova.application.comparisons import without_models
+            # A solver comparison freezes one simulation with the solver swapped per case.
+            solver = document['comparison'].get('kind') == 'solver'
+            keys = ('inputs', 'conditions', 'polar_asset_id', 'geometry_id', 'geometry_revision') if solver else ('name', 'inputs', 'workflow', 'conditions', 'polar_asset_id', 'geometry_id', 'geometry_revision')
             for source in document['comparison']['simulations']:
                 existing = db.execute("SELECT document FROM nova_records WHERE id=? AND kind='simulation'", (source['id'],)).fetchone()
                 current = json.loads(existing['document']) if existing else {}
-                if current.get('project_id') != document['project_id'] or current.get('revision') != source['revision'] or any(current.get(k) != source.get(k) for k in ('name', 'inputs', 'workflow', 'conditions', 'polar_asset_id', 'geometry_id', 'geometry_revision')):
+                if current.get('project_id') != document['project_id'] or current.get('revision') != source['revision'] or any(current.get(k) != source.get(k) for k in keys) \
+                        or (solver and without_models(current.get('workflow', {'nodes': []})) != without_models(source['workflow'])):
                     raise ValueError('Revision conflict; selected simulation changed before queueing')
         revision = row['revision'] + 1 if row else 1
         if new_asset is not None:
@@ -198,6 +203,32 @@ def list_records(kind):
     return [json.loads(row['document']) for row in rows]
 
 
+ACTIVE_STATES = ('queued', 'running', 'cancelling')
+
+
+def delete_project(id):
+    """Remove a project with its simulations, geometry revisions, runs and run links.
+
+    Shared assets stay: they are content-addressed and may be referenced elsewhere.
+    """
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if not db.execute("SELECT id FROM nova_records WHERE id=? AND kind='project'", (id,)).fetchone():
+            raise KeyError('Project not found')
+        owned = []
+        for row in db.execute("SELECT id, kind, document FROM nova_records WHERE kind IN ('simulation', 'geometry', 'run', 'run_link')").fetchall():
+            document = json.loads(row['document'])
+            if document.get('project_id') != id:
+                continue
+            if row['kind'] == 'run' and document.get('state') in ACTIVE_STATES:
+                raise ValueError('Cancel or finish the active execution before deleting this project')
+            owned.append(row['id'])
+        for record_id in owned:
+            db.execute('DELETE FROM nova_records WHERE id=?', (record_id,))
+        db.execute('DELETE FROM nova_records WHERE id=?', (id,))
+    return {'deleted_project': id, 'deleted_records': len(owned)}
+
+
 def make_asset(document):
     payload = {**document, 'schema_version': 1}
     return save('asset', {**payload, 'content_hash': content_hash(payload)})
@@ -307,6 +338,8 @@ def import_records(document, records):
                     value['polar_asset'] = next(asset for kind, asset in pending if kind == 'asset' and asset['id'] == remap[source['polar_asset']['id']])
                 sources.append(value)
             imported_run['comparison'] = {**run['comparison'], 'simulations': sources}
+            if run['comparison'].get('source_simulation_id'):
+                imported_run['comparison']['source_simulation_id'] = simulation_ids[run['comparison']['source_simulation_id']]
             imported_run['comparison_validation'] = validate_comparison(imported_run['comparison'])
             if run.get('result'):
                 output = json.loads(canonical_json(run['result']))

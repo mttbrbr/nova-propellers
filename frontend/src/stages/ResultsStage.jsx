@@ -71,10 +71,11 @@ function ConvergenceDetails({ analysis }) {
 }
 
 // Report body shared by Results and the legacy archive viewer in Library.
-export function ReportBody({ title, eyebrow = 'Technical report', viewing, analyses, analysis, onSelectAnalysis, geometry, compare, station, setStation, showAllStations, setShowAllStations }) {
+export function ReportBody({ title, eyebrow = 'Technical report', viewing, analyses, analysis, onSelectAnalysis, geometry, compares = [], station, setStation, showAllStations, setShowAllStations }) {
   const stations = analysis?.stations?.length ? analysis.stations : (geometry?.stations || []).map((s) => ({ ...s, chord_mm: Number(s.chord_m) * 1000 }));
   const performance = performanceOf(analysis);
-  const comparePerformance = compare ? performanceOf(compare.analysis) : null;
+  // Overlaid runs or solver-comparison cases, shown under each metric and as extra curves.
+  const sub = (field, digits) => compares.length ? compares.map((item) => `${item.label} ${formatValue(performanceOf(item.analysis)[field], digits)}`).join('\n') : undefined;
   const { ct, cp } = coefficients(analysis, geometry?.diameter_m);
   const convergence = analysis?.convergence;
   const nearest = stations.reduce((best, row, index) => Math.abs(Number(row.r_over_R) - station) < Math.abs(Number(stations[best]?.r_over_R ?? 99) - station) ? index : best, 0);
@@ -94,10 +95,10 @@ export function ReportBody({ title, eyebrow = 'Technical report', viewing, analy
       options={analyses.map((item) => [item.node_id || item.model, `${item.method || item.model} · ${item.fidelity || 'legacy'}`])} /></div>}
     {analysis ? <>
       <dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-5 border-y border-nv-line py-5 sm:grid-cols-3 2xl:grid-cols-6">
-        <Metric label="Thrust" value={formatValue(performance.thrust_n, 4)} unit="N" sub={comparePerformance && `${compare.label} ${formatValue(comparePerformance.thrust_n, 4)}`} />
-        <Metric label="Torque" value={formatValue(performance.torque_nm, 3)} unit="N·m" sub={comparePerformance && `${compare.label} ${formatValue(comparePerformance.torque_nm, 3)}`} />
-        <Metric label="Power" value={formatValue(performance.power_w, 4)} unit="W" sub={comparePerformance && `${compare.label} ${formatValue(comparePerformance.power_w, 4)}`} />
-        <Metric label="Figure of merit" value={formatValue(performance.efficiency, 3)} sub={comparePerformance && `${compare.label} ${formatValue(comparePerformance.efficiency, 3)}`} />
+        <Metric label="Thrust" value={formatValue(performance.thrust_n, 4)} unit="N" sub={sub('thrust_n', 4)} />
+        <Metric label="Torque" value={formatValue(performance.torque_nm, 3)} unit="N·m" sub={sub('torque_nm', 3)} />
+        <Metric label="Power" value={formatValue(performance.power_w, 4)} unit="W" sub={sub('power_w', 4)} />
+        <Metric label="Figure of merit" value={formatValue(performance.efficiency, 3)} sub={sub('efficiency', 3)} />
         <Metric label="Cᴛ" value={formatValue(ct, 3)} sub="T / ρn²D⁴" />
         <Metric label="Cᴘ" value={formatValue(cp, 3)} sub="P / ρn³D⁵" />
       </dl>
@@ -105,12 +106,13 @@ export function ReportBody({ title, eyebrow = 'Technical report', viewing, analy
       <section aria-labelledby="distributions-title">
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
           <h3 id="distributions-title" className="m-0 text-[15px] font-semibold">Along the blade <span className="text-[13px] font-normal text-nv-muted">· selected span {station.toFixed(2)}</span></h3>
-          {compare && <span className="flex gap-4 text-xs text-nv-muted"><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-nv-accent" />This run</span><span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-nv-reference" />{compare.label}</span></span>}
+          {compares.length > 0 && <span className="flex flex-wrap gap-4 text-xs text-nv-muted"><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-nv-accent" />This run</span>
+            {compares.map((item) => <span key={item.label} className="inline-flex items-center gap-1.5"><span className={`w-3.5 border-t-2 ${item.dashed ? 'border-dashed' : ''}`} style={{ borderColor: item.color }} />{item.label}</span>)}</span>}
         </div>
         <div className="grid gap-x-8 gap-y-7 md:grid-cols-2 2xl:grid-cols-3">
           {distributionFields.map((field) => <LineChart key={field.id} title={field.title} unit={field.unit} height={180} selection={station} onSelect={setStation}
             series={[{ id: 'run', color: '#4CC9F0', points: stationSeries(stations, field.id) },
-              ...(compare ? [{ id: 'compare', color: '#C4CAD2', dashed: true, points: stationSeries(compare.analysis?.stations, field.id) }] : [])]} />)}
+              ...compares.map((item) => ({ id: item.label, color: item.color, dashed: item.dashed, points: stationSeries(item.analysis?.stations, field.id) }))]} />)}
         </div>
       </section>
     </> : <p className="m-0 text-[13px] text-nv-muted">No saved analyses.</p>}
@@ -173,14 +175,23 @@ function EmptyResults({ context, onRun, runDisabled, onNavigate }) {
 export default function ResultsStage({ r }) {
   const { analyses, context, resultContext, station, setStation } = r;
   const [colorField, setColorField] = useState('d_thrust_n');
-  const [compareId, setCompareId] = useState('');
+  const [compareId, setCompareId] = useState(null);
   const [showAllStations, setShowAllStations] = useState(false);
   const analysis = analyses.find((item) => (item.node_id || item.model) === r.reportModel) || analyses[0];
   const geometry = r.resultGeometry;
   const runId = resultContext?.runId;
   const candidates = (context?.projectRuns || []).filter((run) => run.id !== runId && run.state === 'succeeded' && run.result?.analyses?.length);
-  const compareRun = candidates.find((run) => run.id === compareId);
-  const compare = compareRun ? { label: `${(compareRun.result.analyses[0].model || '').toUpperCase()}`, analysis: compareRun.result.analyses[0] } : null;
+  const sourceSimulation = resultContext?.run?.simulation_id || context?.simulation?.id;
+  const solverComparisons = (context?.projectRuns || []).filter((run) => run.comparison?.kind === 'solver' && run.state === 'succeeded' && run.comparison.source_simulation_id === sourceSimulation)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  // The newest solver comparison of this simulation is overlaid until the user picks something else.
+  const selectedCompare = compareId ?? (solverComparisons[0] && analysis ? `cmp:${solverComparisons[0].id}` : '');
+  const compareRun = candidates.find((run) => run.id === selectedCompare);
+  const comparisonRun = solverComparisons.find((run) => `cmp:${run.id}` === selectedCompare);
+  const compares = comparisonRun
+    ? (comparisonRun.result.cases || []).filter((sample) => sample.state === 'succeeded' && sample.result.analyses[0].model !== analysis?.model)
+      .map((sample, index) => ({ label: sample.result.analyses[0].model.toUpperCase(), analysis: sample.result.analyses[0], color: ['#B49CFB', '#F2A93B', '#46D19A'][index % 3] }))
+    : compareRun ? [{ label: (compareRun.result.analyses[0].model || '').toUpperCase(), analysis: compareRun.result.analyses[0], color: '#C4CAD2', dashed: true }] : [];
   const field = distributionFields.find((item) => item.id === colorField);
   const series = stationSeries(analysis?.stations, colorField);
   const values = series.map((point) => point.y);
@@ -201,8 +212,9 @@ export default function ResultsStage({ r }) {
         </button>)}</div> : <p className="m-0 text-[13px] text-nv-muted">No runs of this simulation yet.</p>}
       </Section>
       {analyses.length > 0 && <Section title="Compare with">
-        <SelectField inline ariaLabel="Compare with run" value={compareId} onChange={setCompareId}
-          options={[['', 'Nothing'], ...candidates.map((item) => [item.id, `${item.simulation_name || item.name} · ${(item.result.analyses[0].model || '').toUpperCase()} · ${item.id.slice(0, 8)}`])]} />
+        <SelectField inline ariaLabel="Compare with run" value={selectedCompare} onChange={setCompareId}
+          options={[['', 'Nothing'], ...solverComparisons.map((item) => [`cmp:${item.id}`, `Solver comparison · ${item.comparison.simulations.map((source) => source.workflow.nodes.find((n) => n.type === 'analysis')?.config?.model?.toUpperCase()).join(', ')}`]),
+            ...candidates.map((item) => [item.id, `${item.simulation_name || item.name} · ${(item.result.analyses[0].model || '').toUpperCase()} · ${item.id.slice(0, 8)}`])]} />
       </Section>}
       {analysis && <Section title="Provenance">
         <KeyValue label="Solver"><span title={analysis.method}>{(analysis.model || analysis.method || '').toUpperCase()}</span> · <span className="capitalize">{analysis.fidelity || 'legacy'}</span></KeyValue>
@@ -219,7 +231,7 @@ export default function ResultsStage({ r }) {
       </div></Section>}
     </>}
     content={analyses.length ? <ReportBody title={resultContext?.simulationName || r.projectName || 'Current project'} viewing={viewing} analyses={analyses} analysis={analysis}
-      onSelectAnalysis={r.setReportModel} geometry={geometry} compare={compare} station={station} setStation={setStation} showAllStations={showAllStations} setShowAllStations={setShowAllStations} />
+      onSelectAnalysis={r.setReportModel} geometry={geometry} compares={compares} station={station} setStation={setStation} showAllStations={showAllStations} setShowAllStations={setShowAllStations} />
       : <EmptyResults context={context} onRun={r.onRun} runDisabled={r.runDisabled} onNavigate={r.onNavigate} />}
     side={<>
       <PropellerViewport geometry={r.resultMesh || r.previewMesh} station={station} rootFraction={rootFraction}

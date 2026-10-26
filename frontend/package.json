@@ -19,7 +19,8 @@
     "test:external-archives": "node tests/external-archives.mjs",
     "test:external-cases": "node tests/external-cases.mjs",
     "test:execution-monitor": "node tests/execution-monitor.mjs",
-    "test:openfast-inspection": "node tests/openfast-inspection.mjs"
+    "test:openfast-inspection": "node tests/openfast-inspection.mjs",
+    "test:studies-library": "node tests/studies-library.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",
