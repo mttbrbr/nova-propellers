@@ -232,3 +232,141 @@ To preserve these options without over-engineering the alpha:
 This structure does not commit Nova to a hosted service. It keeps a standalone
 desktop path while allowing the same scientific core to support scripts,
 notebooks, CI studies, compute workstations and future CFD executors.
+
+## Implemented workflow foundation
+
+`backend/nova` now contains transport-independent analysis/geometry services,
+scientific result contracts, explicit polar providers, a typed deterministic
+DAG engine, SQLite project/asset/run records and a single-worker coordinator.
+`main.py` preserves legacy routes and adds `/api/v1` routes. The existing
+validation contract import path remains a compatibility alias.
+
+The guided Run model control and React Flow editor submit the same stored
+workflow. The default template is preserved; cloning creates an independent
+workflow. Invalid/incompatible connections are rejected before execution.
+Additional analysis branches and result/export operations are supported.
+Changed topology is routed to Advanced mode. Results retain the node identity,
+effective conditions, geometry/input/workflow hashes and selected polar data.
+
+Assets retain raw textual sources and normalized values. Imported families use
+actual per-condition alpha grids and disclosed endpoint clipping; source
+coefficients are preserved. Synthetic data requires explicit selection in the
+new workflow. Legacy endpoints retain compatibility behavior.
+
+Projects have stable IDs and optimistic revisions. Assets and completed runs
+are immutable. Portable `.nova` archives have manifests/checksums, complete
+current/historical asset references, bounded entries, and transactional import.
+For the small first-milestone datasets, records and artifacts remain inline in
+SQLite rather than introducing a second authoritative storage location. Large
+field/mesh artifact storage is deferred with the corresponding adapters.
+
+Workers are subprocesses, not HTTP requests or threads running numerical
+kernels. One run executes at a time. Cancellation sends SIGTERM to the worker
+process group, then SIGKILL after five seconds if necessary. Shutdown rejects
+new submissions and cancels active/queued jobs. Restart marks unfinished runs
+interrupted. Frozen workers use `nova-backend --workflow-worker`.
+
+Headless commands:
+
+```sh
+cd backend
+python -m nova.cli validate project.json
+python -m nova.cli run project.json
+```
+
+A headless project JSON contains `workflow`, `inputs`, `conditions` and a frozen
+`polar_asset` with `airfoil`, `mach`, `ncrit`, and validated `points`.
+The CLI uses the same scientific selection and condition validation as the UI.
+
+Desktop sessions now use a random per-launch API token handed to React through
+Tauri; the backend remains loopback-only. Browser/source mode may configure
+`NOVA_SESSION_TOKEN` explicitly. Do not put tokens in download URLs or logs.
+
+The numerical equations remain in Python. DUST, general coupled model
+execution, result caching and C++ acceleration remain later, independently gated
+phases. No external scientific solver is installed by this implementation.
+
+## Studies and adapter contracts
+
+One/two-axis study jobs extend the existing run snapshot/protocol with a study
+definition and case checkpoints. The coordinator persists those checkpoints and
+normalizes their terminal state on cancellation/recovery. Completed studies and
+optimization candidates are versioned outputs in the same project library and
+portable archive format. The workflow engine is reused for every study case.
+
+Optimization orchestration now lives in `nova.application.optimization`.
+Queued optimization uses a canonical geometry parameterization so candidate
+performance agrees with applying its controls through the workflow. Legacy
+library parameterizations remain available.
+
+`nova.adapters` is the external integration boundary: descriptors/ports,
+configuration, probe/validate/prepare/collect/normalize and bounded process stages.
+PyWake and OpenFAST adapters are registered. Configuration is machine-local;
+raw case files and provenance stay in each isolated execution directory.
+See [Studies and adapters](STUDIES_AND_ADAPTERS.md) for interfaces and limits.
+
+## Optional external model execution
+
+PyWake and OpenFAST are explicit built-in adapters with independently installed
+programs. Their typed default case → adapter graphs are validated/executed by
+`nova.workflow.engine` and scheduled by the existing single-worker coordinator.
+`nova.transport.external_api` keeps wind-farm and time-series operations separate
+from propeller-project transport. Integration configurations remain machine-local;
+external cases/results/artifacts are immutable run records and private directories
+beside the SQLite database. Wind-farm/time-series ports cannot be substituted for
+native static rotor ports. See `EXTERNAL_INTEGRATIONS.md` for data contracts,
+execution/import qualification and current composition limits.
+
+## Named native simulation configurations
+
+The existing project library now also stores versioned `simulation` records.
+Each belongs to one project and snapshots geometry inputs, workflow, polar asset
+and operating conditions. `nova.transport.simulation_api` saves/clones these
+records and submits their frozen configuration through the existing coordinator;
+it does not introduce a second scientific execution engine. Runs retain project
+and simulation IDs/revisions. The archive importer validates and remaps those
+links transactionally while accepting older archives without simulations.
+
+The UI keeps project selection, configuration selection and viewed execution
+distinct. Guided model selection updates the executed graph; reports identify
+the frozen execution independently of current edits. See
+[Project and simulation context](PROJECT_SIMULATIONS.md).
+
+`nova.core.geometry_assets` defines the baseline geometry boundary. Immutable
+`geometry` records belong to a project and have a separate family ID/revision,
+definition and canonical snapshot. Multiple solver configurations reference the
+same revision; operating RPM/targets/fluids remain configuration parameters.
+Explicit adoption updates selected configuration revisions transactionally with
+optimistic checks. The archive retains all geometry revisions and remaps their
+references, including historical execution links. Existing records are linked
+additively on save, preserving older archives and solver behavior.
+
+Geometry lineage denotes the input baseline. Advanced sizing nodes, diameter
+studies and optimization may derive different evaluated geometry; their actual
+output geometry/hash remains separate from the pinned baseline reference.
+
+## Exploration and reproducible case collections
+
+`ProjectExplorer` is a view of existing project/configuration/geometry/asset/run
+records. Selecting a workspace does not create a workflow node. The application
+keeps viewed historical results separate from the active job tracker, with one
+monitor for each submitted job category and one global cancellation command.
+Transient poll failures retry; workspace unmounting does not stop monitoring.
+
+`nova.application.comparisons` validates strict saved-configuration comparisons
+and executes each frozen source through the ordinary workflow engine. A batch
+is one coordinator job with case checkpoints, source revisions and normalized
+reference differences. It is not a new numerical solver or a coupled integration
+scheme. The initial comparison scope is explicit; see `STUDIES_AND_ADAPTERS.md`.
+
+`nova.application.external_cases` stores immutable PyWake scientific input assets
+using the existing library. They exclude executable selection and validate without
+installing/probing PyWake. In-session UI drafts are separate from persistent saved
+copies. This adds no database record kind or service process.
+
+`nova.infrastructure.external_archive` exchanges standalone historical external
+results as bounded `.nova-run` ZIPs, preserving original scientific artifacts and
+normalized data while excluding local execution configuration. Validated imports
+stage private files and commit a new immutable run transactionally. Native project
+archives retain their `.nova` format. These formats do not silently reinterpret
+wind-farm or time-series outputs as static rotor results.

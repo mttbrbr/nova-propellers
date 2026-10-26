@@ -23,7 +23,9 @@ class BaseSolver(ABC):
         performance = self.evaluate(geometry_data, rpm)
         return {
             "performance": performance,
-            "curves": reconstruct_radial_curves(geometry_data, rpm, performance),
+            "curves": reconstruct_radial_curves(geometry_data, rpm, performance,
+                                                air_density=getattr(self, "rho", 1.225),
+                                                viscosity=getattr(self, "viscosity", 1.81e-5)),
             "curve_source": "reconstructed",
             "convergence": None,
         }

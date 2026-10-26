@@ -23,6 +23,11 @@ class GeometryData:
     propeller_type: str = "traditional"
 
     def __post_init__(self) -> None:
+        if not all(np.all(np.isfinite(value)) for value in
+                   (self.radius_m, self.chord_m, self.twist_rad, self.diameter_m, self.blades)):
+            raise ValueError("Geometry must contain finite values")
+        if int(self.blades) != self.blades:
+            raise ValueError("Blade count must be integral")
         size = len(self.radius_m)
         if size < 4 or len(self.chord_m) != size or len(self.twist_rad) != size:
             raise ValueError("Geometry vectors must have the same length and at least four stations")
@@ -30,6 +35,8 @@ class GeometryData:
             raise ValueError("Radial stations must be strictly increasing")
         if np.any(self.chord_m <= 0) or self.diameter_m <= 0 or self.blades < 1:
             raise ValueError("Diameter, chord and blade count must be positive")
+        if self.radius_m[0] <= 0 or self.radius_m[-1] > self.diameter_m / 2 + 1e-9:
+            raise ValueError("Stations must lie inside the positive rotor radius")
 
     @property
     def radial_fraction(self) -> FloatArray:
@@ -64,7 +71,7 @@ class GeometryData:
             chord_m=np.array([station["chord_m"] for station in stations], dtype=float),
             twist_rad=np.radians([station["twist_deg"] for station in stations]),
             diameter_m=float(data["diameter_m"]),
-            blades=int(data["blades"]),
+            blades=data["blades"],
             airfoil=data.get("airfoil", "NACA 4412"),
             propeller_type=data.get("propeller_type", "traditional"),
         )
