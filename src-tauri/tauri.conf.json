@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Nova Propellers",
+        "title": "NOVA",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
@@ -27,11 +27,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"],
+    "targets": [
+      "deb"
+    ],
     "category": "Education",
-    "icon": ["../docs/media/icon-nova-propellers.png"],
+    "icon": [
+      "../docs/media/icon-nova-propellers.png"
+    ],
     "shortDescription": "Propeller design and analysis workbench",
     "longDescription": "Local-first workbench for designing, analyzing, optimizing, and exporting traditional propellers.",
-    "externalBin": ["binaries/nova-backend"]
+    "externalBin": [
+      "binaries/nova-backend"
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "../packaging/linux/nova-propellers.desktop"
+      }
+    }
   }
 }

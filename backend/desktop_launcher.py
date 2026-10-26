@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import socket
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -82,6 +83,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    if "--workflow-worker" in sys.argv:
+        from nova.workflow.worker import main as worker_main
+        return worker_main()
     args = parse_args()
     return run_backend(port=args.port, data_dir=args.data_dir)
 
