@@ -1,8 +1,13 @@
-import { Activity, AlertCircle, Database, Download, FileText, Gauge, Layers3, Loader2, Play, Save } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Database, Download, Loader2, Play, Save } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { api } from './backend.js';
+import { api, apiFetch as fetch, download } from './backend.js';
+import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
+import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
+import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
+import useExecutionMonitor from './useExecutionMonitor.js';
 import PropellerViewport from './components/PropellerViewport.jsx';
+import WorkspaceNavigation, { workspaceInfo } from './components/WorkspaceNavigation.jsx';
 
 const initial = {
   project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
@@ -16,17 +21,13 @@ const bezierDefaults = (diameter) => ({
   ],
   twist_points: [{ x: 0, y: 34 }, { x: .33, y: 25 }, { x: .72, y: 14 }, { x: 1, y: 7 }],
 });
-const phases = [
-  ['sizing', 'Initial sizing', Gauge], ['geometry', 'Geometry', Layers3],
-  ['forces', 'Force analysis', Activity], ['report', 'Report', FileText],
-  ['database', 'Database', Database],
-];
 
 function Field({ label, value, onChange, unit, text = false, disabled = false }) {
   return <label className="block">
     <span className="mb-1.5 block text-xs text-zinc-400">{label}</span>
     <div className="flex rounded-md border border-zinc-800 bg-zinc-950">
       <input className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:opacity-50"
+        aria-label={label}
         type={text ? 'text' : 'number'} step="any" value={value} disabled={disabled}
         onChange={(event) => onChange(text ? event.target.value : Number(event.target.value))} />
       {unit && <span className="px-3 py-2 text-xs text-zinc-600">{unit}</span>}
@@ -37,6 +38,7 @@ function Field({ label, value, onChange, unit, text = false, disabled = false })
 function Select({ label, value, onChange, options }) {
   return <label className="block"><span className="mb-1.5 block text-xs text-zinc-400">{label}</span>
     <select className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
+      aria-label={label}
       value={value} onChange={(event) => onChange(event.target.value)}>
       {options.map(([id, name, disabled]) => <option key={id} value={id} disabled={disabled}>{name}</option>)}
     </select>
@@ -57,7 +59,7 @@ function CurveEditor({ label, points, max, unit, onChange }) {
   const drag = (index, event) => {
     if (event.buttons !== 1) return;
     const box = event.currentTarget.ownerSVGElement.getBoundingClientRect();
-    const value = Math.max(0, Math.min(max, (box.bottom - event.clientY - pad) / (box.height - 2 * pad) * max));
+    const value = Math.max(0, Math.min(max, ((box.bottom - event.clientY) / box.height * height - pad) / (height - 2 * pad) * max));
     onChange(points.map((point, i) => i === index ? { ...point, y: value } : point));
   };
   return <Card><div className="mb-2 flex justify-between text-xs text-zinc-400"><span>{label}</span><span>{unit}</span></div>
@@ -75,7 +77,9 @@ function DistributionChart({ title, stations, field, unit = '', color = '#e4e4e7
   if (!rows.length) return <div className="rounded border border-zinc-800 p-3 text-xs text-zinc-600">{title}: no data available</div>;
   const values = rows.map((station) => Number(station[field]));
   const min = Math.min(...values), max = Math.max(...values), range = Math.max(max - min, 1e-9);
-  const points = values.map((value, index) => `${index / Math.max(values.length - 1, 1) * 100},${42 - (value - min) / range * 34}`).join(' ');
+  const radii = rows.map((station) => Number(station.radius_over_tip_radius ?? station.r_over_R));
+  const radialMin = Math.min(...radii), radialMax = Math.max(...radii);
+  const points = values.map((value, index) => `${(radii[index] - radialMin) / Math.max(radialMax - radialMin, 1e-9) * 100},${42 - (value - min) / range * 34}`).join(' ');
   return <div className="rounded-lg border border-zinc-800 bg-zinc-950/65 p-3">
     <div className="mb-2 flex justify-between text-xs"><span className="text-zinc-300">{title}</span>
       <span className="text-zinc-600">{min.toFixed(2)}–{max.toFixed(2)} {unit}</span></div>
@@ -202,7 +206,7 @@ function ConvergenceDiagnostics({ analysis }) {
       {finalSample?.polar_context && <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           ['Limiting component', finalSample.limiting_component],
-          ['Limiting station', `r/R ${Number(finalSample.limiting_r_over_R).toFixed(3)}`],
+          ['Limiting station', `span ${Number(finalSample.limiting_r_over_R).toFixed(3)}`],
           ['Local alpha', `${Number(finalSample.limiting_alpha_deg).toFixed(3)}°`],
           ['Local Reynolds', Number(finalSample.limiting_reynolds).toFixed(0)],
           ['Polar alpha segment', finalSample.polar_context.alpha_segment_deg.join(' → ')],
@@ -216,7 +220,7 @@ function ConvergenceDiagnostics({ analysis }) {
         </div>)}
       </div>}
       {history.length > 0 && <div className="max-h-56 overflow-auto rounded border border-zinc-800">
-        <div className="grid min-w-[980px] grid-cols-9 bg-zinc-950 p-2 text-[9px] uppercase text-zinc-600"><span>Iteration</span><span>Residual</span><span>Axial</span><span>Tangential</span><span>r/R</span><span>Alpha</span><span>Re</span><span>Loss F</span><span>Relaxation</span></div>
+        <div className="grid min-w-[980px] grid-cols-9 bg-zinc-950 p-2 text-[9px] uppercase text-zinc-600"><span>Iteration</span><span>Residual</span><span>Axial</span><span>Tangential</span><span>Span</span><span>Alpha</span><span>Re</span><span>Loss F</span><span>Relaxation</span></div>
         {history.map((row) => <div key={row.iteration} className="grid min-w-[980px] grid-cols-9 border-t border-zinc-900 p-2 text-[10px] text-zinc-400">
           <span>{row.iteration}</span><span>{Number(row.residual).toExponential(2)}</span><span>{Number(row.axial_residual).toExponential(2)}</span><span>{Number(row.tangential_residual).toExponential(2)}</span><span>{Number(row.limiting_r_over_R).toFixed(3)}</span><span>{row.limiting_alpha_deg == null ? '—' : Number(row.limiting_alpha_deg).toFixed(2)}</span><span>{row.limiting_reynolds == null ? '—' : Number(row.limiting_reynolds).toFixed(0)}</span><span>{row.limiting_loss_factor == null ? '—' : Number(row.limiting_loss_factor).toFixed(3)}</span><span>{row.relaxation_factor == null ? '—' : Number(row.relaxation_factor).toFixed(3)}</span>
         </div>)}
@@ -226,7 +230,7 @@ function ConvergenceDiagnostics({ analysis }) {
 }
 
 function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectModel, stlUrl }) {
-  const analysis = analyses.find((item) => item.model === selectedModel) || analyses[0];
+  const analysis = analyses.find((item) => (item.node_id || item.model) === selectedModel) || analyses[0];
   const stations = analysis?.stations || geometry?.stations?.map((station) => ({
     ...station, chord_mm: Number(station.chord_m) * 1000,
   })) || [];
@@ -236,16 +240,16 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
         <div><div className="text-xs uppercase tracking-wider text-zinc-600">Technical report</div>
           <h2 className="mt-1 text-2xl font-semibold">{project?.project_name || 'Current project'}</h2>
           <p className="mt-1 text-xs text-zinc-500">{geometry?.method || '—'} · {geometry?.stations?.length || 0} stations · {geometry?.blades || '—'} blades</p></div>
-        {stlUrl && <a className="rounded-md border border-zinc-700 px-4 py-2 text-xs" href={stlUrl} download="nova_report_geometry.stl"><Download size={14} className="mr-2 inline" />STL</a>}
+        {stlUrl && <button className="rounded-md border border-zinc-700 px-4 py-2 text-xs" onClick={() => stlUrl.startsWith('blob:') ? (() => { const link = document.createElement('a'); link.href = stlUrl; link.download = 'nova_report_geometry.stl'; link.click(); })() : download(stlUrl, 'nova_report_geometry.stl')}><Download size={14} className="mr-2 inline" />STL</button>}
       </div>
       <div className="flex flex-wrap gap-2">{analyses.map((item) =>
-        <button key={item.model} onClick={() => onSelectModel(item.model)}
-          className={`rounded-md border px-3 py-2 text-xs ${analysis?.model === item.model ? 'border-zinc-300 bg-zinc-100 text-zinc-950' : 'border-zinc-800 text-zinc-400'}`}>
+        <button key={item.node_id || item.model} onClick={() => onSelectModel(item.node_id || item.model)}
+          className={`rounded-md border px-3 py-2 text-xs ${(analysis?.node_id || analysis?.model) === (item.node_id || item.model) ? 'border-zinc-300 bg-zinc-100 text-zinc-950' : 'border-zinc-800 text-zinc-400'}`}>
           {item.method || item.model} · {item.fidelity || 'legacy'}
         </button>)}</div>
       {analysis ? <>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 2xl:grid-cols-8">{Object.entries(analysis.summary || {}).slice(0, 12).map(([key, value]) =>
-          <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"><div className="text-[9px] uppercase text-zinc-600">{key.replaceAll('_', ' ')}</div><div className="mt-1 text-sm">{value}</div></div>)}</div>
+          <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"><div className="text-[9px] uppercase text-zinc-600">{key === 'efficiency' ? 'figure of merit' : key.replaceAll('_', ' ')}</div><div className="mt-1 text-sm">{value}</div></div>)}</div>
         <div className={`rounded-md border p-3 text-xs ${analysis.curve_source === 'native' ? 'border-emerald-900 text-emerald-300' : 'border-amber-900 text-amber-300'}`}>
           Curves {analysis.curve_source === 'native' ? 'provided by the solver' : 'reconstructed from global results'}.
         </div>
@@ -264,7 +268,7 @@ function ReportWorkspace({ project, analyses, geometry, selectedModel, onSelectM
       </div>
       {stations.length > 0 && <div className="overflow-auto rounded-lg border border-zinc-800">
         <div className="grid min-w-[1050px] grid-cols-11 bg-zinc-950 p-3 text-[9px] uppercase text-zinc-600">
-          {['r/R','r [m]','chord [mm]','twist','alpha','Cl','Cd','Re','Γ','dT [N]','dP [W]'].map((label) => <span key={label}>{label}</span>)}
+          {['span fraction','r [m]','chord [mm]','twist','alpha','Cl','Cd','Re','Γ','dT [N]','dP [W]'].map((label) => <span key={label}>{label}</span>)}
         </div>{stations.map((row, index) => <div key={index} className="grid min-w-[1050px] grid-cols-11 border-t border-zinc-900 p-3 text-[10px] text-zinc-300">
           {[row.r_over_R,row.radius_m,row.chord_mm,row.twist_deg,row.alpha_deg,row.cl,row.cd,row.reynolds,row.circulation,row.d_thrust_n,row.d_power_w].map((value, i) => <span key={i}>{value ?? '—'}</span>)}
         </div>)}
@@ -341,6 +345,31 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [savedId, setSavedId] = useState(null);
+  const [geometryStamp, setGeometryStamp] = useState('');
+  const workbench = useRef(null);
+  const [executionStamp, setExecutionStamp] = useState('');
+  const [resultStamp, setResultStamp] = useState('');
+  const [guidedCompatible, setGuidedCompatible] = useState(true);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [workflowCanvasTarget, setWorkflowCanvasTarget] = useState(null);
+  const [projectSelectorTarget, setProjectSelectorTarget] = useState(null);
+  const [simulationSelectorTarget, setSimulationSelectorTarget] = useState(null);
+  const [projectMenuTarget, setProjectMenuTarget] = useState(null);
+  const [studyExecution, setStudyExecution] = useState(null);
+  const [selectedStudyRun, setSelectedStudyRun] = useState(null);
+  const [externalExecution, setExternalExecution] = useState(null);
+  const [integrationDraft, setIntegrationDraft] = useState({});
+  const trackExternalExecution = useCallback((record) => setExternalExecution((previous) => {
+    if (!record || (previous && ['queued', 'running', 'cancelling'].includes(previous.state) && record.id !== previous.id)) return previous;
+    return record;
+  }), []);
+  const trackStudyExecution = useCallback((record) => setStudyExecution((previous) => {
+    if (!record || (previous && ['queued', 'running', 'cancelling'].includes(previous.state) && record.id !== previous.id)) return previous;
+    return record;
+  }), []);
+  const [workspaceContext, setWorkspaceContext] = useState(null);
+  const [resultContext, setResultContext] = useState(null);
+  const resultViewGeneration = useRef(0);
 
   const parameters = inputs.geometry_method === 'bezier' ? bezier : laguerre;
   const activeAirfoilAssignments = inputs.geometry_method === 'bezier'
@@ -356,6 +385,7 @@ function App() {
     geometry_parameters: parameters,
     airfoil_assignments: useAirfoilLoft ? activeAirfoilAssignments : [],
   }), [inputs, parameters, useAirfoilLoft, activeAirfoilAssignments]);
+  const geometryCurrent = canonical && geometryStamp === JSON.stringify(payload);
   const set = (key, value) => setInputs((current) => ({ ...current, [key]: value }));
   const refresh = () => fetch(api('/propellers')).then((r) => r.ok ? r.json() : []).then(setProjects).catch(() => {});
   const refreshAirfoils = () => fetch(api('/airfoils')).then((r) => r.json()).then((rows) => {
@@ -420,25 +450,12 @@ function App() {
     if (stlUrl) URL.revokeObjectURL(stlUrl);
     setMesh((current) => { current?.dispose(); return geometry; });
     setStlUrl(URL.createObjectURL(blob)); setCanonical(result.geometry);
+    setGeometryStamp(JSON.stringify(geometryPayload));
     setAnalyses([]); setSavedId(null);
   });
 
   const optimizeGeometry = () => run(async () => {
-    const result = await (await post('/inverse-design', {
-      target_thrust: inputs.thrust_target,
-      rpm: inputs.rpm,
-      diameter: inputs.diameter,
-      blades: inputs.blades,
-      airfoil: inputs.airfoil,
-      solver: inverseSolver,
-      chord_points: bezier.chord_points,
-      twist_points: bezier.twist_points,
-      min_chord_m: Math.max(0.003, inputs.diameter * 0.012),
-      max_chord_m: inputs.diameter * 0.16,
-      min_twist_deg: 2,
-      max_twist_deg: 45,
-      max_iterations: inverseSolver === 'vlm' ? 100 : 180,
-    })).json();
+    const result = await workbench.current.optimize(inverseSolver, inverseSolver === 'vlm' ? 100 : 180);
     setInverseResult(result);
   });
 
@@ -523,12 +540,42 @@ function App() {
     setLoftPreview(null);
   };
 
-  const analyze = () => run(async () => {
-    const result = await (await post('/analyses', { model, inputs: payload, geometry: canonical })).json();
-    setAnalyses((current) => [...current.filter((item) => item.model !== model), result]);
-    setReportModel(model);
+  const receiveResult = async (result, snapshot, runId, stamp, caseIndex = null, runContext = null) => {
+    const generation = ++resultViewGeneration.current;
+    setResultContext({ runId, simulationName: runContext?.simulation_name || (caseIndex != null ? 'Parameter study' : 'Unassigned execution'),
+      simulationRevision: runContext?.simulation_revision, models: [...new Set(result.analyses.map((a) => a.model))], rpm: snapshot.rpm, caseIndex, studyCase: runContext?.study_case });
+    setResultStamp(stamp);
+    setCanonical(result.geometry); setGeometryStamp(JSON.stringify(snapshot));
+    setAnalyses(result.analyses); setReportModel(result.analyses[0]?.node_id || result.analyses[0]?.model || '');
     setSavedId(null);
-  });
+    if (stlUrl) URL.revokeObjectURL(stlUrl);
+    setStlUrl(''); setMesh((current) => { current?.dispose(); return null; });
+    if (!result.geometry) return;
+    const response = await fetch(api(caseIndex == null ? `/v1/runs/${runId}/stl` : `/v1/runs/${runId}/cases/${caseIndex}/stl`));
+    const blob = await response.blob();
+    const buffer = await blob.arrayBuffer();
+    if (generation !== resultViewGeneration.current) return;
+    setMesh(new STLLoader().parse(buffer));
+    setStlUrl(URL.createObjectURL(blob));
+  };
+  const openDraft = (stored) => {
+    resultViewGeneration.current += 1;
+    setResultContext(null);
+    setDesignMode('direct'); setLoftPreview(null); setResultStamp('');
+    setInputs((current) => ({ ...current, ...stored }));
+    if (stored.geometry_method === 'bezier') setBezier(stored.geometry_parameters);
+    if (stored.geometry_method === 'laguerre') setLaguerre(stored.geometry_parameters);
+    setUseAirfoilLoft(Boolean(stored.airfoil_assignments?.length));
+    if (stored.airfoil_assignments?.length) {
+      setBezierProfileAssignments(stored.airfoil_assignments.map((a) => a.airfoil));
+      setLaguerreProfileAssignments(stored.airfoil_assignments);
+    }
+    setMesh((current) => { current?.dispose(); return null; });
+    if (stlUrl) URL.revokeObjectURL(stlUrl);
+    setStlUrl(''); setCanonical(null); setAnalyses([]); setSizing(null);
+    setInverseResult(null); setSelectedProject(null); setSavedId(null); setGeometryStamp('');
+  };
+  const analyze = () => run(() => workbench.current.execute());
 
   const save = () => run(async () => {
     const result = await (await post('/projects', {
@@ -538,7 +585,15 @@ function App() {
   });
 
   const open = (id) => run(async () => {
+    const generation = ++resultViewGeneration.current;
+    setResultContext(null); setResultStamp('');
     const detail = await (await fetch(api(`/propellers/${id}`))).json();
+    if (generation !== resultViewGeneration.current) return;
+    workbench.current?.reset();
+    setSizing(null); setInverseResult(null); setDesignMode('direct');
+    setMesh((current) => { current?.dispose(); return null; });
+    if (stlUrl) URL.revokeObjectURL(stlUrl);
+    setStlUrl('');
     const stored = detail.payload;
     setInputs((current) => ({ ...current, ...stored, project_name: detail.project_name }));
     if (stored.geometry_method === 'bezier') setBezier(stored.geometry_parameters);
@@ -554,6 +609,7 @@ function App() {
     } else {
       setUseAirfoilLoft(false);
     }
+    setGeometryStamp(JSON.stringify(stored));
     setCanonical(detail.geometry); setAnalyses(detail.analyses || []); setSavedId(id);
     setSelectedProject(detail); setReportModel(detail.analyses?.[0]?.model || '');
     if (detail.has_stl) {
@@ -592,19 +648,64 @@ function App() {
   });
   const primary = 'flex w-full items-center justify-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-zinc-950 shadow-lg shadow-white/10 transition hover:-translate-y-px hover:bg-zinc-100 disabled:opacity-40';
   const secondary = 'flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-zinc-900/80 px-4 py-2.5 text-sm text-zinc-300 shadow-lg shadow-black/20 transition hover:border-white/20 hover:bg-zinc-800';
+  const workspace = workspaceInfo(phase);
+  const showProjectPanel = !['models', 'studies', 'integrations'].includes(phase);
+  const navigate = (id) => setPhase(!guidedCompatible && ['sizing', 'geometry', 'forces'].includes(id) ? 'workflow' : id);
+  const configuredModels = workspaceContext?.models || [model];
+  const configuredModel = configuredModels.length === 1 ? configuredModels[0] : model;
+  const chooseModel = (value) => { setModel(value); workbench.current?.setModel(value); };
+  const resetProject = async () => { if (!await workbench.current?.guard()) return; workbench.current?.reset(); openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] }); setModel('bemt'); setGuidedCompatible(true); setPhase('sizing'); };
+
+  useExecutionMonitor(studyExecution, setStudyExecution, setError);
+  useExecutionMonitor(externalExecution, setExternalExecution, setError);
+
+  const nativeRun = studyExecution && ['queued', 'running', 'cancelling'].includes(studyExecution.state) ? studyExecution
+    : externalExecution && ['queued', 'running', 'cancelling'].includes(externalExecution.state) ? externalExecution : workspaceContext?.activeRun;
+  const runActive = nativeRun && ['queued', 'running', 'cancelling'].includes(nativeRun.state);
+  const defaultSimulation = (geometryDefinition) => openDraft({ ...initial, project_name: inputs.project_name, ...(geometryDefinition || Object.fromEntries(['propeller_type', 'diameter', 'blades', 'airfoil', 'geometry_method', 'geometry_parameters', 'airfoil_assignments'].map((key) => [key, payload[key]]))) });
 
   return <main className="min-h-screen overflow-x-hidden bg-[#08080a] text-zinc-100 lg:flex lg:h-screen lg:flex-col lg:overflow-hidden">
-    <header className="shrink-0 border-b border-white/[0.07] bg-zinc-950/80 px-4 py-4 shadow-2xl shadow-black/30 backdrop-blur-xl sm:px-6"><div className="flex w-full items-center justify-between">
-      <div className="text-xs font-medium tracking-[0.24em] text-zinc-500">NOVA propellers</div>
-      <span className="hidden self-center text-xs text-zinc-500 sm:block">Independent geometry and models</span>
-    </div></header>
-    <div className="grid w-full grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[clamp(360px,28vw,500px)_minmax(0,1fr)]">
-      <aside className="border-b border-white/[0.07] bg-zinc-950/55 p-4 shadow-2xl shadow-black/30 sm:p-5 lg:h-full lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="mb-6 overflow-x-auto pb-1"><nav className="grid min-w-[520px] grid-cols-5 gap-1 lg:min-w-0">{phases.map(([id, label, Icon], i) =>
-          <button key={id} onClick={() => setPhase(id)} className={`rounded-lg p-2 text-left transition ${phase === id ? 'bg-white text-zinc-950 shadow-lg shadow-white/10' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200'}`}>
-            <Icon size={15} /><span className="mt-1 block text-[10px]">{i + 1}. {label}</span>
-          </button>)}</nav></div>
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-white/[0.07] bg-zinc-950/80 px-4 py-4 sm:px-6">
+      <div className="flex min-w-0 items-center gap-5">
+        <div className="shrink-0 text-sm font-semibold tracking-[0.2em] text-zinc-100">NOVA</div>
+        <div className="min-w-0 border-l border-zinc-800 pl-5"><h1 className="text-sm font-medium">{workspace.label}</h1>
+          <p className="hidden truncate text-xs text-zinc-500 sm:block">{workspace.detail}</p></div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {<>{<button className="flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs disabled:opacity-40" disabled={busy || workspaceContext?.busy || !workspaceContext?.ready} onClick={() => workbench.current?.save()}><Save size={14} />Save</button>}
+          <button className="flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-950 disabled:opacity-40" disabled={!runActive && (busy || workspaceContext?.busy || !workspaceContext?.ready)} onClick={() => runActive ? run(() => nativeRun.study || nativeRun.comparison || nativeRun.external_job ? fetch(api(`/v1/runs/${nativeRun.id}/cancel`), { method: 'POST' }) : workbench.current.cancel()) : analyze()}>{runActive ? 'Cancel' : <><Play size={14} />Run simulation</>}</button></>}
+        <details className="relative"><summary className="cursor-pointer rounded-lg border border-zinc-700 px-3 py-2 text-xs">Project actions</summary><div className="absolute right-0 z-40 mt-2 w-64 space-y-2 rounded-xl border border-zinc-700 bg-zinc-950 p-3 shadow-2xl">
+          <button className="block w-full rounded border border-zinc-700 px-3 py-2 text-left text-xs disabled:opacity-40" disabled={busy || workspaceContext?.busy} onClick={(e) => { e.currentTarget.closest('details').open = false; resetProject(); }}>New project</button>
+          <button className="block w-full rounded border border-zinc-700 px-3 py-2 text-left text-xs disabled:opacity-40" disabled={!workspaceContext?.project || busy || workspaceContext?.busy} onClick={(e) => { e.currentTarget.closest('details').open = false; resetProject(); }}>Close project</button>
+          <div ref={setProjectMenuTarget} />
+        </div></details>
+      </div>
+    </header>
+    <div aria-label="Project and simulation context" className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-b border-zinc-800 bg-zinc-900/50 px-4 py-3 sm:px-6">
+      <div className="w-full min-w-0 sm:w-56"><p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">{workspaceContext?.project ? `Project · r${workspaceContext.project.revision}${workspaceContext.projectNameModified ? ' · name unsaved' : ''}` : 'No project open · unsaved propeller draft'}</p>
+        <div ref={setProjectSelectorTarget} /></div>
+      <div className="w-full min-w-0 sm:w-56"><p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">Simulation · {workspaceContext?.simulationStatus === 'modified' ? 'unsaved changes' : workspaceContext?.simulationStatus === 'saved' ? 'saved' : 'draft'}</p>
+        <div ref={setSimulationSelectorTarget} /></div>
+      <div className="min-w-0 text-xs text-zinc-400">{runActive && <p className="mb-1 text-amber-300">Running {nativeRun.external_job ? 'external analysis' : nativeRun.comparison ? 'comparison' : nativeRun.study ? 'study' : 'simulation'}: {nativeRun.simulation_name || nativeRun.name || 'Unassigned execution'} · {nativeRun.state}{nativeRun.external_job && !nativeRun.project_id ? ' · standalone integration' : nativeRun.project_id !== workspaceContext?.project?.id ? ` · project: ${nativeRun.inputs?.project_name || nativeRun.project_id}` : ''}</p>}<p>Configured models: <span className="text-zinc-200">{configuredModels.map((m) => m.toUpperCase()).join(' + ') || 'geometry only'}</span></p>
+        {phase === 'integrations' && <p className="mt-1 text-[10px] text-amber-300">Standalone integrations · external runs are not linked to this propeller project.</p>}
+        {phase === 'report' && resultContext && <p className="mt-1 text-[10px] text-emerald-300">Viewing {resultContext.simulationName}{resultContext.simulationRevision ? ` · r${resultContext.simulationRevision}` : ''} · {resultContext.models.map((m) => m.toUpperCase()).join(' + ')} · {resultContext.rpm} rpm · run {resultContext.runId.slice(0, 8)}{resultContext.caseIndex != null ? ` · case ${resultContext.caseIndex + 1}` : ''}{resultContext.studyCase && ` · ${resultContext.studyCase.parameter} = ${resultContext.studyCase.value} ${resultContext.studyCase.units || ''}`}{resultContext.studyCase?.secondary_parameter && ` · ${resultContext.studyCase.secondary_parameter} = ${resultContext.studyCase.secondary_value} ${resultContext.studyCase.secondary_units || ''}`}</p>}
+      </div>
+      {workspaceContext?.error && <p role="alert" className="w-full text-xs text-red-300">{workspaceContext.error}</p>}
+      {error && !showProjectPanel && <p role="alert" className="w-full text-xs text-red-300">{error}</p>}
+    </div>
+    <div className="grid w-full grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[180px_minmax(0,1fr)]">
+      <WorkspaceNavigation phase={phase} guidedCompatible={guidedCompatible} onNavigate={navigate} />
+      <div className={`grid min-w-0 grid-cols-1 lg:min-h-0 lg:overflow-hidden ${showProjectPanel ? 'lg:grid-cols-[clamp(320px,26vw,420px)_minmax(0,1fr)]' : 'lg:grid-cols-1'}`}>
+      <aside aria-label="Project controls" className={`${showProjectPanel ? '' : 'hidden'} border-b border-white/[0.07] bg-zinc-950/55 p-4 sm:p-5 lg:h-full lg:overflow-y-auto lg:border-b-0 lg:border-r`}>
+        <div className="mb-5"><p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">{workspaceContext?.project ? 'Active engineering project' : 'Unsaved propeller draft'}</p>
+          <p className="mt-1 truncate text-sm text-zinc-200" title={workspaceContext?.project?.name || inputs.project_name}>{workspaceContext?.project?.name || inputs.project_name}</p></div>
         <div className="space-y-4">
+          <EngineeringWorkspace ref={workbench} inputs={payload} model={model}
+            onResult={receiveResult} onOpen={openDraft} onProjectChange={setActiveProjectId} onConfigChange={setExecutionStamp} onCompatibility={setGuidedCompatible} onAdvanced={() => setPhase('workflow')}
+            onNewDraft={defaultSimulation} menuTarget={projectMenuTarget} showGeometry={phase === 'geometry'} onContextChange={setWorkspaceContext} onLoadedModel={setModel} onShowResults={() => setPhase('report')} onShowStudies={(record) => { setSelectedStudyRun(record || null); setPhase('studies'); }} uiBusy={busy} projectSelectorTarget={projectSelectorTarget} simulationSelectorTarget={simulationSelectorTarget}
+            showGraph={phase === 'workflow'} graphTarget={workflowCanvasTarget} showData={['forces', 'workflow'].includes(phase)} />
+          {analyses.length > 0 && resultStamp && resultStamp !== executionStamp && <p className="text-xs text-amber-400">Selected results belong to an earlier workflow or operating/data revision.</p>}
+          {canonical && !geometryCurrent && <p className="text-xs text-amber-400">Inputs changed. Existing geometry and results belong to an earlier revision.</p>}
           {phase === 'sizing' && <>
             <Card title="Project configuration"><div className="space-y-3">
               <Field label="Project name" text value={inputs.project_name} onChange={(v) => set('project_name', v)} />
@@ -678,7 +779,7 @@ function App() {
                 {inputs.geometry_method === 'bezier' ? <div className="space-y-2">
                   <p className="text-[10px] leading-4 text-zinc-500">Each chord control point also defines an airfoil station.</p>
                   {bezier.chord_points.map((point, index) => <div key={`${point.x}-${index}`} className="grid grid-cols-[90px_1fr] items-end gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-                    <div><div className="mb-1 text-[9px] uppercase text-zinc-600">Station</div><div className="text-xs">r/R {point.x.toFixed(3)}</div></div>
+                    <div><div className="mb-1 text-[9px] uppercase text-zinc-600">Station</div><div className="text-xs">Span {point.x.toFixed(3)}</div></div>
                     <Select label={`Airfoil P${index + 1}`} value={bezierProfileAssignments[index] || coordinateAirfoils[0] || ''}
                       onChange={(value) => setBezierProfileAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? value : item))}
                       options={coordinateAirfoils.map((name) => [name, name])} />
@@ -686,7 +787,7 @@ function App() {
                 </div> : <div className="space-y-2">
                   <p className="text-[10px] leading-4 text-zinc-500">Define the radial section positions freely for Laguerre geometry.</p>
                   {laguerreProfileAssignments.map((assignment, index) => <div key={index} className="grid grid-cols-[100px_1fr_32px] items-end gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-                    <Field label="r/R position" value={assignment.radial_fraction}
+                    <Field label="Span fraction" value={assignment.radial_fraction}
                       onChange={(value) => updateLaguerreProfileStation(index, { radial_fraction: Math.max(0, Math.min(1, value)) })} />
                     <Select label="Airfoil" value={assignment.airfoil}
                       onChange={(value) => updateLaguerreProfileStation(index, { airfoil: value })}
@@ -697,8 +798,8 @@ function App() {
                   </div>)}
                   <button className={secondary} disabled={laguerreProfileAssignments.length >= 10} onClick={addLaguerreProfileStation}>Add airfoil station</button>
                 </div>}
-                <button className={secondary} onClick={previewLoft}>Preview section at r/R = 0.5</button>
-                {loftPreview && <AirfoilShapeChart coordinates={loftPreview} title="Interpolated loft at r/R = 0.5" />}
+                <button className={secondary} onClick={previewLoft}>Preview section at span fraction = 0.5</button>
+                {loftPreview && <AirfoilShapeChart coordinates={loftPreview} title="Interpolated loft at span fraction = 0.5" />}
               </>}
             </div></Card>
             {designMode === 'inverse' && <Card title="Optimization target"><div className="space-y-3">
@@ -725,7 +826,7 @@ function App() {
             {inverseResult && <Card title="Candidate geometry">
               <div className="mb-3 grid grid-cols-2 gap-2">
                 <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Initial thrust</div>
-                  <div className="mt-1 text-sm">{inverseResult.initial_performance.thrust.toFixed(3)} N</div></div>
+                  <div className="mt-1 text-sm">{inverseResult.initial_performance ? `${inverseResult.initial_performance.thrust.toFixed(3)} N` : 'Baseline did not converge'}</div></div>
                 <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Optimized thrust</div>
                   <div className="mt-1 text-sm">{inverseResult.performance.thrust.toFixed(3)} N</div></div>
                 <div className="rounded bg-zinc-950 p-3"><div className="text-[9px] uppercase text-zinc-600">Target error</div>
@@ -734,7 +835,7 @@ function App() {
                   <div className="mt-1 text-sm">{inverseResult.iterations}</div></div>
               </div>
               <div className={`mb-3 rounded p-2 text-xs ${inverseResult.success ? 'bg-emerald-950/40 text-emerald-300' : 'bg-amber-950/40 text-amber-300'}`}>
-                {inverseResult.success ? 'Convergence achieved.' : `Usable but non-convergent solution: ${inverseResult.message}`}
+                {inverseResult.success ? 'Optimizer convergence achieved.' : `Search stopped before its tolerance: ${inverseResult.message}. Review the candidate before applying.`}
               </div>
               <button className={primary} onClick={applyInverseResult} disabled={busy}>Apply and generate STL</button>
               <button className={`${secondary} mt-2`} onClick={() => setInverseResult(null)}>Discard candidate</button>
@@ -746,32 +847,31 @@ function App() {
 
           {phase === 'forces' && <>
             <Card title="Computational model"><p className="mb-4 text-xs text-zinc-500">The model uses the canonical geometry without modifying it.</p>
-              <Select label="Model" value={model} onChange={setModel} options={(computationalMethods.length ? computationalMethods : [
+              <Select label="Model" value={configuredModel} onChange={chooseModel} options={(computationalMethods.length ? computationalMethods : [
                 { id: 'bemt', name: 'BEMT', fidelity: 'preliminary' },
                 { id: 'llt', name: 'LLT', fidelity: 'preliminary' },
                 { id: 'vlm', name: 'VLM', fidelity: 'experimental' },
                 { id: 'bem', name: 'BEM', fidelity: 'experimental' },
               ]).filter((method) => method.role !== 'sizing_reference' && method.id !== 'actuator_disk')
                 .map((method) => [method.id, `${method.name} — ${method.fidelity}`])} />
-              {computationalMethods.find((method) => method.id === model) && <div className="mt-3 rounded bg-zinc-950 p-3 text-[10px] leading-4 text-zinc-400">
-                {computationalMethods.find((method) => method.id === model).description}
+              {computationalMethods.find((method) => method.id === configuredModel) && <div className="mt-3 rounded bg-zinc-950 p-3 text-[10px] leading-4 text-zinc-400">
+                {computationalMethods.find((method) => method.id === configuredModel).description}
               </div>}
-              <button className={`${primary} mt-4`} disabled={!canonical || busy} onClick={analyze}><Play size={15} /> Run model</button>
-              {!canonical && <p className="mt-3 text-xs text-amber-400">Generate the geometry first.</p>}
+              {!canonical && <p className="mt-3 text-xs text-zinc-500">The workflow will generate geometry from this simulation’s inputs.</p>}
             </Card>
-            {analyses.map((analysis) => <Card key={analysis.model} title={analysis.method}>
+            {analyses.map((analysis) => <Card key={analysis.node_id || analysis.model} title={analysis.method}>
               <div className="grid grid-cols-2 gap-2">{Object.entries(analysis.summary).slice(0, 10).map(([key, value]) =>
-                <div key={key} className="rounded bg-zinc-950 p-2"><div className="text-[9px] text-zinc-600">{key.replaceAll('_', ' ')}</div><div className="text-xs">{value}</div></div>)}</div>
+                <div key={key} className="rounded bg-zinc-950 p-2"><div className="text-[9px] text-zinc-600">{key === 'efficiency' ? 'figure of merit' : key.replaceAll('_', ' ')}</div><div className="text-xs">{value}</div></div>)}</div>
             </Card>)}
             {canonical && <button className={secondary} onClick={() => setPhase('report')}>View report</button>}
           </>}
 
           {phase === 'report' && <>
-            <Card title="Current project report">
-              <p className="mb-4 text-xs leading-5 text-zinc-500">This section only shows geometry, results, and curves from the current session.</p>
+            <Card title="Selected execution results">
+              <p className="mb-4 text-xs leading-5 text-zinc-500">Results retain the model, conditions and simulation revision used by that execution. Editing the current configuration does not change saved results.</p>
               <div className="space-y-2">{analyses.map((analysis) =>
-                <button key={analysis.model} onClick={() => setReportModel(analysis.model)}
-                  className={`w-full rounded border p-3 text-left text-xs ${reportModel === analysis.model ? 'border-zinc-400 bg-zinc-900' : 'border-zinc-800 bg-zinc-950'}`}>
+                <button key={analysis.node_id || analysis.model} onClick={() => setReportModel(analysis.node_id || analysis.model)}
+                  className={`w-full rounded border p-3 text-left text-xs ${reportModel === (analysis.node_id || analysis.model) ? 'border-zinc-400 bg-zinc-900' : 'border-zinc-800 bg-zinc-950'}`}>
                   <div>{analysis.method || analysis.model}</div>
                   <div className="mt-1 text-[10px] text-zinc-600">{analysis.fidelity || 'legacy'} · curves {analysis.curve_source || 'unavailable'}</div>
                 </button>)}</div>
@@ -782,20 +882,20 @@ function App() {
 
           {phase === 'database' && <>
             <div className="grid grid-cols-2 gap-2">
-              <button className={reportView === 'projects' ? primary : secondary} onClick={() => setReportView('projects')}>Projects</button>
+              <button className={reportView === 'projects' ? primary : secondary} onClick={() => setReportView('projects')}>Legacy archives</button>
               <button className={reportView === 'airfoils' ? primary : secondary} onClick={() => setReportView('airfoils')}>Airfoils and polars</button>
             </div>
             {reportView === 'projects' ? <>
-              <Card title="Complete project"><p className="mb-4 text-xs text-zinc-500">Save inputs, geometry, STL, curves, and all analyses.</p>
-                <button className={primary} disabled={!canonical || busy} onClick={save}><Save size={15} /> {savedId ? `Saved #${savedId}` : 'Save to database'}</button>
+              <Card title="Legacy snapshot archive"><p className="mb-4 text-xs text-zinc-500">Compatibility library from Nova Propellers. New projects and named simulations use the global Save action.</p>
+                <button className={primary} disabled={!geometryCurrent || busy} onClick={save}><Save size={15} /> {savedId ? `Saved #${savedId}` : 'Archive legacy snapshot'}</button>
               </Card>
-              <Card title="Saved projects"><div className="max-h-[480px] space-y-2 overflow-auto">{projects.map((project) =>
+              <Card title="Legacy saved projects"><div className="max-h-[480px] space-y-2 overflow-auto">{projects.map((project) =>
                 <div key={project.id} className={`rounded border p-3 ${selectedProject?.id === project.id ? 'border-zinc-500 bg-zinc-900' : 'border-zinc-800 bg-zinc-950'}`}>
                   <button className="w-full text-left" onClick={() => open(project.id)}>
                     <div className="flex justify-between text-xs"><span>{project.project_name}</span><span className="text-zinc-600">#{project.id}</span></div>
                     <div className="mt-1 text-[10px] text-zinc-500">{project.geometry_method} · {(project.models || []).join(', ')}</div>
                     <div className="mt-1 text-[9px] text-zinc-700">{project.created_at}</div>
-                  </button><div className="mt-2 flex gap-3 text-[10px]"><a href={api(`/propellers/${project.id}/stl`)}>STL</a>
+                  </button><div className="mt-2 flex gap-3 text-[10px]"><button onClick={() => run(() => download(`/propellers/${project.id}/stl`, `${project.project_name}.stl`))}>STL</button>
                     <button className="text-red-400" onClick={() => remove(project.id)}>Delete</button></div>
                 </div>)}</div></Card>
             </> : <>
@@ -832,7 +932,16 @@ function App() {
         </div>
         {error && <div className="mt-4 flex gap-2 rounded border border-red-900 bg-red-950/30 p-3 text-xs text-red-300"><AlertCircle size={14} />{error}</div>}
       </aside>
-      {phase === 'report' ? <section className="min-w-0 min-h-[620px] bg-zinc-950 lg:h-full lg:min-h-0">
+      {phase === 'workflow' ? <section ref={setWorkflowCanvasTarget} aria-label="Workflow editor" className="min-h-[600px] min-w-0 bg-zinc-950 lg:h-full lg:min-h-0" />
+        : phase === 'models' ? <section className="min-w-0 overflow-auto p-8"><h2 className="mb-5 text-lg">Physical models and solver capabilities</h2>
+        <div className="space-y-4">{computationalMethods.map((method) => <Card key={method.id} title={`${method.name} — ${method.fidelity}`}>
+          <p className="text-sm text-zinc-400">{method.description}</p><p className="mt-2 text-xs text-amber-400">{method.warnings.join(' ')}</p>
+          <p className="mt-2 text-xs text-zinc-500">Supported geometry: {method.suitable_for.join(', ')}</p>
+          {method.role === 'analysis' && <button className={`${secondary} mt-3`} onClick={() => { if (guidedCompatible) chooseModel(method.id); setPhase(guidedCompatible ? 'forces' : 'workflow'); }}>Configure analysis</button>}
+        </Card>)}</div></section> : phase === 'studies' ? <StudiesWorkspace projectId={activeProjectId} projectControls={workbench}
+          configurationBusy={busy || workspaceContext?.busy || !workspaceContext?.ready} selectedRun={selectedStudyRun} activeStudy={studyExecution} onExecutionChange={trackStudyExecution} onInverseDesign={() => { setDesignMode('inverse'); setPhase('geometry'); }}
+          onInspect={(result, snapshot, runId, index, runContext) => { receiveResult(result, snapshot, runId, `study:${runId}:${index}`, index, runContext).catch((e) => setError(e.message)); setPhase('report'); }} />
+        : phase === 'integrations' ? <IntegrationsWorkspace activeExecution={externalExecution} onExecutionChange={trackExternalExecution} draft={integrationDraft} onDraftChange={setIntegrationDraft} /> : phase === 'report' ? <section className="min-w-0 min-h-[620px] bg-zinc-950 lg:h-full lg:min-h-0">
         <ReportWorkspace
           project={{ project_name: inputs.project_name }}
           analyses={analyses}
@@ -850,7 +959,7 @@ function App() {
                 geometry={selectedProject.geometry}
                 selectedModel={reportModel}
                 onSelectModel={setReportModel}
-                stlUrl={stlUrl}
+                stlUrl={selectedProject.has_stl ? `/propellers/${selectedProject.id}/stl` : ''}
               />
             : <div className="grid h-full min-h-[620px] place-items-center text-sm text-zinc-600 lg:min-h-0">Select an archived project.</div>
           : <AirfoilWorkspace detail={airfoilDetail} />}
@@ -865,16 +974,17 @@ function App() {
         </div>
         <div className="absolute left-6 top-6 flex gap-2 text-[10px] text-zinc-400">
           <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">{inputs.propeller_type}</span>
-          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">geometry: {inputs.geometry_method}</span>
-          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">model: {model}</span>
+          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">geometry: {canonical?.method || inputs.geometry_method}</span>
+          <span className="rounded border border-zinc-800 bg-zinc-950/80 px-2 py-1">configured models: {configuredModels.join(' + ') || 'geometry only'}</span>
         </div>
         {!mesh && <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-zinc-600">Generate geometry to view the blade</div>}
         {busy && <div className="absolute inset-0 grid place-items-center bg-zinc-950/35"><div className="flex gap-2 rounded bg-zinc-950 p-3 text-xs"><Loader2 className="animate-spin" size={15} /> Processing</div></div>}
         <div className="absolute inset-x-0 bottom-0 border-t border-zinc-900 bg-zinc-950/80 px-6 py-3 text-xs text-zinc-500">
-          {canonical ? `${canonical.stations.length} stations · ${inputs.blades} blades · Ø ${inputs.diameter} m` : 'No canonical geometry generated'}
+          {canonical ? `${canonical.stations.length} stations · ${canonical.blades || inputs.blades} blades · Ø ${canonical.diameter_m} m` : 'No canonical geometry generated'}
         </div>
       </section>
       }
+      </div>
     </div>
   </main>;
 }

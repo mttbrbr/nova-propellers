@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 export default [
-  { ignores: ['dist/**', '.vite-cache/**'] },
+  { ignores: ['dist/**', '.vite-cache/**', '.*-before-nova/**'] },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
