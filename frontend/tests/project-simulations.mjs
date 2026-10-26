@@ -16,27 +16,32 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const projectAction = async (name) => {
     const control = page.getByRole('button', { name, exact: true });
-    if (!await control.isVisible()) await page.getByText('Project actions', { exact: true }).click();
+    if (!await control.isVisible()) await page.getByRole('button', { name: 'More actions', exact: true }).click();
     await control.click();
+  };
+  const simulationOptions = async () => {
+    const panel = page.getByRole('dialog', { name: 'Simulation options' });
+    if (!await panel.isVisible()) await page.getByRole('button', { name: 'Simulation options', exact: true }).click();
+    return panel;
   };
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  const navigation = page.getByRole('navigation', { name: 'Workspace navigation' });
+  const navigation = page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ });
   const context = page.locator('[aria-label="Project and simulation context"]');
   await projectAction('New project');
-  await context.getByText('No project open · unsaved propeller draft', { exact: true }).waitFor();
+  await context.getByText('Unsaved draft', { exact: true }).waitFor();
   await page.getByLabel('Project name', { exact: true }).fill('Multiple simulation browser project');
-  await navigation.getByRole('button', { name: 'Force analysis', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Use synthetic demonstration', exact: true }).click();
   await page.locator('select').filter({ has: page.locator('option:checked', { hasText: 'demonstration only' }) }).waitFor();
-  await page.getByRole('textbox', { name: 'Simulation name', exact: true }).fill('BEMT baseline');
+  await (await simulationOptions()).getByRole('textbox', { name: 'Simulation name', exact: true }).fill('BEMT baseline');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 30000 });
   const projectId = await page.getByRole('combobox', { name: 'Open saved project' }).inputValue();
   const baselineId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.ok(projectId && baselineId);
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   const executions = page.getByRole('button', { name: /^View execution / });
   await executions.first().waitFor();
   assert.equal(await executions.count(), 1);
@@ -44,13 +49,13 @@ try {
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   await executions.nth(1).waitFor({ timeout: 30000 });
   assert.equal(await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue(), baselineId);
-  await page.getByRole('button', { name: 'New simulation', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Simulation name', exact: true }).fill('LLT 6500');
-  await page.getByLabel('Model', { exact: true }).selectOption('llt');
+  await (await simulationOptions()).getByRole('button', { name: 'New simulation', exact: true }).click();
+  await (await simulationOptions()).getByRole('textbox', { name: 'Simulation name', exact: true }).fill('LLT 6500');
+  await page.getByRole('radio', { name: /\(LLT\)$/ }).check();
   await context.getByText('LLT', { exact: true }).waitFor();
   await navigation.getByRole('button', { name: 'Geometry', exact: true }).click();
   await page.getByLabel('Design RPM', { exact: true }).fill('6500');
-  await navigation.getByRole('button', { name: 'Force analysis', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   await executions.nth(2).waitFor({ timeout: 30000 });
   const comparisonId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
@@ -58,24 +63,24 @@ try {
   assert.equal(await page.getByRole('combobox', { name: 'Open saved project' }).inputValue(), projectId);
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(baselineId);
   await context.getByText('BEMT', { exact: true }).waitFor();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'bemt');
-  await page.getByLabel('Model', { exact: true }).selectOption('llt');
-  await context.getByText('Simulation · unsaved changes', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('radio', { name: /\(BEMT\)$/ }).isChecked(), true);
+  await page.getByRole('radio', { name: /\(LLT\)$/ }).check();
+  await context.getByText('Unsaved changes', { exact: true }).waitFor();
+  await (await simulationOptions()).getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
+  await context.getByText('Saved', { exact: true }).waitFor();
   await page.getByRole('combobox', { name: 'Open saved simulation' }).locator('option:checked').filter({ hasText: 'BEMT baseline copy' }).waitFor({ state: 'attached' });
   const cloneId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.notEqual(cloneId, baselineId);
   await page.getByRole('button', { name: firstRunLabel, exact: true }).click();
   await page.getByText('Technical report', { exact: true }).waitFor();
-  await context.getByText(/Viewing BEMT baseline · r1 · BEMT · 5000 rpm/).waitFor();
+  await page.getByText(/Viewing BEMT baseline · r1 · BEMT · 5000 rpm/).waitFor();
   await context.getByText('LLT', { exact: true }).waitFor();
   await projectAction('Close project');
-  await context.getByText('No project open · unsaved propeller draft', { exact: true }).waitFor();
+  await context.getByText('Unsaved draft', { exact: true }).waitFor();
   await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
   await page.getByRole('combobox', { name: 'Open saved simulation' }).locator(`option[value="${cloneId}"]`).waitFor({ state: 'attached' });
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   const configurations = await (await page.request.get(`http://127.0.0.1:8777/api/v1/projects/${projectId}/simulations`)).json();
   assert.equal(configurations.length, 3);
   const baseline = configurations.find((s) => s.id === baselineId);
@@ -86,7 +91,7 @@ try {
   await navigation.getByRole('button', { name: 'Geometry', exact: true }).click();
   const originalGeometry = baseline.geometry_revision;
   await page.getByLabel('Diameter', { exact: true }).fill('0.27');
-  await context.getByText('Simulation · unsaved changes', { exact: true }).waitFor();
+  await context.getByText('Unsaved changes', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Publish geometry revision', exact: true }).click();
   await page.getByText(/Published geometry r/).waitFor();
   const beforeAdoption = await (await page.request.get(`http://127.0.0.1:8777/api/v1/projects/${projectId}/simulations`)).json();
@@ -110,16 +115,16 @@ try {
   assert.equal(await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue(), cloneId);
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(baselineId);
   await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('Diameter', { exact: true }).inputValue(), '0.27');
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(cloneId);
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('input[aria-label="Diameter"]')?.value === '0.25');
   // One global Save publishes changed geometry only for the current simulation.
   await page.getByLabel('Diameter', { exact: true }).fill('0.26');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByText(/published geometry r.*for this simulation only/).waitFor();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   const afterSave = await (await page.request.get(`http://127.0.0.1:8777/api/v1/projects/${projectId}/simulations`)).json();
   assert.equal(afterSave.find((item) => item.id === cloneId).inputs.diameter, 0.26);
   assert.equal(afterSave.find((item) => item.id === cloneId).geometry_revision, originalGeometry + 2);
@@ -129,9 +134,9 @@ try {
   assert.equal(stillOld.result.geometry.diameter_m, 0.25);
   // Duplicate includes unsaved geometry edits without replacing its saved source.
   await page.getByLabel('Diameter', { exact: true }).fill('0.28');
-  await page.getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
+  await (await simulationOptions()).getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
   await page.getByText('Independent simulation copy created', { exact: true }).waitFor();
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   const geometryCopyId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.notEqual(geometryCopyId, cloneId);
   const afterCopy = await (await page.request.get(`http://127.0.0.1:8777/api/v1/projects/${projectId}/simulations`)).json();
@@ -145,7 +150,7 @@ try {
     const runControl = page.getByRole('button', { name: 'Run simulation', exact: true });
     assert.equal(await saveControl.count(), 1);
     assert.equal(await runControl.count(), 1);
-    for (const control of [saveControl, runControl, page.getByText('Project actions', { exact: true })]) {
+    for (const control of [saveControl, runControl, page.getByRole('button', { name: 'More actions', exact: true })]) {
       const bounds = await control.boundingBox();
       assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width + 1, `Global command must fit ${width}px`);
     }
@@ -155,7 +160,6 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await navigation.getByRole('button', { name: 'Workflow', exact: true }).click();
   await navigation.locator('[aria-current="page"]').filter({ hasText: 'Workflow' }).waitFor();
-  await page.getByRole('complementary', { name: 'Project controls' }).evaluate((panel) => { panel.scrollTop = 0; });
   await page.screenshot({ path: '/tmp/nova-workflow-1440.png', animations: 'disabled' });
   const other = await (await page.request.post('http://127.0.0.1:8777/api/v1/projects', { data: {
     name: 'Other project scope', inputs: baseline.inputs, workflow: baseline.workflow,
@@ -163,7 +167,7 @@ try {
   } })).json();
   await page.reload();
   await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
-  await context.getByText('Simulation · saved', { exact: true }).waitFor();
+  await context.getByText('Saved', { exact: true }).waitFor();
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
   let release;
   let received;

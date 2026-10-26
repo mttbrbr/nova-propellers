@@ -31,7 +31,7 @@ try {
   await post('/v1/simulations', { ...lltDefinition, name: 'Mismatched RPM', inputs: { ...inputs, rpm: 6500 } });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   await page.getByRole('combobox', { name: 'Open saved project', exact: true }).selectOption(project.id);
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Studies', exact: true }).click();
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Studies', exact: true }).click();
   const panel = page.getByRole('region', { name: 'Guided solver comparison', exact: true });
   await panel.getByRole('checkbox', { name: 'Compare simulation BEMT reference', exact: true }).check();
   await panel.getByRole('checkbox', { name: 'Compare simulation Mismatched RPM', exact: true }).check();
@@ -80,7 +80,7 @@ try {
   await table.getByRole('button', { name: 'Inspect comparison LLT comparison', exact: true }).click();
   await page.getByText('Technical report', { exact: true }).waitFor();
   const context = page.locator('[aria-label="Project and simulation context"]');
-  await context.getByText(new RegExp(`Viewing LLT comparison · r${revisedLlt.revision} · LLT · 5000 rpm`)).waitFor();
+  await page.getByText(new RegExp(`Viewing LLT comparison · r${revisedLlt.revision} · LLT · 5000 rpm`)).waitFor();
   assert.deepEqual(errors, []);
   console.log('Guided BEMT/LLT comparison: mismatch and revision conflict checks, queued frozen batch, normalized differences, CSV and exact-case inspection passed.');
 } finally { await browser.close(); }

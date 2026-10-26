@@ -7,25 +7,25 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const projectAction = async (name) => {
     const control = page.getByRole('button', { name, exact: true });
-    if (!await control.isVisible()) await page.getByText('Project actions', { exact: true }).click();
+    if (!await control.isVisible()) await page.getByRole('button', { name: 'More actions', exact: true }).click();
     await control.click();
   };
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  await page.getByText('Project actions', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'More actions', exact: true }).waitFor();
   await projectAction('New project');
-  await page.getByRole('heading', { name: 'Initial sizing', exact: true }).waitFor();
-  assert.equal(await page.getByRole('navigation', { name: 'Workspace navigation' }).locator('[aria-current="page"]').count(), 1);
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Force analysis', exact: true }).click();
+  await page.getByRole('heading', { name: 'Sizing', exact: true }).waitFor();
+  assert.equal(await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).locator('[aria-current="page"]').count(), 1);
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Use synthetic demonstration', exact: true }).click();
   await page.locator('select').filter({ has: page.locator('option:checked', { hasText: 'demonstration only' }) }).waitFor();
-  await page.getByRole('button', { name: /Force analysis/ }).click();
-  // Geometry generation remains a guided step.
+  await page.getByRole('button', { name: 'Analysis', exact: true }).click();
+  // The geometry preview is generated automatically from the current inputs.
   await page.getByRole('button', { name: /Geometry/ }).first().click();
-  const generate = page.getByRole('button', { name: /Generate geometry/ });
-  await generate.click();
-  await page.getByRole('button', { name: /Force analysis/ }).click();
+  await page.getByRole('link', { name: 'Export STL', exact: true }).waitFor({ timeout: 20000 });
+  assert.equal(await page.getByRole('button', { name: /Generate geometry/ }).count(), 0);
+  await page.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('button', { name: /Workflow/ }).first().click();
@@ -46,10 +46,10 @@ try {
   assert.ok((await archive).suggestedFilename().endsWith('.nova'));
   await projectAction('New project');
   await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
-  await page.getByRole('navigation', { name: 'Workspace navigation' }).getByRole('button', { name: 'Workflow', exact: true }).click();
+  await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Workflow', exact: true }).click();
   await page.getByText('Add block', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Studies', exact: true }).click();
-  assert.equal(await page.getByRole('complementary', { name: 'Project controls' }).count(), 0);
+  assert.equal(await page.getByRole('complementary', { name: 'Stage inputs' }).count(), 0);
   await page.getByRole('textbox', { name: 'Sweep values', exact: true }).fill('3500, 4250, 5000');
   await page.getByRole('button', { name: 'Run sweep', exact: true }).click();
   await page.getByText('3/3 completed · 0 failed', { exact: true }).waitFor({ timeout: 20000 });

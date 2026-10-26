@@ -1,87 +1,120 @@
-# Main navigation organization
+# Interface organization
 
-The interface now has one primary navigation instead of overlapping workspace
-tabs and numbered phase toggles. Destinations are grouped by purpose:
+The interface is designed for 16:9 desktop screens (1920×1080) and adapts down
+to phone width. It keeps every engineering control available but shows only
+what the current task needs; optional groups open in place.
 
-| Group | Destinations |
+## Shell
+
+| Region | Contents |
 | --- | --- |
-| Propeller workflow | Initial sizing → Geometry → Force analysis → Results |
-| Analysis tools | Models, Workflow, Studies |
-| Library & software | Database, Integrations |
+| Header | Project and simulation selectors, save state, configured models, **Simulation options**, stage stepper, Save, **More actions**, Run / Cancel |
+| Rail | Design, Studies, Workflow, Library, Integrations (icons with tooltips) |
+| Stage area | Inputs on the left, data in the centre, square 3D render with linked data on the right |
+| Notices | Confirmations bottom-left (fade after 8 s); errors stay until dismissed |
 
-Each destination has one navigation entry and an explicit active state. The
-header identifies the current workspace and its purpose; New project is a
-separate action and returns to Initial sizing. Existing projects, archives and
-simulation selection remains in the persistent context bar. The header has one
-Save and Run simulation/Cancel action; New/Close project and `.nova` import/export
-are grouped under Project actions. Export explicitly uses the saved project.
-Standalone Integrations keeps software-specific submission controls and shares
-the global job cancellation/monitoring control across workspace changes.
+- **Simulation options** holds the simulation name, New/Duplicate simulation and
+  New PyWake/OpenFAST simulation.
+- **More actions** holds New/Close project and `.nova` export/import. Export
+  uses the saved project.
+- Run is the only accent-coloured button. While a run, study or external job is
+  active it becomes Cancel and shows the job state and progress. Leaving the
+  workspace or changing project keeps that job cancellable.
 
-Sizing shows targets/dimensions immediately. Polar import and fluid properties
-appear in Force analysis and Workflow; hiding these controls does not reset
-their values or unmount the project controller. Geometry/Results retain a
-summary of the selected polar asset. Models, Studies and Integrations use the
-available central width without unrelated propeller controls. Workflow uses
-the full central region for its block editor, with Customize workflow, validity
-details and a compact Add block menu in its toolbar. Project/data settings,
-selected-node solver and collapsible job logs remain in the sidebar. The existing
-graph state and numerical implementations
-are preserved; no geometry viewport is rendered in Workflow.
+## Design stages
 
-Custom graphs that cannot be represented safely by guided forms disable the
-three guided setup destinations and direct users to Workflow. On narrow
-windows, a grouped Workspace selector replaces the desktop navigation rail.
-Surface/Mesh controls remain local to the 3D viewport.
+| Stage | Inputs | Centre | Right |
+| --- | --- | --- | --- |
+| Sizing | Project, target thrust, diameter (manual or from disk loading) | Ideal actuator-disk trade-off charts, method, presets | Disk schematic and ideal values |
+| Geometry | Blade, shape (approach, method, control points or Laguerre coefficients), inverse design, airfoil loft, shared-geometry revision, STL export | Chord and twist curves with draggable points, published revision dashed underneath, point tables | Render with station ring, geometry summary, section at the selected station |
+| Analysis | Solver with maturity, rotation speed, airfoil polars and air data | Polar curves the solver will use, solver description and warnings, project explorer | Render, last run (faded with a reason when out of date), current execution and CSV export |
+| Results | Runs of the simulation, comparison run, provenance, exports | Performance band, six spanwise distributions, station table, convergence details | Render coloured by dT, α, Re or Cl, residual history, limiting station |
 
-New simulation retains the selected shared geometry and resets analysis settings;
-Duplicate simulation preserves the current draft as a new configuration. Dirty
-project/configuration transitions offer Save changes, Discard changes and Keep
-editing. Shared geometry revisions are selected independently of solver/RPM;
-publishing and applying to explicit simulation targets happens in Geometry.
-Older propeller records remain in the identified legacy library. See
-[Project and simulation context](PROJECT_SIMULATIONS.md).
+- **Live preview.** The geometry preview regenerates automatically about
+  350 ms after an edit, so there is no Generate step. A failed request keeps the
+  last valid preview and shows the backend message.
+- **Shared station.** The selected station (span 0 at the root section, 1 at the
+  tip) is shared everywhere. Clicking a chart or a station row, or pressing
+  ←/→, moves the dashed line, value labels, highlighted row and the ring on the
+  render together.
+- **Custom graphs.** Graphs that the guided forms cannot represent disable the
+  first three stages and route to Workflow.
 
-## Project explorer and study navigation
+## Other workspaces
 
-The contextual panel contains a project explorer with searchable saved
-simulations, geometry families/revisions, referenced datasets and all native
-project executions. Sections collapse independently; execution history initially
-shows the latest ten entries and can expand. Source inspection shows units/data
-identity, synthetic-data flags and the original source download. Using a polar
-or geometry is an explicit edit, protected by the existing dirty-state controls.
+| Workspace | Contents |
+| --- | --- |
+| Workflow | Full-height execution graph; selected block, airfoil data and project explorer in the left column; external case editors (PyWake, OpenFAST) in the centre |
+| Studies | Solver comparison, one- and two-axis sweeps, stored runs and comparisons |
+| Library | Airfoils and polars (import `.dat`, create, edit, delete), physical models with maturity and warnings, legacy snapshot archive with its report |
+| Integrations | External software configuration, OpenFAST import and saved external runs |
 
-Opening a historical study/comparison routes to Studies and preserves its frozen
-sources; opening a native analysis retains its original simulation caption.
-The comparison shortcut opens the guided selection of saved configurations.
-Studies adds an optional second-axis grid, with exact-case inspection and CSV;
-single-axis controls remain the default. Read-only history can be opened while
-another job is active, without changing which job the global Cancel targets.
-Optimization candidate restoration from the explorer remains later work.
+## Keyboard
 
-Current verification: seven browser journeys, frontend lint/build and clean
-installed Arch qualification passed. Screenshots for the explorer, solver
-comparison and responsive result grids are under
-`.desktop-tools/ui-navigation/comparison-explorer/`; reusable wind-farm inputs
-and equal-scale layout preview are under `.desktop-tools/ui-navigation/external-cases/`.
-Evidence: `.desktop-tools/qualification/workflow-expansion-report.json`.
+| Action | Keys |
+| --- | --- |
+| Run simulation | Ctrl+Enter |
+| Save | Ctrl+S |
+| Go to stage 1–4 | Alt+1 … Alt+4 |
+| Previous / next station | ← / → (Geometry, Results) |
+| Fit render to view | F |
+| Move a focused control point | ↑ / ↓ (Shift for larger steps) |
+| Close a menu | Esc |
 
-Verified with frontend lint/build, the complete Chromium project/study/import
-journey, and visual/layout checks at 1440×1000, 1024×768 and 390×844. Checks
-include active navigation, retained project state, contextual controls and no
-horizontal page overflow. Local previews are under
-`.desktop-tools/ui-navigation/`; package evidence is in
-`.desktop-tools/qualification/UI-navigation-report.json`.
-The expanded workflow canvas was additionally checked at 1440×1000 and
-1024×768, including node selection and the complete save/reopen/study journey.
-Current package evidence: `.desktop-tools/qualification/workflow-editor-report.json`.
-Preview: `.desktop-tools/ui-navigation/workflow.png`.
+## Breakpoints
 
-The current shared-geometry/unified-command increment additionally passed the
-simulation journey at widths 1440, 1024 and 390 px (viewport height 1000 px),
-including unique/reachable commands, Save publication, duplication of edited
-geometry, selective revision adoption and persistent study cancellation.
-Current previews: `.desktop-tools/ui-navigation/shared-geometry/`.
-Current Arch package evidence: `.desktop-tools/qualification/shared-geometry-report.json`
-and `SHARED_GEOMETRY_SHA256SUMS`. Ubuntu remains at the preceding integration
-increment; earlier evidence above describes the earlier navigation steps.
+| Width | Layout |
+| --- | --- |
+| ≥ 1600 px | Inputs 340 px, flexible content, render column 660 px |
+| 1280–1600 px | Inputs 300 px, flexible content, render column 500 px |
+| 768–1280 px | Inputs beside content; render and linked data move below the content |
+| < 768 px | Everything stacks; the rail becomes a top bar |
+
+## Design tokens
+
+Colours live in `frontend/tailwind.config.js` under `nv`:
+
+- surfaces: `canvas`, `chrome`, `panel`, `raised`, `hover`, `active`;
+- lines: `line`, `edge`, `edge-strong`;
+- text: `muted`, `ink`, `ink-strong`;
+- signals: `accent`, `ok`, `warn`, `err`;
+- data series: `series2`, `series3`, `reference`.
+
+Numbers use the monospace stack with tabular figures. The minimum text size is
+11 px.
+
+Shared components:
+
+| File | Contents |
+| --- | --- |
+| `src/ui/controls.jsx` | Fields with units, segmented controls, icon buttons with tooltips, click-to-open popovers, disclosures, notices, metrics |
+| `src/ui/LineChart.jsx` | Every curve in the app: ticks, hover readout, shared selection, dashed reference series, draggable points |
+| `src/ui/SectionView.jsx` | Airfoil section drawn at its pitch angle |
+
+## Project and simulation context
+
+- **New and Duplicate.** New simulation keeps the selected shared geometry and
+  resets analysis settings. Duplicate simulation copies the current draft,
+  including unsaved geometry edits.
+- **Unsaved changes.** Switching away from a project or configuration with
+  unsaved changes offers Save changes, Discard changes and Keep editing.
+- **Shared geometry revisions.** Revisions are chosen in the Geometry stage's
+  Revision section, independently of solver and RPM. Publishing creates an
+  immutable revision; applying it changes only the selected simulations.
+  Earlier results keep their original geometry.
+- **Legacy records.** Older propeller records remain in Library › Archives.
+  See [Project and simulation context](PROJECT_SIMULATIONS.md).
+
+## Verification
+
+The nine browser journeys in `frontend/tests` (`npm run test:*`) cover:
+
+- guided execution, auto preview, workflow cloning and validation;
+- save/reopen and `.nova` export;
+- multiple simulations, geometry adoption and draft protection;
+- solver comparisons and one- and two-axis studies;
+- external cases, archives and OpenFAST inspection;
+- execution monitoring recovery.
+
+The command-reachability and no-horizontal-overflow check runs at 1440, 1024
+and 390 px.
