@@ -1,6 +1,6 @@
 pkgname=nova-propellers
 pkgver=0.1.0.alpha.2
-pkgrel=1
+pkgrel=3
 pkgdesc="Local-first propeller design and analysis desktop workbench"
 arch=('x86_64')
 url="https://github.com/mttbrbr/nova-propellers"
@@ -40,6 +40,10 @@ check() {
   export CXX=/usr/bin/g++
 
   python tools/smoke_desktop_backend.py \
+    src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
+  python tools/smoke_workflow_backend.py \
+    src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
+  python tools/smoke_integrations_backend.py \
     src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
   cargo test --release --manifest-path src-tauri/Cargo.toml --locked
 }

@@ -17,6 +17,12 @@ FORBIDDEN_SUFFIXES = {
     ".sqlite",
     ".sqlite3",
     ".stl",
+    ".exe",
+    ".dll",
+    ".so",
+    ".a",
+    ".lib",
+    ".outb",
 }
 MEDIA_SUFFIXES = {".gif", ".jpg", ".jpeg", ".mp4", ".png", ".webm", ".webp"}
 
@@ -35,6 +41,12 @@ def main() -> int:
     media_manifest = (ROOT / "docs/media/PROVENANCE.md").read_text()
     icon_manifest = (ROOT / "src-tauri/icons/PROVENANCE.md").read_text()
     for path in candidate_files():
+        source = ROOT / path
+        if source.is_file():
+            with source.open('rb') as stream:
+                signature = stream.read(4)
+            if signature.startswith(b'\x7fELF') or signature[:2] == b'MZ':
+                errors.append(f"Compiled executable cannot be included in the source archive: {path}")
         if FORBIDDEN_PARTS.intersection(path.parts) or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"Generated or data file is not allowed in the source archive: {path}")
         if path.suffix.lower() in MEDIA_SUFFIXES:

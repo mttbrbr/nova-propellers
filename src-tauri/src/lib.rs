@@ -17,6 +17,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 #[serde(rename_all = "camelCase")]
 struct BackendStatus {
     endpoint: Option<String>,
+    session_token: Option<String>,
     ready: bool,
     error: Option<String>,
 }
@@ -25,15 +26,15 @@ struct BackendStatus {
 struct BackendManager {
     status: Mutex<BackendStatus>,
     child: Mutex<Option<CommandChild>>,
+    session_token: Mutex<Option<String>>,
     shutting_down: AtomicBool,
 }
 
 impl BackendManager {
     fn status(&self) -> BackendStatus {
-        self.status
-            .lock()
-            .expect("backend status lock poisoned")
-            .clone()
+        let mut status = self.status.lock().expect("backend status lock poisoned").clone();
+        status.session_token = self.session_token.lock().expect("session lock poisoned").clone();
+        status
     }
 
     fn update(&self, status: BackendStatus) {
@@ -85,8 +86,12 @@ fn signal_processes(processes: &[u32], signal: libc::c_int) {
 
 fn terminate_process_tree(child: CommandChild) {
     let descendants = descendant_pids(child.pid());
-    signal_processes(&descendants, libc::SIGTERM);
-    thread::sleep(Duration::from_millis(250));
+    // Give Uvicorn time to cancel workers and commit terminal run states.
+    signal_processes(&[child.pid()], libc::SIGTERM);
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while Instant::now() < deadline && std::path::Path::new(&format!("/proc/{}", child.pid())).exists() {
+        thread::sleep(Duration::from_millis(100));
+    }
     signal_processes(&descendants, libc::SIGKILL);
     let _ = child.kill();
 }
@@ -149,6 +154,7 @@ fn wait_until_ready(app: AppHandle, endpoint: String) {
             }
             if health_check(&endpoint) {
                 manager.update(BackendStatus {
+                    session_token: None,
                     endpoint: Some(endpoint),
                     ready: true,
                     error: None,
@@ -159,6 +165,7 @@ fn wait_until_ready(app: AppHandle, endpoint: String) {
             thread::sleep(Duration::from_millis(100));
         }
         app.state::<BackendManager>().update(BackendStatus {
+            session_token: None,
             endpoint: None,
             ready: false,
             error: Some("The local backend did not become ready within 20 seconds.".into()),
@@ -180,9 +187,14 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = data_dir
         .to_str()
         .ok_or("application data path is not valid UTF-8")?;
+    let mut random = [0u8; 32];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut random)?;
+    let token: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    *app.state::<BackendManager>().session_token.lock().expect("session lock poisoned") = Some(token.clone());
     let command =
         app.shell()
             .sidecar("nova-backend")?
+            .env("NOVA_SESSION_TOKEN", token)
             .args(["--port", "0", "--data-dir", data_dir]);
     let (mut events, child) = command.spawn()?;
     app.state::<BackendManager>()
@@ -191,6 +203,16 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .expect("backend child lock poisoned")
         .replace(child);
 
+    let timeout_handle = app.clone();
+    thread::spawn(move || {
+        thread::sleep(STARTUP_TIMEOUT);
+        let manager = timeout_handle.state::<BackendManager>();
+        if !manager.shutting_down.load(Ordering::SeqCst) && !manager.status().ready && manager.status().error.is_none() {
+            manager.update(BackendStatus { session_token: None, endpoint: None, ready: false,
+                error: Some("The local backend did not start within 20 seconds.".into()) });
+            show_main_window(&timeout_handle);
+        }
+    });
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut output_buffer = String::new();
@@ -199,7 +221,12 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         while let Some(event) = events.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
-                    output_buffer.push_str(&String::from_utf8_lossy(&bytes));
+                    if !readiness_started {
+                        output_buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if output_buffer.len() > 8192 {
+                            output_buffer = output_buffer.chars().rev().take(4096).collect::<String>().chars().rev().collect();
+                        }
+                    }
                     if !readiness_started {
                         if let Some(endpoint) = parse_endpoint(&output_buffer) {
                             readiness_started = true;
@@ -210,7 +237,7 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 CommandEvent::Stderr(bytes) => {
                     stderr_tail.push_str(&String::from_utf8_lossy(&bytes));
                     if stderr_tail.len() > 2000 {
-                        stderr_tail.drain(..stderr_tail.len() - 2000);
+                        stderr_tail = stderr_tail.chars().rev().take(1000).collect::<String>().chars().rev().collect();
                     }
                 }
                 CommandEvent::Error(message) => {
@@ -220,6 +247,7 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         .load(Ordering::SeqCst)
                     {
                         handle.state::<BackendManager>().update(BackendStatus {
+                            session_token: None,
                             endpoint: None,
                             ready: false,
                             error: Some(format!("Local backend error: {message}")),
@@ -246,6 +274,7 @@ fn start_backend(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                             format!(" Last output: {detail}")
                         };
                         handle.state::<BackendManager>().update(BackendStatus {
+                            session_token: None,
                             endpoint: None,
                             ready: false,
                             error: Some(format!(
@@ -272,6 +301,7 @@ pub fn run() {
         .setup(|app| {
             if let Err(error) = start_backend(app.handle()) {
                 app.state::<BackendManager>().update(BackendStatus {
+                    session_token: None,
                     endpoint: None,
                     ready: false,
                     error: Some(format!("Unable to start the local backend: {error}")),

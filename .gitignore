@@ -95,3 +95,7 @@ backend/validation/generated/
 tmp/
 temp/
 *.tmp
+
+# Preserved pre-migration generated artifacts
+frontend/.node_modules-before-nova/
+frontend/.dist-before-nova/

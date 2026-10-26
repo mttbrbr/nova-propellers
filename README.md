@@ -32,6 +32,15 @@ units, solver maturity, convergence information and warnings visible.
 - Optimize chord and twist distributions against a target thrust.
 - Import UIUC/XFOIL-style `.dat` airfoil coordinates and spanwise lofts.
 - Store complete projects locally, revisit reports and export STL geometry.
+- Save multiple named simulation configurations in one project, with independent
+  models/operating conditions, shared versioned geometry and reproducible
+  execution history. See
+  [Project and simulation context](docs/PROJECT_SIMULATIONS.md).
+- Run saved solver configurations as a controlled comparison, or explore one/two
+  parameters with frozen cases, result grids and CSV exports.
+- Import OpenFAST output and exchange standalone `.nova-run` external results;
+  optional PyWake/OpenFAST execution uses independently installed software.
+  See [Integrations](docs/EXTERNAL_INTEGRATIONS.md).
 
 Toroidal propellers are deliberately out of scope for the current alpha. Nova
 only exposes methods that match the geometry and analysis paths implemented in
@@ -205,3 +214,17 @@ Nova is available under the [Apache License 2.0](LICENSE). Dependency licenses
 and source/media provenance are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [PROVENANCE.md](PROVENANCE.md).
+
+## NOVA workflow foundation
+
+The guided propeller workflow now shares a typed execution engine with an
+editable workflow view. Projects support explicit polar import, immutable runs,
+job cancellation, and portable `.nova` archives. See
+[implementation and verification](docs/NOVA_IMPLEMENTATION.md) for the user
+journey, headless commands, test procedure, and remaining release gates.
+
+## Optional scientific integrations
+
+PyWake wind-farm NOJ analysis and OpenFAST `.out/.outb` import/existing-case
+execution are available in Integrations. External software is installed separately.
+See [setup and qualification limits](docs/EXTERNAL_INTEGRATIONS.md).

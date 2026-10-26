@@ -22,8 +22,23 @@ fi
 
 openbox >"${log_file}.openbox" 2>&1 &
 window_manager_pid=$!
-"${app_executable}" >"${log_file}" 2>&1 &
-desktop_pid=$!
+if [[ -n "${NOVA_DESKTOP_ENTRY:-}" ]]; then
+  gtk-launch "${NOVA_DESKTOP_ENTRY}" >"${log_file}" 2>&1
+  desktop_pid=''
+  for _ in {1..20}; do
+    desktop_pid="$(pgrep --exact nova-propellers | head -n 1 || true)"
+    if [[ -n "${desktop_pid}" ]]; then break; fi
+    sleep 0.1
+  done
+  if [[ -z "${desktop_pid}" ]]; then
+    kill "${window_manager_pid}" 2>/dev/null || true
+    cat "${log_file}" >&2
+    exit 1
+  fi
+else
+  "${app_executable}" >"${log_file}" 2>&1 &
+  desktop_pid=$!
+fi
 
 cleanup() {
   if kill -0 "${desktop_pid}" 2>/dev/null; then
@@ -84,7 +99,9 @@ if kill -0 "${desktop_pid}" 2>/dev/null; then
   echo "Tauri did not exit after its window was closed." >&2
   exit 1
 fi
-wait "${desktop_pid}" || true
+if [[ -z "${NOVA_DESKTOP_ENTRY:-}" ]]; then
+  wait "${desktop_pid}" || true
+fi
 
 for _ in {1..5}; do
   if ! pgrep --exact nova-backend >/dev/null; then

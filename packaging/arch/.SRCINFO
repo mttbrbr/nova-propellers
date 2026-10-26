@@ -1,7 +1,7 @@
 pkgbase = nova-propellers
 	pkgdesc = Local-first propeller design and analysis desktop workbench
 	pkgver = 0.1.0.alpha.2
-	pkgrel = 1
+	pkgrel = 3
 	url = https://github.com/mttbrbr/nova-propellers
 	arch = x86_64
 	license = Apache-2.0
