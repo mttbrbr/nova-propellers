@@ -9,7 +9,6 @@ from inverse_design import BEMTSolver
 
 from .sensitivity import _geometry, _relative_error
 
-
 DEFAULT_CONFIG = Path(__file__).with_name("cases") / "bemt_relaxation_study.json"
 PERFORMANCE_FIELDS = ("thrust", "torque", "efficiency")
 

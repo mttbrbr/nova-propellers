@@ -16,7 +16,6 @@ from .runner import CASES_DIRECTORY, _load_case, validate_case
 from .sensitivity import DEFAULT_CONFIG as SENSITIVITY_CONFIG
 from .sensitivity import run_study as run_sensitivity_study
 
-
 ROOT_CONFIG = Path(__file__).with_name("cases") / "bemt_root_induction_study.json"
 
 

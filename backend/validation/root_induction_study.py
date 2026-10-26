@@ -10,7 +10,6 @@ from inverse_design import BEMTSolver
 from .relaxation_study import PERFORMANCE_FIELDS, _case_key, _failure_diagnostics
 from .sensitivity import _geometry, _relative_error
 
-
 DEFAULT_CONFIG = Path(__file__).with_name("cases") / "bemt_root_induction_study.json"
 
 

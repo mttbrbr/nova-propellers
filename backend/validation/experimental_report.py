@@ -187,6 +187,22 @@ def run(case_path: Path, output_root: Path = GENERATED_ROOT) -> Path:
             f"| {group['metrics']['ct']['mae']:.6g} | {group['metrics']['cp']['mae']:.6g} "
             f"| {group['metrics']['eta']['mae']:.6g} |"
         )
+    failed = [item for item in comparison["predictions"] if not item["converged"]]
+    if failed:
+        lines += [
+            "",
+            "## Solver failures",
+            "",
+            "| J | RPM | iterations | residual | termination | error |",
+            "| ---: | ---: | ---: | ---: | --- | --- |",
+        ]
+        for item in failed:
+            lines.append(
+                f"| {item['advance_ratio']:.5g} | {item['rpm']:.5g} "
+                f"| {item['iterations'] if item['iterations'] is not None else 'n/a'} "
+                f"| {item['residual'] if item['residual'] is not None else 'n/a'} "
+                f"| {item['termination_reason'] or 'n/a'} | {item['error'] or ''} |"
+            )
     lines += ["", "## Plots", "", "![CT](ct.png)", "![CP](cp.png)", "![eta](eta.png)", "", "## Provenance and limitations", "", case["solver"]["airfoil_note"], "UIUC geometry is an approximate digitization. Source licenses are unspecified and redistribution is not assumed. Raw inputs and this report remain local-only by policy."]
     (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output

@@ -505,6 +505,18 @@ Engineering plots are emitted as PNG at 180 dpi. SVG files remain a secondary
 machine-scalable output for the main comparison, but reports display PNG by
 default.
 
+Sensitivity to Nova's existing synthetic polar families is run with:
+
+```bash
+python -m validation.experimental_airfoil_study --stations 36
+```
+
+This holds UIUC `r/R`, `c/R` and `beta` fixed and changes only the synthetic
+section family. It cannot identify the actual APC section. The output is used
+to determine whether plausible section-model variation has enough magnitude
+to explain the discrepancy; it is not a ranking from which to choose a tuned
+production default.
+
 To add a dataset, implement its source-specific parsing, units and conventions
 behind `DatasetAdapter`, returning canonical `ExperimentalSeries` objects.
 Provenance must record measurements, geometry and airfoil separately, always
