@@ -44,6 +44,9 @@ class Prediction:
     efficiency: float | None
     converged: bool
     error: str | None = None
+    iterations: int | None = None
+    residual: float | None = None
+    termination_reason: str | None = None
 
 
 def evaluate_series(
@@ -72,7 +75,21 @@ def evaluate_series(
             eta = point.advance_ratio * ct / cp if abs(cp) > 1e-12 else None
             convergence = result.get("convergence")
             converged = convergence is None or bool(convergence.get("converged"))
-            predictions.append(Prediction(point.advance_ratio, point.rpm, ct, cp, eta, converged))
+            predictions.append(
+                Prediction(
+                    point.advance_ratio,
+                    point.rpm,
+                    ct,
+                    cp,
+                    eta,
+                    converged,
+                    iterations=convergence.get("iterations") if convergence else None,
+                    residual=convergence.get("residual") if convergence else None,
+                    termination_reason=(
+                        convergence.get("termination_reason") if convergence else None
+                    ),
+                )
+            )
         except Exception as exc:  # retain every failed operating point in the report
             predictions.append(Prediction(point.advance_ratio, point.rpm, None, None, None, False, str(exc)))
     return predictions

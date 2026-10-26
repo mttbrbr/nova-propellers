@@ -100,3 +100,29 @@ At `J=0.549` and near zero thrust around `J=0.671`, some inner stations operate
 below the alpha grid. Near zero total thrust, normalized regional percentages
 are intentionally not interpreted because positive and negative station loads
 cancel. The raw signed loads remain available locally.
+
+## Synthetic section-family sensitivity
+
+Holding the UIUC geometry and all numerical controls fixed, Nova's four
+synthetic section families produced materially different predictions. Across
+104 points, CT MAE ranged from 0.02135 to 0.03864 and CP MAE from 0.01075 to
+0.02038. This confirms that the assumed section model is large enough to be a
+dominant uncertainty.
+
+The result does not identify an APC profile. NACA 6409 gave the lowest CT and
+CP absolute errors but a worse CT percentage error and efficiency error than
+NACA 4412; NACA 0012 produced very poor efficiency behavior. There is no
+single consistent “winner,” and selecting the lowest aggregate error would be
+calibration against the development benchmark. The production default remains
+unchanged pending independent section evidence and a held-out propeller case.
+
+APC Thin Electric 10×7 was declared as that next independent case before its
+metrics were inspected. It retains the frozen NACA 4412 baseline and is not
+used to select among the synthetic families above.
+
+The frozen 10×7 baseline contains 124 experimental points. Nova converged at
+123; the non-converged point is `J=0.084` at 6531 rpm and remains in the
+report. CT MAE is 0.03449, CP MAE 0.02074 and efficiency MAE 0.06365. CT and
+CP agreement are worse than for 10×5, while efficiency percentage error is
+lower. This independent result reinforces that choosing a synthetic family
+from the 10×5 aggregate would not establish general predictive improvement.

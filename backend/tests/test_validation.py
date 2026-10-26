@@ -18,6 +18,7 @@ from validation.experimental import (
     metric_summary,
     resample_geometry,
 )
+from validation.experimental_report import load_case as load_experimental_case
 from validation.runner import validate_case
 from validation.sensitivity import render_markdown
 from validation.uiuc import UIUCVolume1Adapter
@@ -25,6 +26,14 @@ from validation.verification_report import render_markdown as render_verificatio
 
 
 class ValidationTests(unittest.TestCase):
+    def test_experimental_case_manifests_have_explicit_license_status(self) -> None:
+        cases = Path(__file__).parents[1] / "validation" / "cases"
+        for filename in ("uiuc_apce_10x5.json", "uiuc_apce_10x7.json"):
+            case = load_experimental_case(cases / filename)
+            for source in case["sources"].values():
+                self.assertIn("license", source)
+                self.assertNotEqual(source["license"], "")
+
     def test_uiuc_adapter_parses_original_synthetic_fixture(self) -> None:
         # Original Nova fixture: values are invented solely to test the parser.
         with tempfile.TemporaryDirectory() as directory:

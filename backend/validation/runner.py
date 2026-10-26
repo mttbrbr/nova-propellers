@@ -13,7 +13,6 @@ import numpy as np
 
 from inverse_design import BEMTSolver, BezierBladeGeometry, BezierControlPoints
 
-
 CASES_DIRECTORY = Path(__file__).with_name("cases")
 
 
