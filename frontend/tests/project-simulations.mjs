@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { currentProjectId, openProject, studyType, waitForProject } from './helpers.mjs';
 
 const barrier = async (promise, label) => {
   let timer;
@@ -38,7 +39,7 @@ try {
   await (await simulationOptions()).getByRole('textbox', { name: 'Simulation name', exact: true }).fill('BEMT baseline');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 30000 });
-  const projectId = await page.getByRole('combobox', { name: 'Open saved project' }).inputValue();
+  const projectId = await currentProjectId(page);
   const baselineId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.ok(projectId && baselineId);
   await context.getByText('Saved', { exact: true }).waitFor();
@@ -60,7 +61,7 @@ try {
   await executions.nth(2).waitFor({ timeout: 30000 });
   const comparisonId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.notEqual(comparisonId, baselineId);
-  assert.equal(await page.getByRole('combobox', { name: 'Open saved project' }).inputValue(), projectId);
+  assert.equal(await currentProjectId(page), projectId);
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(baselineId);
   await context.getByText('BEMT', { exact: true }).waitFor();
   await context.getByText('Saved', { exact: true }).waitFor();
@@ -78,7 +79,7 @@ try {
   await context.getByText('LLT', { exact: true }).waitFor();
   await projectAction('Close project');
   await context.getByText('Unsaved draft', { exact: true }).waitFor();
-  await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
+  await openProject(page, projectId);
   await page.getByRole('combobox', { name: 'Open saved simulation' }).locator(`option[value="${cloneId}"]`).waitFor({ state: 'attached' });
   await context.getByText('Saved', { exact: true }).waitFor();
   const configurations = await (await page.request.get(`http://127.0.0.1:8777/api/v1/projects/${projectId}/simulations`)).json();
@@ -166,9 +167,10 @@ try {
     conditions: baseline.conditions, polar_asset_id: baseline.polar_asset_id,
   } })).json();
   await page.reload();
-  await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
+  await openProject(page, projectId);
   await context.getByText('Saved', { exact: true }).waitFor();
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
+  await studyType(page, 'Parameter sweep');
   let release;
   let received;
   const hold = new Promise((resolve) => { release = resolve; });
@@ -180,10 +182,10 @@ try {
   });
   await page.getByRole('button', { name: 'Run sweep', exact: true }).click();
   await barrier(started, 'study submission');
-  await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(other.id);
+  await openProject(page, other.id);
   release();
   await page.getByRole('textbox', { name: 'Sweep values', exact: true }).waitFor();
-  await page.waitForFunction((id) => document.querySelector('[aria-label="Open saved project"]')?.value === id, other.id);
+  await waitForProject(page, other.id);
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((button) => button.textContent === 'Run sweep')?.disabled);
   assert.equal(await page.getByText(/^Study from /).count(), 0, 'An old-project study must not populate the new project');
   await page.unroute('**/api/v1/simulations/*/study');
@@ -216,7 +218,7 @@ try {
   await navigation.getByRole('button', { name: 'Workflow', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Cancel', exact: true }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Cancel study', exact: true }).count(), 0);
-  await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
+  await openProject(page, projectId);
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
   verifyOtherScope = true;
   await barrier(otherScopePolled, 'study polling after project switch');

@@ -13,7 +13,7 @@ const difference = (row, metric) => {
   return reason === 'zero_baseline' ? 'Undefined: zero reference' : reason === 'baseline_failed' ? 'Unavailable: reference failed' : reason === 'case_failed' ? 'Unavailable: case failed' : '—';
 };
 
-export default function SimulationComparison({ projectId, current, onStart, onInspect, activeJob, configurationBusy = false }) {
+export default function SimulationComparison({ projectId, current, onStart, onInspect, activeJob, configurationBusy = false, showResults = true }) {
   const [simulations, setSimulations] = useState([]);
   const [selected, setSelected] = useState([]);
   const [reference, setReference] = useState('');
@@ -67,7 +67,7 @@ export default function SimulationComparison({ projectId, current, onStart, onIn
     });
   };
   const comparisonRun = current?.comparison ? current : null;
-  return <section aria-label="Guided solver comparison" className="space-y-4 rounded-xl border border-nv-line bg-nv-panel p-4">
+  return <section aria-label="Guided solver comparison" className="space-y-4">
     <div><h3 className="text-sm">Compare saved simulations</h3><p className="mt-2 text-xs leading-5 text-nv-muted">Select 2–8 saved configurations to evaluate the same geometry and operating conditions with different native models. Saved revisions are frozen for the batch; current unsaved edits are excluded. Compatible manual guided workflows with one analysis are supported.</p></div>
     {!projectId ? <p className="text-xs text-nv-muted">Save or open a project to compare its simulations.</p> : <>
       <div className="flex flex-wrap gap-3"><label className="min-w-0 flex-1 text-xs text-nv-muted">Comparison name<input aria-label="Comparison name" className={field} value={name} onChange={(e) => setName(e.target.value)} /></label><button className={`${button} self-end`} disabled={busy} onClick={refresh}>Refresh saved configurations</button></div>
@@ -81,7 +81,7 @@ export default function SimulationComparison({ projectId, current, onStart, onIn
       <div className="flex flex-wrap gap-2"><button className={button} disabled={busy || running || selected.length < 2 || selected.length > 8} onClick={validate}>Validate comparison</button><button className={button} disabled={configurationBusy || busy || running || !validation?.valid} onClick={submit}>Run solver comparison</button></div>
       {validation?.valid && <div className="space-y-2 text-xs text-nv-ok-ink"><p>Compatible comparison · {validation.simulations.length} frozen configuration revisions</p>{(validation.warnings || []).map((warning, index) => <p key={index} className="text-nv-warn-ink">{warning}</p>)}</div>}
     </>}
-    {comparisonRun && <div aria-label="Solver comparison execution" className="space-y-3 border-t border-nv-line pt-4">
+    {showResults && comparisonRun && <div aria-label="Solver comparison execution" className="space-y-3 border-t border-nv-line pt-4">
       <h4 className="text-sm">{comparisonRun.comparison.name} · {comparisonRun.result?.comparison_status || comparisonRun.state} · {Math.round((comparisonRun.progress || 0) * 100)}%</h4>
       <p className="text-xs text-nv-muted">Run {comparisonRun.id} · {(comparisonRun.comparison.simulations || []).map((s) => `${s.name} r${s.revision}`).join(' / ')}. The global Cancel command stops an active batch.</p>
       <details><summary className="cursor-pointer text-xs text-nv-muted">Frozen comparison inputs</summary><div className="mt-2 overflow-auto"><table className="w-full text-left text-xs"><thead className="text-nv-muted"><tr>{['Configuration', 'Geometry reference', 'RPM', 'Airfoil', 'Density [kg/m³]', 'Viscosity [Pa·s]', 'Polar asset'].map((title) => <th key={title} className="p-2 font-normal">{title}</th>)}</tr></thead><tbody>{comparisonRun.comparison.simulations.map((source) => <tr key={source.id} className="border-t border-nv-line"><td className="p-2">{source.name} · r{source.revision}</td><td className="p-2">{source.geometry_id?.slice(0, 8)} · r{source.geometry_revision}</td><td className="p-2">{number(source.inputs.rpm)}</td><td className="p-2">{source.inputs.airfoil}</td><td className="p-2">{number(source.conditions.air_density_kg_m3)}</td><td className="p-2">{number(source.conditions.air_viscosity_pa_s)}</td><td className="p-2">{source.polar_asset?.filename || 'None'}<span className="block text-[11px] text-nv-muted">{source.polar_asset_id?.slice(0, 8)}</span></td></tr>)}</tbody></table></div></details>

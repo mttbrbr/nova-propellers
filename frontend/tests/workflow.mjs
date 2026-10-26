@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { currentProjectId, openProject, studyType } from './helpers.mjs';
 
 const browser = await chromium.launch({ executablePath: process.env.NOVA_CHROMIUM_PATH === 'managed' ? undefined : process.env.NOVA_CHROMIUM_PATH || '/usr/bin/chromium',
   headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -39,39 +40,33 @@ try {
   await page.getByRole('button', { name: 'Validate', exact: true }).click();
   await page.getByText('Valid · Guided compatible', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  const projectId = await page.getByRole('combobox', { name: 'Open saved project' }).inputValue();
+  const projectId = await currentProjectId(page);
   assert.ok(projectId);
   const archive = page.waitForEvent('download');
   await projectAction('Export saved project .nova');
   assert.ok((await archive).suggestedFilename().endsWith('.nova'));
   await projectAction('New project');
-  await page.getByRole('combobox', { name: 'Open saved project' }).selectOption(projectId);
+  await openProject(page, projectId);
   await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Workflow', exact: true }).click();
   await page.getByText('Add block', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Studies', exact: true }).click();
   assert.equal(await page.getByRole('complementary', { name: 'Stage inputs' }).count(), 0);
+  await studyType(page, 'Parameter sweep');
   await page.getByRole('textbox', { name: 'Sweep values', exact: true }).fill('3500, 4250, 5000');
   await page.getByRole('button', { name: 'Run sweep', exact: true }).click();
   await page.getByText('3/3 completed · 0 failed', { exact: true }).waitFor({ timeout: 20000 });
+  // The result table refreshes just after the final checkpoint text appears.
+  await page.getByRole('button', { name: 'Inspect', exact: true }).nth(2).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Inspect', exact: true }).count(), 3);
-  // The final checkpoint is visible before the stored-run list refresh ends.
-  // Wait for both records before using their positions for selection.
-  await page.getByRole('checkbox', { name: /Compare run/ }).nth(1).waitFor();
-  const labels = await page.getByRole('checkbox', { name: /Compare run/ }).evaluateAll((nodes) => nodes.slice(0, 2).map((n) => n.getAttribute('aria-label')));
-  const firstRun = page.getByRole('checkbox', { name: labels[0], exact: true });
-  const secondRun = page.getByRole('checkbox', { name: labels[1], exact: true });
-  await firstRun.check();
-  await secondRun.check();
-  const compare = page.getByRole('button', { name: 'Compare selected runs', exact: true });
-  assert.equal(await compare.isEnabled(), true);
-  await firstRun.uncheck();
-  assert.equal(await compare.isEnabled(), false);
-  await firstRun.check();
-  await page.getByRole('button', { name: 'Compare selected runs', exact: true }).click();
-  await page.getByRole('table', { name: 'Stored run comparison results', exact: true }).waitFor();
   const csvDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export study CSV', exact: true }).click();
   assert.equal((await csvDownload).suggestedFilename(), 'study.csv');
+  // Design comparison offers finished single runs only; the sweep stays in its own history.
+  await studyType(page, 'Design comparison');
+  await page.getByRole('button', { name: /^Add run / }).first().click();
+  await page.getByRole('button', { name: 'Remove A', exact: true }).waitFor();
+  assert.equal(await page.getByRole('table', { name: 'Design comparison results', exact: true }).count(), 0, 'One result is not a comparison');
+  await studyType(page, 'Parameter sweep');
   await page.getByRole('button', { name: 'Inspect', exact: true }).first().click();
   await page.getByText('Technical report', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Integrations', exact: true }).click();

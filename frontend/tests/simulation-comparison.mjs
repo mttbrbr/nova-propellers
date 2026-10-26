@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { openProject } from './helpers.mjs';
 
 const browser = await chromium.launch({ executablePath: process.env.NOVA_CHROMIUM_PATH === 'managed' ? undefined : process.env.NOVA_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 try {
@@ -30,8 +31,10 @@ try {
   const llt = await post('/v1/simulations', lltDefinition);
   await post('/v1/simulations', { ...lltDefinition, name: 'Mismatched RPM', inputs: { ...inputs, rpm: 6500 } });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  await page.getByRole('combobox', { name: 'Open saved project', exact: true }).selectOption(project.id);
+  await openProject(page, project.id);
   await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Studies', exact: true }).click();
+  // Comparing existing saved simulations sits under the one-simulation solver comparison.
+  await page.getByRole('button', { name: /^Compare existing saved simulations/ }).click();
   const panel = page.getByRole('region', { name: 'Guided solver comparison', exact: true });
   await panel.getByRole('checkbox', { name: 'Compare simulation BEMT reference', exact: true }).check();
   await panel.getByRole('checkbox', { name: 'Compare simulation Mismatched RPM', exact: true }).check();
@@ -59,13 +62,13 @@ try {
   assert.equal(queued.comparison.simulations[1].revision, revisedLlt.revision);
   // Editing a source configuration after submission must not change the batch or its inspected result.
   await post('/v1/simulations', { ...lltDefinition, id: llt.id, expected_revision: revisedLlt.revision, inputs: { ...inputs, rpm: 6000 } });
-  const table = panel.getByRole('table', { name: 'Solver comparison results', exact: true });
+  const table = page.getByRole('table', { name: 'Solver comparison results', exact: true });
   await table.getByRole('button', { name: 'Inspect comparison LLT comparison', exact: true }).waitFor({ timeout: 30000 });
-  await panel.getByText('2/2 comparison cases completed · 0 failed', { exact: true }).waitFor();
+  await page.getByText('2/2 comparison cases completed · 0 failed', { exact: true }).waitFor();
   assert.equal(await table.getByRole('row').count(), 3);
   await table.getByText('Reference', { exact: true }).waitFor();
   const csvDownload = page.waitForEvent('download');
-  await panel.getByRole('button', { name: 'Export solver comparison CSV', exact: true }).click();
+  await page.getByRole('button', { name: 'Export solver comparison CSV', exact: true }).click();
   const csv = await csvDownload;
   assert.equal(csv.suggestedFilename(), 'solver-comparison.csv');
   const csvText = await readFile(await csv.path(), 'utf8');

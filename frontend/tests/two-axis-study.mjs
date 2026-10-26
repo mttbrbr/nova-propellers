@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { openProject, studyType } from './helpers.mjs';
 
 const browser = await chromium.launch({ executablePath: process.env.NOVA_CHROMIUM_PATH === 'managed' ? undefined : process.env.NOVA_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 try {
@@ -26,10 +27,11 @@ try {
   const project = await post('/v1/projects', definition);
   const simulation = await post('/v1/simulations', { ...definition, name: 'LLT grid baseline', project_id: project.id, geometry_id: project.geometry_id, geometry_revision: project.geometry_revision });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
-  await page.getByRole('combobox', { name: 'Open saved project', exact: true }).selectOption(project.id);
+  await openProject(page, project.id);
   const context = page.locator('[aria-label="Project and simulation context"]');
   await context.getByText('Saved', { exact: true }).waitFor();
   await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Studies', exact: true }).click();
+  await studyType(page, 'Parameter sweep');
   assert.equal(await page.getByRole('checkbox', { name: 'Use second sweep axis', exact: true }).isChecked(), false);
   assert.equal(await page.getByRole('combobox', { name: 'Second sweep parameter', exact: true }).count(), 0);
   await page.getByRole('textbox', { name: 'Sweep values', exact: true }).fill('4000, 5000');

@@ -9,6 +9,10 @@ from nova.workflow.engine import NumericalFailure, execute, validate
 METRICS = ('thrust_n', 'torque_nm', 'power_w', 'figure_of_merit')
 
 
+def canonical_models(workflow):
+    return tuple(sorted(n.get('config', {}).get('model', 'bemt') for n in workflow['nodes'] if n['type'] == 'analysis'))
+
+
 def shape_hash(inputs):
     geometry = create_propeller_geometry(inputs)
     return content_hash({key: geometry[key] for key in ('diameter_m', 'blades', 'propeller_type', 'stations')})
@@ -36,12 +40,29 @@ def scientific_polar_hash(asset):
                          'ncrit': float(asset['ncrit']), 'points': points})
 
 
+def without_models(workflow):
+    """Workflow with analysis models removed, to check that only the solver differs."""
+    value = copy.deepcopy(workflow)
+    for node in value['nodes']:
+        if node['type'] == 'analysis':
+            node.setdefault('config', {}).pop('model', None)
+    return value
+
+
 def validate_comparison(comparison):
     snapshots = comparison['simulations']
     if not isinstance(snapshots, list) or not 2 <= len(snapshots) <= 8:
         raise ValueError('A solver comparison requires 2–8 saved simulations')
-    if len({s['id'] for s in snapshots}) != len(snapshots):
+    # Solver comparisons run one saved simulation several times; cases are told apart by case_id.
+    if len({s.get('case_id', s['id']) for s in snapshots}) != len(snapshots):
         raise ValueError('Select distinct saved simulations')
+    if comparison.get('kind') == 'solver':
+        if len({s['id'] for s in snapshots}) != 1 or comparison.get('source_simulation_id') != snapshots[0]['id']:
+            raise ValueError('A solver comparison evaluates exactly one saved simulation')
+        if len({canonical_models(s['workflow']) for s in snapshots}) != len(snapshots):
+            raise ValueError('Select distinct solvers')
+        if any(without_models(s['workflow']) != without_models(snapshots[0]['workflow']) for s in snapshots):
+            raise ValueError('Solver comparison cases may differ only by their solver')
     baseline_shape = shape_hash(snapshots[0]['inputs'])
     baseline_conditions = conditions(snapshots[0])
     summaries, warnings, polar_hashes = [], [], set()
@@ -65,7 +86,7 @@ def validate_comparison(comparison):
             polar_hashes.add(scientific_polar_hash(asset))
         else:
             warnings.append(f"{snapshot['name']}: {model} uses an analytic approximation; imported polars are not consumed")
-        summaries.append({'id': snapshot['id'], 'name': snapshot['name'], 'revision': snapshot['revision'],
+        summaries.append({'id': snapshot['id'], 'case_id': snapshot.get('case_id', snapshot['id']), 'name': snapshot['name'], 'revision': snapshot['revision'],
                           'geometry_id': snapshot.get('geometry_id'), 'geometry_revision': snapshot.get('geometry_revision'),
                           'models': [{'node_id': analyses[0]['id'], 'model': model}],
                           'polar_asset_id': snapshot.get('polar_asset_id'),

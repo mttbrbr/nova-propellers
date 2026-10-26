@@ -6,6 +6,8 @@ import { download, fileBase64, request as backendRequest, waitForExecution } fro
 import SimulationCaseEditor from '../components/SimulationCaseEditor.jsx';
 import { OpenFastResult, PyWakeResult } from './IntegrationsWorkspace.jsx';
 import ProjectExplorer from '../components/ProjectExplorer.jsx';
+import ProjectPicker from '../components/ProjectPicker.jsx';
+import { rememberProject } from '../lib/preferences.js';
 
 // Preserve the native editor shape while using multidisciplinary persistence.
 const request = async (path, payload) => {
@@ -43,6 +45,9 @@ const changedFields = (run, current) => {
   if ((run.polar_asset_id || '') !== (current.polar_asset_id || '')) changed.push('airfoil data');
   return changed.length ? changed : ['workflow'];
 };
+// Results are stale only when physics inputs change; renaming the project does not invalidate them.
+const runSignature = (draftInputs, graph, settings, polarId) => stable({ inputs: Object.fromEntries(Object.entries(draftInputs || {}).filter(([key]) => key !== 'project_name')),
+  workflow: graph, conditions: settings, assetId: polarId || '' });
 const newestFirst = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
 
 function Operation({ data }) {
@@ -61,7 +66,7 @@ const nodeTypes = { operation: Operation };
 // The controller stays mounted for the whole session; its controls are rendered
 // into the slots of whichever workspace is visible (header, Geometry, Analysis,
 // Workflow), so switching workspaces never resets project or run state.
-const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, uiBusy = false, slots = {} }, ref) {
+const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, onBrowseProjects, uiBusy = false, slots = {} }, ref) {
   const activation = useRef(0);
   const [workflow, setWorkflow] = useState(null);
   const [project, setProject] = useState(null);
@@ -129,6 +134,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const signature = (draftInputs, graph, settings, polarId) => stable({ inputs: draftInputs, workflow: graph, conditions: settings, assetId: polarId || '' });
   const currentGraph = workflow ? configuredWorkflow() : null;
   const configurationStamp = signature(inputs, currentGraph, conditions, assetId);
+  const runStamp = runSignature(inputs, currentGraph, conditions, assetId);
   const geometryReference = (value) => ({ id: value?.geometry_id || null, revision: value?.geometry_revision || null });
   const draftStamp = stable({ configuration: external ? externalText : configurationStamp, kind, name: simulationName.trim(), geometry: geometryReference(geometry) });
   const draftDirty = !simulation && !baselinePending.current && draftBaseline.current !== null && draftBaseline.current !== draftStamp;
@@ -144,7 +150,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const projectRunsForContext = history.filter((r) => r.project_id === project?.id);
   const simulationRuns = simulation ? projectRunsForContext.filter((r) => r.simulation_id === simulation.id && !r.study && !r.comparison && !r.optimization && !r.external_job).sort(newestFirst) : [];
   const lastRun = simulationRuns.find((r) => r.state === 'succeeded' && r.result) || null;
-  const lastRunStale = Boolean(lastRun && workflow && signature(lastRun.inputs, lastRun.workflow, lastRun.conditions, lastRun.polar_asset_id) !== configurationStamp);
+  const lastRunStale = Boolean(lastRun && workflow && runSignature(lastRun.inputs, lastRun.workflow, lastRun.conditions, lastRun.polar_asset_id) !== runStamp);
   const changedSinceRun = lastRunStale ? changedFields(lastRun, { inputs, workflow: currentGraph, conditions, polar_asset_id: assetId }) : [];
   useEffect(() => {
     onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
@@ -154,7 +160,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, simulation, simulationName, kind, externalText, configurationStamp, simulationDirty, draftDirty, baselineVersion, busy, uiBusy, savingConfiguration, activeRun, error, onContextChange, geometry, assets, assetId, history]);
   useEffect(() => {
-    if (workflow) onConfigChange?.(signature(inputs, workflow.template ? { ...workflow, nodes: workflow.nodes.map((n) => n.id === 'analysis' ? { ...n, config: { ...n.config, model } } : n) } : workflow, conditions, assetId));
+    if (workflow) onConfigChange?.(runSignature(inputs, workflow.template ? { ...workflow, nodes: workflow.nodes.map((n) => n.id === 'analysis' ? { ...n, config: { ...n.config, model } } : n) } : workflow, conditions, assetId));
   }, [inputs, workflow, conditions, assetId, model, onConfigChange]);
   useEffect(() => {
     if (!workflow) return undefined;
@@ -175,7 +181,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     const projectBody = project ? { id: project.id, expected_revision: project.revision, name: inputs.project_name || 'Untitled project', inputs: project.inputs, workflow: project.workflow, conditions: project.conditions, polar_asset_id: project.polar_asset_id, geometry_id: project.geometry_id, geometry_revision: project.geometry_revision } : body();
     const saved = await request('/v1/projects', projectBody);
     if (epoch !== activation.current) throw new Error('Project changed while saving; the saved project remains in the library');
-    setProject(saved); await refresh(); setMessage(`Saved revision ${saved.revision}`);
+    setProject(saved); rememberProject(saved.id); await refresh(); setMessage(`Saved revision ${saved.revision}`);
     return saved;
   };
   const saveSimulation = async (projectOverride = null) => {
@@ -217,6 +223,16 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     await saveSimulation(savedProject);
     setMessage((previous) => previous || 'Project and current simulation saved');
   };
+  // One saved simulation evaluated with several solvers; no extra simulations are created.
+  const submitSolverComparison = async (models, simulationId = null) => {
+    const target = simulationId && simulationId !== simulation?.id ? simulations.find((item) => item.id === simulationId) : await saveSimulation();
+    if (!target) throw new Error('Select a saved simulation');
+    return request(`/v1/simulations/${target.id}/solver-comparison`, { expected_revision: target.revision, models });
+  };
+  const openProjectById = async (id, simulationId = null) => {
+    const saved = projects.find((item) => item.id === id) || await backendRequest(`/v2/projects/${id}`);
+    await openProject(saved, false, simulationId);
+  };
   const submitStudy = async (definition) => {
     const saved = await saveSimulation();
     return request(`/v1/simulations/${saved.id}/study`, { expected_revision: saved.revision, study: definition });
@@ -245,10 +261,12 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     await refresh();
     if (run.state !== 'succeeded') throw new Error(run.error || `Run ${run.state}`);
     if (epoch !== activation.current || external) return run.result;
-    await onResult?.(run.result, snapshot.inputs, run.id, signature(snapshot.inputs, snapshot.workflow, snapshot.conditions, snapshot.polar_asset_id), undefined, run);
+    await onResult?.(run.result, snapshot.inputs, run.id, runSignature(snapshot.inputs, snapshot.workflow, snapshot.conditions, snapshot.polar_asset_id), undefined, run);
     return run.result;
   };
-  useImperativeHandle(ref, () => ({ execute, openRun: (r) => act(() => openExecution(r)), optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
+  useImperativeHandle(ref, () => ({ execute, openRun: (r) => act(() => openExecution(r)), openProjectById: (id, simulationId) => act(() => openProjectById(id, simulationId)),
+    solverComparison: submitSolverComparison, projectId: () => project?.id || null,
+    importArchive: (file) => act(() => importArchive(file)), optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
     setModel: (value) => setWorkflow((w) => w && !w.template ? { ...w, nodes: w.nodes.map((n) => n.type === 'analysis' ? { ...n, config: { ...n.config, model: value } } : n) } : w),
     reset: () => {
     const epoch = ++activation.current;
@@ -313,11 +331,13 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     }
     setMessage('Selected simulations adopted this geometry revision. Historical executions remain unchanged.');
   };
-  const openProject = async (saved, approved = false) => {
+  const openProject = async (saved, approved = false, preferredSimulationId = null) => {
     if (!approved && !await protectDraft()) return;
     const epoch = ++activation.current;
     const configurations = await request(`/v1/projects/${saved.id}/simulations`);
-    const selectedConfiguration = configurations[0] || (saved.inputs ? saved : { inputs, workflow: await request('/v1/workflow-template'), conditions: { air_density_kg_m3: 1.225, air_viscosity_pa_s: 1.81e-5 } });
+    rememberProject(saved.id);
+    const preferred = configurations.find((item) => item.id === preferredSimulationId) || configurations[0];
+    const selectedConfiguration = preferred || (saved.inputs ? saved : { inputs, workflow: await request('/v1/workflow-template'), conditions: { air_density_kg_m3: 1.225, air_viscosity_pa_s: 1.81e-5 } });
     if (epoch !== activation.current) return;
     if (selectedConfiguration.kind && selectedConfiguration.kind !== 'propeller') {
       const geometryList = await request(`/v1/projects/${saved.id}/geometries`);
@@ -335,7 +355,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     setGeometries(geometryList); setGeometry(matchingGeometry(geometryList, selectedConfiguration)); setAdoption([]);
     setProject(saved); setWorkflow(selectedConfiguration.workflow); setConditions(selectedConfiguration.conditions);
     setAssetId(selectedConfiguration.polar_asset_id || ''); setActiveRun(null); setPreview(null); setValidation(null);
-    setSimulation(configurations[0] || null); setSimulationName(configurations[0]?.name || 'Simulation 1'); savedDraft.current = null;
+    setSimulation(preferred || null); setSimulationName(preferred?.name || 'Simulation 1'); savedDraft.current = null;
     draftBaseline.current = null; baselinePending.current = true;
     setSimulations(configurations);
     onLoadedModel?.(modelNames(selectedConfiguration.workflow)[0] || 'bemt');
@@ -429,14 +449,12 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     if (r.study || r.comparison) { onShowStudies?.(r); return; }
     if (r.optimization) { setMessage('Optimization candidate and diagnostics are available in Studies / Inverse design.'); onShowStudies?.(); return; }
     if (!running(activeRun)) setActiveRun(r);
-    if (r.result) { await onResult(r.result, r.inputs, r.id, signature(r.inputs, r.workflow, r.conditions, r.polar_asset_id), undefined, r); onShowResults?.(); }
+    if (r.result) { await onResult(r.result, r.inputs, r.id, runSignature(r.inputs, r.workflow, r.conditions, r.polar_asset_id), undefined, r); onShowResults?.(); }
     else setMessage(`${r.simulation_name || r.name} · ${r.state}${r.error ? ` · ${r.error}` : ''}`);
   };
   const portal = (name, content) => slots[name] ? createPortal(content, slots[name]) : null;
   const headerSelect = 'h-8 w-full min-w-0 max-w-[220px] cursor-pointer appearance-none truncate rounded-md bg-transparent px-2 text-[13px] hover:bg-nv-hover disabled:cursor-not-allowed disabled:opacity-50';
-  const projectPicker = <select aria-label="Open saved project" className={`${headerSelect} text-nv-muted`} disabled={locked} value={project?.id || ''} onChange={(e) => {
-    const saved = projects.find((p) => p.id === e.target.value); if (saved) act(() => openProject(saved));
-  }}><option value="" disabled={Boolean(project)} className="bg-nv-panel">No project · select…</option>{projects.map((p) => <option key={p.id} value={p.id} className="bg-nv-panel">{p.name}</option>)}</select>;
+  const projectPicker = <ProjectPicker project={project} locked={locked} onOpen={(id, simulationId) => act(() => openProjectById(id, simulationId))} onBrowse={() => onBrowseProjects?.()} />;
   const simulationPicker = <select aria-label="Open saved simulation" className={`${headerSelect} text-nv-ink`} disabled={locked || !project} value={simulation?.id || ''} onChange={(e) => {
     const saved = simulations.find((s) => s.id === e.target.value); if (saved) act(() => openSimulation(saved));
   }}><option value="" disabled={Boolean(simulation)} className="bg-nv-panel">Draft: {simulationName}</option>{simulations.map((s) => <option key={s.id} value={s.id} className="bg-nv-panel">{s.name} · r{s.revision}</option>)}</select>;

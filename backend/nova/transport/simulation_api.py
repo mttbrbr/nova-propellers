@@ -230,6 +230,50 @@ def submit_project_comparison(project_id: str, request: ComparisonRequest):
         raise HTTPException(409 if 'Revision conflict' in str(exc) else 422, str(exc)) from exc
 
 
+class SolverComparisonRequest(RunRequest):
+    models: list[Literal['bemt', 'llt', 'vlm', 'bem']] = Field(min_length=2, max_length=4)
+    name: str | None = Field(None, min_length=1, max_length=120)
+
+
+@router.post('/simulations/{simulation_id}/solver-comparison')
+def submit_solver_comparison(simulation_id: str, request: SolverComparisonRequest):
+    """Run one saved simulation with several solvers as a frozen comparison batch.
+
+    No extra simulations are created: every case keeps the source simulation id and
+    differs only by its analysis model. The first model is the reference.
+    """
+    from nova.application.comparisons import validate_comparison
+    from nova.infrastructure import jobs
+    stored = simulation(simulation_id)
+    if request.expected_revision is not None and request.expected_revision != stored['revision']:
+        raise HTTPException(409, 'Revision conflict; reload before running')
+    try:
+        if len(set(request.models)) != len(request.models):
+            raise ValueError('Select distinct solvers')
+        parent = project(stored['project_id'])
+        checked_project(ProjectRequest(**{k: stored[k] for k in ('name', 'inputs', 'workflow', 'conditions', 'polar_asset_id')}))
+        asset = library.get('asset', stored['polar_asset_id']) if stored.get('polar_asset_id') else None
+        snapshots = []
+        for model in request.models:
+            workflow = copy.deepcopy(stored['workflow'])
+            analyses = [n for n in workflow['nodes'] if n['type'] == 'analysis']
+            if len(analyses) != 1:
+                raise ValueError('Solver comparisons require one analysis in the guided native workflow')
+            analyses[0]['config'] = {**analyses[0].get('config', {}), 'model': model}
+            snapshots.append({**copy.deepcopy(stored), 'case_id': f"{stored['id']}:{model}",
+                              'name': f"{stored['name']} · {model.upper()}", 'workflow': workflow, 'polar_asset': asset})
+        name = request.name or f"{stored['name']} · {' vs '.join(m.upper() for m in request.models)}"
+        comparison = {'name': name, 'kind': 'solver', 'source_simulation_id': stored['id'], 'simulations': snapshots}
+        summary = validate_comparison(comparison)
+        document = {**copy.deepcopy(stored), 'name': name, 'project_id': stored['project_id'], 'project_revision': parent['revision'],
+                    'comparison': comparison, 'comparison_validation': summary, 'polar_asset': asset}
+        for key in ('id', 'revision', 'updated_at'):
+            document.pop(key, None)
+        return jobs.submit(document)
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(409 if 'Revision conflict' in str(exc) else 422, str(exc)) from exc
+
+
 @router.get('/runs/{run_id}/comparison.csv')
 def comparison_csv(run_id: str):
     import csv

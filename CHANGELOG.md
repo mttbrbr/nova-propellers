@@ -6,6 +6,11 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- `POST /api/v1/simulations/{id}/solver-comparison` runs one saved simulation
+  with 2–4 solvers as a frozen comparison without creating simulations.
+- `GET /api/v2/project-index` returns lightweight project summaries;
+  `DELETE /api/v2/projects/{id}` removes a project with its simulations,
+  geometry revisions and runs (rejected while a job is active).
 - Tauri 2 Linux desktop shell with automatic FastAPI sidecar lifecycle,
   dynamic loopback endpoint discovery and readiness/error reporting.
 - PyInstaller backend build and standalone smoke test.
@@ -21,6 +26,12 @@ All notable changes to Nova are documented in this file.
   values and a shared station selection, Results colours the blade by a chosen
   quantity, and out-of-date runs say what changed. Models and the legacy
   archive moved into Library. See `docs/UI_NAVIGATION.md`.
+- Studies offers three explicit study types: solver comparison of one saved
+  simulation (also launched from Analysis with "Also compare with"), design
+  comparison across projects with like-for-like checks and planform overlay,
+  and parameter sweeps. Library lists saved projects with search, filters,
+  comparison, export and confirmed deletion; a searchable project picker
+  (Ctrl+P) replaces the project drop-down.
 - Local non-Docker persistence follows XDG data directory conventions.
 - The frontend discovers its desktop backend while retaining `/api` for the
   existing web and Docker workflow.
