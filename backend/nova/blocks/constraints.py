@@ -6,7 +6,8 @@ A check compares an expression over named quantities with a limit::
      "severity": "hard", "label": "Generator rating", "unit": "kW"}
 
 ``margin`` is normalised so that positive means satisfied and its magnitude is
-the fraction of the limit still available (or exceeded).
+the fraction of the limit still available (or exceeded); for a zero limit it is
+the absolute distance.
 """
 import math
 
@@ -94,7 +95,8 @@ def evaluate_check(check, quantities):
     except ExpressionError as exc:
         return {**check, 'value_observed': None, 'satisfied': False, 'margin': None, 'error': str(exc)}
     limit, op = float(check['value']), check['operator']
-    scale = max(abs(limit), 1e-9)
+    # Relative margin against the limit; a zero limit gives an absolute margin.
+    scale = abs(limit) if abs(limit) > 1e-9 else 1.0
     if op in ('<=', '<'):
         ok = value <= limit if op == '<=' else value < limit
         margin = (limit - value) / scale
@@ -102,7 +104,7 @@ def evaluate_check(check, quantities):
         ok = value >= limit if op == '>=' else value > limit
         margin = (value - limit) / scale
     elif op == '==':
-        tolerance = float(check.get('tolerance') or 1e-6 * scale)
+        tolerance = float(check.get('tolerance') or 1e-6 * max(abs(limit), 1e-9))
         ok = abs(value - limit) <= tolerance
         margin = (tolerance - abs(value - limit)) / scale
     else:

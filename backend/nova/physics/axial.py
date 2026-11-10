@@ -209,7 +209,7 @@ def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, cor
                     'CP_prop': power / (rho * n**3 * D**5)}
     if V > 0:
         coefficients.update(J=V / (n * D), CP=power / (0.5 * rho * area * V**3), CT=thrust / (0.5 * rho * area * V**2),
-                            TSR=tsr)
+                            CQ=torque / (0.5 * rho * area * R * V**2), TSR=tsr)
     if mode == 'propeller':
         coefficients['efficiency'] = (thrust * V / power) if V > 0 and power > 0 else None
         ideal = thrust * math.sqrt(max(thrust, 0) / (2 * rho * area)) if V == 0 else None

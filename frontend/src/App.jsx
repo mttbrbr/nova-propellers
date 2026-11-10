@@ -4,6 +4,9 @@ import { api, apiFetch as fetch, download } from './backend.js';
 import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
 import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
 import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
+import RotorsWorkspace from './workspaces/RotorsWorkspace.jsx';
+import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
+import { Segmented } from './ui/controls.jsx';
 import useExecutionMonitor from './useExecutionMonitor.js';
 import AppHeader, { stages } from './shell/AppHeader.jsx';
 import WorkspaceRail from './shell/WorkspaceRail.jsx';
@@ -108,6 +111,7 @@ function App() {
   const [integrationDraft, setIntegrationDraft] = useState({});
   const [workspaceContext, setWorkspaceContext] = useState(null);
   const [slots, setSlots] = useState({});
+  const [workflowMode, setWorkflowMode] = useState('project');
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -486,6 +490,8 @@ function App() {
     openRun: (record) => workbench.current?.openRun(record), exportCsv: (id) => run(() => download(`/v1/runs/${id}/results.csv`, 'performance.csv')), exportStl: exportResultStl,
     onRun: handleRun, runDisabled: runDisabled || runActive, onNavigate: go, projectName: inputs.project_name,
   }} />;
+  else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows />;
+  else if (phase === 'rotors') body = <RotorsWorkspace />;
   else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
     inputs={<>
       <StageTitle title="Workflow" detail="Inspect, customize and execute the project graph." />
@@ -520,7 +526,10 @@ function App() {
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <WorkspaceRail workspace={workspace} onSelect={go} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {!guidedCompatible && workspace === 'workflow' && <p className="m-0 border-b border-nv-line px-6 py-2 text-xs text-nv-muted">Customized graph: the guided stages are not available for this project. Continue here in Workflow.</p>}
+        {workspace === 'workflow' && <div className="flex items-center gap-3 border-b border-nv-line px-6 py-2"><span className="text-xs text-nv-muted">Workflow type</span>
+          <div className="w-[300px]"><Segmented label="Workflow type" size="sm" value={workflowMode} onChange={setWorkflowMode}
+            options={[['project', 'Project graph'], ['blocks', 'Block workflows']]} /></div></div>}
+        {!guidedCompatible && workspace === 'workflow' && workflowMode === 'project' && <p className="m-0 border-b border-nv-line px-6 py-2 text-xs text-nv-muted">Customized graph: the guided stages are not available for this project. Continue here in Workflow.</p>}
         {phase === 'results' && analyses.length > 0 && resultStamp && executionStamp && resultStamp !== executionStamp && !resultStamp.startsWith('study:') &&
           <p className="m-0 border-b border-nv-warn/30 bg-nv-warn/10 px-6 py-2 text-xs text-nv-warn-ink">These results belong to an earlier configuration; the current inputs have changed since this run.</p>}
         {body}
