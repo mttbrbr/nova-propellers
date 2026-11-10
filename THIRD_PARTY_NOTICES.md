@@ -37,3 +37,11 @@ of the Arch and Debian packages and remain under their respective licenses.
 The release process must refresh this file whenever a runtime dependency or
 locked version changes. Package metadata marked `UNKNOWN` must be verified
 against the dependency's official license file before release.
+
+## Brand artwork
+
+The NOVA wordmark (`docs/media/brand/nova-wordmark.svg` and the header logo
+data in `frontend/src/shell/brand.js`) contains the letters N, V and A
+outlined from **Outfit** Bold, © 2021 The Outfit Project Authors
+(https://github.com/Outfitio/Outfit-Fonts), licensed under the SIL Open Font
+License 1.1. The font software is not included; only the resulting artwork.
