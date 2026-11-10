@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import { formatValue, niceTicks } from '../lib/blade.js';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import { Button, Field, LabeledSegmented, Metric, Section } from '../ui/controls.jsx';
+import { FamilySelector } from './RotorStages.jsx';
 import LineChart from '../ui/LineChart.jsx';
 
 const AIR_DENSITY = 1.225;
@@ -31,7 +32,7 @@ function DiskPreview({ diameter, induced }) {
   </div>;
 }
 
-export default function SizingStage({ inputs, set, sizing, onEstimate, onContinue, busy }) {
+export default function SizingStage({ inputs, set, sizing, onEstimate, onContinue, busy, family = 'propeller', onFamily }) {
   const fromLoading = inputs.diameter_mode === 'actuator_disk';
   const thrust = Math.max(Number(inputs.thrust_target) || 0, 1e-6);
   const loading = fromLoading ? Math.max(Number(inputs.disk_loading) || 0, 1e-6) : thrust / (Math.PI * (Number(inputs.diameter) || 1e-6) ** 2 / 4);
@@ -45,7 +46,8 @@ export default function SizingStage({ inputs, set, sizing, onEstimate, onContinu
       <StageTitle title="Sizing" detail="Set the target and get a first diameter." />
       <Section title="Project">
         <Field label="Name" ariaLabel="Project name" text value={inputs.project_name} onChange={(v) => set('project_name', v)} />
-        <LabeledSegmented label="Propeller" value={inputs.propeller_type} onChange={(v) => set('propeller_type', v)}
+        {onFamily && <FamilySelector value={family} onChange={onFamily} />}
+        <LabeledSegmented label="Blade layout" value={inputs.propeller_type} onChange={(v) => set('propeller_type', v)}
           options={[['traditional', 'Traditional'], ['toroidal', 'Toroidal', true, 'Toroidal propellers are not supported in this alpha']]} />
       </Section>
       <Section title="Target">

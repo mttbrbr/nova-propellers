@@ -222,7 +222,10 @@ def _corrections(node, args):
     vertical = node['type'] == 'corrections_vertical'
     if (spec['kind'] == 'vawt') != vertical:
         raise BlockError('VAWT corrections apply to vertical-axis rotors, axial corrections to the others')
-    config = {**rotors.DEFAULTS['vawt' if vertical else spec['kind']]['corrections'], **node.get('config', {})}
+    # Only the corrections that apply to the connected rotor family are taken.
+    applicable = rotors.APPLICABLE_CORRECTIONS[spec['kind']]
+    config = {**rotors.DEFAULTS[spec['kind']]['corrections'],
+              **{k: v for k, v in node.get('config', {}).items() if k in applicable}}
     corrections_from('vertical' if vertical else 'axial', config)
     spec['corrections'] = config
     return {'spec': spec}

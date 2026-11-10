@@ -20,12 +20,29 @@ import numpy as np
 
 from .axial import AxialRotor, solve_axial
 from .corrections import corrections_from
-from .fluids import fluid_from
+from .fluids import PRESETS, fluid_from
 from .marine import b_series_rotor, hull_interaction, marine_assessment
 from .sections import SYNTHETIC_SECTIONS, section_from
 from .vawt import METHOD_LABELS, METHODS, VerticalRotor, solve_vertical
 
 KINDS = ('hawt', 'vawt', 'propeller', 'marine')
+
+# Corrections that are physically meaningful for each family. Others stay at
+# their neutral value ("none"/off) and are rejected if switched on:
+#   HAWT      – no compressibility (tip Mach ≈ 0.2–0.3)
+#   propeller – no high-induction branch (propellers never reach windmill-brake
+#               induction) and no Snel augmentation (a stall-delay model for
+#               turbine roots)
+#   marine    – additionally no compressibility (water)
+APPLICABLE_CORRECTIONS = {
+    'hawt': ('tip_loss', 'hub_loss', 'high_induction', 'rotational_augmentation'),
+    'propeller': ('tip_loss', 'hub_loss', 'compressibility'),
+    'marine': ('tip_loss', 'hub_loss'),
+    'vawt': ('finite_aspect_ratio', 'flow_curvature', 'dynamic_stall', 'high_induction', 'strut_drag', 'shaft_wake'),
+}
+NEUTRAL = {'tip_loss': 'none', 'hub_loss': 'none', 'high_induction': 'none', 'rotational_augmentation': 'none',
+           'compressibility': 'none', 'finite_aspect_ratio': False, 'flow_curvature': False, 'dynamic_stall': 'none',
+           'strut_drag': False, 'shaft_wake': False}
 
 DEFAULTS = {
     'hawt': {
@@ -65,6 +82,16 @@ DEFAULTS = {
 }
 
 
+def checked_corrections(kind, config):
+    """Build the correction set for a family, rejecting corrections that do not apply to it."""
+    corrections = corrections_from('vertical' if kind == 'vawt' else 'axial', config)
+    misplaced = [name for name, value in corrections.to_dict().items()
+                 if name not in APPLICABLE_CORRECTIONS[kind] and value != NEUTRAL[name]]
+    if misplaced:
+        raise ValueError(f'Corrections not applicable to {kind} rotors: {", ".join(misplaced)}')
+    return corrections
+
+
 def catalog():
     return {
         'kinds': list(KINDS), 'defaults': copy.deepcopy(DEFAULTS), 'sections': list(SYNTHETIC_SECTIONS),
@@ -78,6 +105,8 @@ def catalog():
             'dynamic_stall': ['none', 'gormont_berg'], 'high_induction': ['none', 'glauert', 'buhl', 'spera'],
             'strut_drag': [False, True], 'shaft_wake': [False, True]},
         'fluids': ['air', 'fresh_water', 'sea_water'],
+        'fluid_properties': {name: fluid.to_dict() for name, fluid in PRESETS.items()},
+        'corrections_by_kind': {kind: list(names) for kind, names in APPLICABLE_CORRECTIONS.items()},
     }
 
 
@@ -196,7 +225,7 @@ def analyze(spec):
     spec, rotor, fluid = build(spec)
     V, rpm = resolve_operating(spec, rotor)
     kind = spec['kind']
-    corrections = corrections_from('vertical' if kind == 'vawt' else 'axial', spec.get('corrections'))
+    corrections = checked_corrections(kind, spec.get('corrections'))
     if kind == 'vawt':
         result = solve_vertical(rotor, method=spec.get('method', 'double_multiple_streamtube'), wind_speed_m_s=V,
                                 rpm=rpm, fluid=fluid, corrections=corrections,

@@ -8,6 +8,26 @@ synthetic demonstration data and every result says so.
 Code: `backend/nova/physics/` (models), `backend/nova/blocks/` (workflows),
 `backend/nova/transport/rotor_api.py` (HTTP).
 
+## One Design flow for every rotor type
+
+The rotor type is chosen in **Sizing** and the same four stages adapt:
+
+| Stage | Air propeller | Marine propeller | HAWT | VAWT |
+|---|---|---|---|---|
+| Sizing | thrust + disk loading → D (actuator disk) | effective thrust, V_s, w, t, rpm, J → D; Keller → A_E/A_0 | rated power, rated wind, Cp, η → R | rated power, wind, Cp, η, H/D, σ → R, H, c |
+| Geometry | Bézier/Laguerre blade, airfoil loft, 3D | B-series Z, A_E/A_0, P/D | Burton optimum or explicit blade | H- or Φ-rotor, struts, shaft |
+| Analysis | native solvers (BEMT, LLT, VLM, BEM) | BEMT, hull & immersion | BEMT | SST, DS, MST, DMST |
+| Corrections offered | native BEMT (Prandtl) | tip, hub | tip, hub, high induction, Snel | finite AR, curvature, dynamic stall, high induction, struts, shaft |
+| Results | native results | open-water diagram, cavitation, thrust check | Cp–λ, CT, CQ, power check | Cp–λ, azimuthal loads, power check |
+
+Corrections that do not apply to a type are hidden in Analysis, explained
+("not applicable") and rejected by the API. Marine, HAWT and VAWT designs are
+saved as `rotor` simulations in v2 projects; each run stores the operating
+point and the performance curve, and Results can overlay any earlier run of
+the same simulation. Changing the rotor type starts a new simulation draft;
+saved simulations never change type. The air propeller keeps the native
+pipeline; unifying its BEMT with the rotor engine is a later step.
+
 ## Rotor families
 
 | Family | Model | Main outputs |
@@ -19,8 +39,7 @@ Code: `backend/nova/physics/` (models), `backend/nova/blocks/` (workflows),
 
 Every family produces a performance curve: Cp–λ at fixed free stream for
 turbines (rotational speed varied, λ = ΩR/V), KT/10KQ/η–J at fixed rpm for
-propellers (J = V/(nD)). The Rotors workspace can keep one curve as a dashed
-reference to compare correction choices.
+propellers (J = V/(nD)).
 
 ## Axial BEMT
 

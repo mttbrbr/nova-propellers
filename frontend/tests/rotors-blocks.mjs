@@ -9,33 +9,65 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   const rail = page.getByRole('navigation', { name: 'Workspaces' });
+  const shot = async (name) => { if (process.env.NOVA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.NOVA_SCREENSHOT_DIR}/${name}.png` }); };
 
-  // HAWT Cp–λ with a reference curve for the tip-loss comparison.
-  await rail.getByRole('button', { name: 'Rotors', exact: true }).click();
-  await page.getByRole('button', { name: 'Analyse rotor' }).click();
+  const stages = page.getByRole('navigation', { name: 'Design stages' });
+  const family = (name) => page.getByRole('group', { name: 'Rotor type' }).getByRole('button', { name, exact: true }).click();
+  const correctionBoxes = async () => page.getByRole('combobox', { name: /^Correction / }).evaluateAll((items) => items.map((i) => i.getAttribute('aria-label')));
+
+  // One Design flow: the rotor type is chosen in Sizing and every stage adapts.
+  await page.getByRole('textbox', { name: 'Project name' }).fill(`Rotor families ${Date.now()}`);
+  await family('HAWT');
+  await page.getByRole('spinbutton', { name: 'Rated power' }).fill('20000');
+  await page.getByRole('button', { name: 'Apply to geometry' }).click();
+  await page.getByRole('button', { name: /Continue to Geometry/ }).click();
+  await page.getByRole('img', { name: /Chord in c\/R/ }).waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: /Continue to Analysis/ }).click();
+  assert.deepEqual(await correctionBoxes(), ['Correction tip_loss', 'Correction hub_loss', 'Correction high_induction', 'Correction rotational_augmentation']);
+  assert.match(await page.getByRole('region', { name: 'Not applicable' }).innerText(), /Compressibility/);
+  await page.getByRole('button', { name: 'Run analysis' }).click();
   await page.getByRole('img', { name: 'Power coefficient Cp versus λ' }).waitFor({ timeout: 60000 });
-  assert.match(await page.getByRole('main', { name: 'Rotor performance' }).innerText(), /Cp max/);
-  await page.getByRole('button', { name: 'Keep as reference' }).click();
-  await page.getByRole('combobox', { name: 'Correction tip_loss' }).selectOption('none');
-  await page.getByRole('button', { name: 'Analyse rotor' }).click();
-  await page.getByText(/Reference \(dashed\): Tip loss: prandtl/).waitFor();
-  await page.screenshot({ path: process.env.NOVA_SCREENSHOT_DIR ? `${process.env.NOVA_SCREENSHOT_DIR}/rotors-hawt.png` : '/dev/null' });
+  assert.match(await page.getByRole('main', { name: 'Performance' }).innerText(), /Cp max/);
+  await shot('rotors-hawt');
 
-  // VAWT with the double-multiple streamtube model and dynamic stall.
-  await page.getByRole('group', { name: 'Rotor family' }).getByRole('button', { name: 'VAWT' }).click();
+  // Change a correction, run again and compare the two runs of the same simulation.
+  await stages.getByRole('button', { name: 'Analysis', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Correction tip_loss' }).selectOption('none');
+  await page.getByRole('button', { name: 'Run analysis' }).click();
+  await page.getByRole('img', { name: 'Power coefficient Cp versus λ' }).waitFor({ timeout: 60000 });
+  const compare = page.getByRole('combobox', { name: 'Compare with run' });
+  await page.waitForFunction(() => document.querySelector('select[aria-label="Compare with run"]')?.options.length > 1);
+  await compare.selectOption({ index: 1 });
+  await page.getByText('Compared run').first().waitFor();
+
+  // VAWT: double-multiple streamtube with dynamic stall; a new simulation draft.
+  await stages.getByRole('button', { name: 'Sizing', exact: true }).click();
+  await family('VAWT');
+  await stages.getByRole('button', { name: 'Analysis', exact: true }).click();
+  assert.ok((await correctionBoxes()).includes('Correction dynamic_stall'));
   await page.getByRole('combobox', { name: 'VAWT method' }).selectOption('double_multiple_streamtube');
   await page.getByRole('combobox', { name: 'Correction dynamic_stall' }).selectOption('gormont_berg');
-  await page.getByRole('button', { name: 'Analyse rotor' }).click();
+  await page.getByRole('button', { name: 'Run analysis' }).click();
   await page.getByRole('img', { name: /Blade torque/ }).waitFor({ timeout: 90000 });
-  assert.match(await page.getByRole('region', { name: 'Rotor results' }).innerText(), /Double-multiple streamtube/);
-  await page.screenshot({ path: process.env.NOVA_SCREENSHOT_DIR ? `${process.env.NOVA_SCREENSHOT_DIR}/rotors-vawt.png` : '/dev/null' });
+  assert.match(await page.getByRole('main', { name: 'Performance' }).innerText(), /Cp – λ/);
+  await shot('rotors-vawt');
 
-  // Marine propeller: open-water diagram and cavitation assessment.
-  await page.getByRole('group', { name: 'Rotor family' }).getByRole('button', { name: 'Marine' }).click();
-  await page.getByRole('button', { name: 'Analyse rotor' }).click();
+  // Marine propeller: only tip and hub loss apply; open-water diagram and cavitation.
+  await stages.getByRole('button', { name: 'Sizing', exact: true }).click();
+  await family('Marine');
+  await page.getByRole('button', { name: 'Apply to geometry' }).click();
+  await stages.getByRole('button', { name: 'Analysis', exact: true }).click();
+  assert.deepEqual(await correctionBoxes(), ['Correction tip_loss', 'Correction hub_loss']);
+  await page.getByRole('button', { name: 'Run analysis' }).click();
   await page.getByRole('region', { name: 'Marine assessment' }).waitFor({ timeout: 60000 });
-  assert.match(await page.getByRole('region', { name: 'Marine assessment' }).innerText(), /Keller min/);
   assert.ok(await page.getByRole('img', { name: 'Open-water diagram versus J' }).isVisible());
+  assert.match(await page.getByRole('region', { name: 'Requirement check' }).innerText(), /Propeller thrust required/);
+  await shot('rotors-marine');
+
+  // Back to the air propeller: the native actuator-disk sizing returns.
+  await stages.getByRole('button', { name: 'Sizing', exact: true }).click();
+  await family('Air');
+  await page.getByRole('img', { name: /Ideal actuator disk/ }).waitFor();
 
   // Block workflows: load the marine template, run, tighten a limit and stop downstream.
   await rail.getByRole('button', { name: 'Workflow', exact: true }).click();
@@ -44,7 +76,7 @@ try {
   await page.getByRole('button', { name: 'Run workflow', exact: true }).click();
   await page.getByText('all hard constraints satisfied').waitFor({ timeout: 60000 });
   assert.match(await page.getByRole('region', { name: 'Block inspector' }).innerText(), /Constraints · cavitation/);
-  await page.screenshot({ path: process.env.NOVA_SCREENSHOT_DIR ? `${process.env.NOVA_SCREENSHOT_DIR}/blocks-marine.png` : '/dev/null' });
+  await shot('blocks-marine');
 
   await page.locator('.react-flow__node', { hasText: 'cavitation' }).click();
   await page.getByRole('button', { name: 'JSON view' }).click();
