@@ -165,7 +165,6 @@ def execute_comparison(snapshot, *, progress=None, checkpoint=None, cancelled=No
 
 def validate_result(result, record):
     from inverse_design import GeometryData
-
     from nova.core.contracts import CanonicalSolverResult
     validate_comparison(record['comparison'])
     configs = record['comparison']['simulations']

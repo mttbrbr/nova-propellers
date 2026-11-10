@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 import test_api_contract
+from fastapi.testclient import TestClient
 from test_pywake_adapter import case as wind_case
 
 import database

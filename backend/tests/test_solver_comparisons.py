@@ -9,7 +9,12 @@ from unittest.mock import patch
 
 import test_project_simulations as fixtures
 
-from nova.application.comparisons import comparison_rows, execute_comparison, fingerprint, scientific_polar_hash
+from nova.application.comparisons import (
+    comparison_rows,
+    execute_comparison,
+    fingerprint,
+    scientific_polar_hash,
+)
 from nova.infrastructure import jobs, library
 from nova.transport.simulation_api import ComparisonRequest, frozen_comparison
 

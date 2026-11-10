@@ -44,8 +44,8 @@ from nova.transport.api import router as nova_router
 from nova.transport.external_api import router as external_router
 from nova.transport.external_archive_api import router as external_archive_router
 from nova.transport.external_case_api import router as external_case_router
-from nova.transport.simulation_api import router as simulation_router
 from nova.transport.mixed_api import router as mixed_router
+from nova.transport.simulation_api import router as simulation_router
 
 
 class AirfoilCreate(BaseModel):

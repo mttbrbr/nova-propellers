@@ -21,7 +21,9 @@ from nova.application.external import result_csv
 from nova.core.data import canonical_json
 from nova.infrastructure import library
 from nova.infrastructure.external_archive import (
-    export_external_run, import_external_archive, read_external_archive,
+    export_external_run,
+    import_external_archive,
+    read_external_archive,
 )
 from nova.transport.external_archive_api import router
 from nova.workflow.engine import external_template
@@ -176,8 +178,9 @@ class ExternalArchiveTests(unittest.TestCase):
             self.assertEqual(client.post('/api/v1/external-runs/import', json={'content_base64': 'bad@@'}).status_code, 422)
 
     def test_pywake_scientific_result_round_trip(self):
-        from nova.adapters.pywake import PyWakeAdapter
         from test_pywake_adapter import PyWakeTests, case
+
+        from nova.adapters.pywake import PyWakeAdapter
         inputs = case()
         data = PyWakeAdapter().normalize(PyWakeTests().fixture_output(inputs))
         root = self.root / 'external-runs' / 'wind-run'
@@ -228,9 +231,10 @@ class ExternalArchiveTests(unittest.TestCase):
         self.assertEqual(len(library.list_records('run')), 1)
 
     def test_pywake_array_shapes_numeric_types_and_wake_loss(self):
+        from test_pywake_adapter import PyWakeTests, case
+
         from nova.adapters.pywake import PyWakeAdapter
         from nova.infrastructure.external_archive import _validate_data
-        from test_pywake_adapter import PyWakeTests, case
         valid = PyWakeAdapter().normalize(PyWakeTests().fixture_output(case()))
         _validate_data(valid, 'pywake')
         mutations = [lambda d: d.update(aep_gwh=d['aep_gwh'][0]),
