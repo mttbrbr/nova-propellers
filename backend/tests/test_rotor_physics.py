@@ -176,6 +176,15 @@ class VerticalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rotors.analyze({'kind': 'hawt', 'corrections': {'tip_loss': 'magic'}})
 
+    def test_only_family_corrections_are_accepted(self):
+        catalog = rotors.catalog()['corrections_by_kind']
+        self.assertEqual(catalog['marine'], ['tip_loss', 'hub_loss'])
+        self.assertNotIn('compressibility', catalog['hawt'])
+        for kind, corrections in (('marine', {'compressibility': 'prandtl_glauert'}), ('marine', {'high_induction': 'buhl'}),
+                                  ('propeller', {'rotational_augmentation': 'snel'}), ('hawt', {'compressibility': 'prandtl_glauert'})):
+            with self.assertRaisesRegex(ValueError, 'not applicable'):
+                rotors.analyze({'kind': kind, 'corrections': corrections})
+
 
 if __name__ == '__main__':
     unittest.main()

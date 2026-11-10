@@ -120,7 +120,7 @@ BLOCKS = {
         defaults=copy.deepcopy(DEFAULTS['marine']['marine'])),
     'corrections_axial': dict(
         family='specific', category='Corrections', label='Axial corrections',
-        description='Tip loss, hub loss, high induction, rotational augmentation, compressibility.',
+        description='Tip loss, hub loss, high induction, rotational augmentation, compressibility — only those applicable to the connected rotor are applied.',
         inputs=[port('spec', 'rotor_spec')], outputs=[port('spec', 'rotor_spec')],
         defaults=copy.deepcopy(DEFAULTS['hawt']['corrections'])),
     'corrections_vertical': dict(

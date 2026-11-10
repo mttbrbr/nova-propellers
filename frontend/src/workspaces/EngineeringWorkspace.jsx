@@ -66,7 +66,7 @@ const nodeTypes = { operation: Operation };
 // The controller stays mounted for the whole session; its controls are rendered
 // into the slots of whichever workspace is visible (header, Geometry, Analysis,
 // Workflow), so switching workspaces never resets project or run state.
-const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, onBrowseProjects, uiBusy = false, slots = {} }, ref) {
+const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, model, onOpen, onResult, onAdvanced, onConfigChange, onCompatibility, onProjectChange, onContextChange, onLoadedModel, onShowResults, onShowStudies, onNewDraft, onBrowseProjects, uiBusy = false, slots = {}, rotorFamily = 'propeller', rotorSpec = null, onRotorOpen, onRotorResult }, ref) {
   const activation = useRef(0);
   const [workflow, setWorkflow] = useState(null);
   const [project, setProject] = useState(null);
@@ -101,8 +101,29 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const [externalText, setExternalText] = useState('{}');
   const [integrationId, setIntegrationId] = useState('');
   const [integrations, setIntegrations] = useState([]);
-  const external = kind !== 'propeller';
+  // Rotor-family simulations (HAWT, VAWT, marine) are typed project simulations whose
+  // specification is edited in the Design stages; external kinds use case editors.
+  const rotor = kind === 'rotor';
+  const external = kind !== 'propeller' && !rotor;
+  const familyRef = useRef(rotorFamily);
+  familyRef.current = rotorFamily;
+  const rotorStamp = rotor ? stable(rotorSpec) : '';
   useEffect(() => { backendRequest('/v1/integrations').then(setIntegrations).catch(() => {}); }, []);
+  // Choosing another rotor family starts a new simulation draft in the same project;
+  // a saved simulation never changes family.
+  useEffect(() => {
+    const wanted = rotorFamily === 'propeller' ? 'propeller' : 'rotor';
+    const savedFamily = simulation ? (simulation.kind === 'rotor' ? simulation.configuration?.spec?.kind : simulation.kind || 'propeller') : null;
+    if (kind === wanted && (!simulation || savedFamily === rotorFamily || (wanted === 'propeller' && kind !== 'rotor'))) return;
+    if (kind !== 'propeller' && kind !== 'rotor' && rotorFamily === 'propeller') return;
+    if (simulation) {
+      setSimulation(null); setSimulationName(`Simulation ${simulations.length + 1}`); setActiveRun(null);
+      setMessage('Rotor type changed: started a new simulation draft; saved simulations are unchanged');
+    }
+    savedDraft.current = null; baselinePending.current = true; setKind(wanted);
+    // Only the family drives this transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rotorFamily]);
 
   const refresh = async () => {
     const epoch = activation.current;
@@ -136,7 +157,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const configurationStamp = signature(inputs, currentGraph, conditions, assetId);
   const runStamp = runSignature(inputs, currentGraph, conditions, assetId);
   const geometryReference = (value) => ({ id: value?.geometry_id || null, revision: value?.geometry_revision || null });
-  const draftStamp = stable({ configuration: external ? externalText : configurationStamp, kind, name: simulationName.trim(), geometry: geometryReference(geometry) });
+  const draftStamp = stable({ configuration: rotor ? rotorStamp : external ? externalText : configurationStamp, kind, name: simulationName.trim(), geometry: geometryReference(geometry) });
   const draftDirty = !simulation && !baselinePending.current && draftBaseline.current !== null && draftBaseline.current !== draftStamp;
   const simulationDirty = Boolean(simulation) && !baselinePending.current && savedDraft.current !== draftStamp;
   useEffect(() => {
@@ -154,11 +175,11 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const changedSinceRun = lastRunStale ? changedFields(lastRun, { inputs, workflow: currentGraph, conditions, polar_asset_id: assetId }) : [];
   useEffect(() => {
     onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
-      models: external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error,
+      models: rotor ? [rotorSpec?.method || 'bemt'] : external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error,
       geometry, selectedAsset: assets.find((a) => a.id === assetId) || null, conditions, projectRuns: projectRunsForContext, simulationRuns, lastRun, lastRunStale, changedSinceRun });
     // Derived strings track configuration values, not parent object identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, simulation, simulationName, kind, externalText, configurationStamp, simulationDirty, draftDirty, baselineVersion, busy, uiBusy, savingConfiguration, activeRun, error, onContextChange, geometry, assets, assetId, history]);
+  }, [project, simulation, simulationName, kind, externalText, rotorStamp, configurationStamp, simulationDirty, draftDirty, baselineVersion, busy, uiBusy, savingConfiguration, activeRun, error, onContextChange, geometry, assets, assetId, history]);
   useEffect(() => {
     if (workflow) onConfigChange?.(runSignature(inputs, workflow.template ? { ...workflow, nodes: workflow.nodes.map((n) => n.id === 'analysis' ? { ...n, config: { ...n.config, model } } : n) } : workflow, conditions, assetId));
   }, [inputs, workflow, conditions, assetId, model, onConfigChange]);
@@ -193,6 +214,15 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     const name = simulationName.trim();
     if (!name) throw new Error('Give this simulation a name');
     const savedProject = projectOverride || project || await saveProject();
+    if (rotor) {
+      if (!rotorSpec) throw new Error('Rotor specification is still loading');
+      const saved = await request('/v1/simulations', { project_id: savedProject.id, name, kind: 'rotor', configuration: { spec: rotorSpec },
+        id: simulation?.id || null, expected_revision: simulation?.revision || null });
+      if (epoch !== activation.current) throw new Error('Project changed while saving; the configuration remains in the library');
+      baselinePending.current = true; setSimulation(saved);
+      setSimulations(await request(`/v1/projects/${savedProject.id}/simulations`));
+      setMessage(`Saved ${rotorSpec.kind.toUpperCase()} simulation · revision ${saved.revision}`); return saved;
+    }
     if (external) {
       const configuration = JSON.parse(externalText);
       const saved = await request('/v1/simulations', { project_id: savedProject.id, name, kind, configuration, id: simulation?.id || null, expected_revision: simulation?.revision || null });
@@ -251,6 +281,14 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     setError('');
     const epoch = activation.current;
     const snapshot = body();
+    if (rotor) {
+      const saved = await saveSimulation();
+      const run = await request(`/v1/simulations/${saved.id}/run`, { expected_revision: saved.revision });
+      await refresh();
+      if (run.state !== 'succeeded') throw new Error(run.error || `Run ${run.state}`);
+      if (epoch === activation.current) { setActiveRun(run); onRotorResult?.(run); }
+      return run.result;
+    }
     if (!external && snapshot.workflow.nodes.some((n) => n.type === 'analysis' && n.config.model === 'bemt') && !assetId) {
       throw new Error('Select imported polars or explicitly select demonstration data first');
     }
@@ -270,7 +308,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     setModel: (value) => setWorkflow((w) => w && !w.template ? { ...w, nodes: w.nodes.map((n) => n.type === 'analysis' ? { ...n, config: { ...n.config, model: value } } : n) } : w),
     reset: () => {
     const epoch = ++activation.current;
-    setKind('propeller'); setWorkflow(null); setProject(null); setActiveRun(null); setAssetId(''); setPreview(null); setValidation(null);
+    setKind(familyRef.current !== 'propeller' ? 'rotor' : 'propeller'); setWorkflow(null); setProject(null); setActiveRun(null); setAssetId(''); setPreview(null); setValidation(null);
     setSimulation(null); setSimulations([]); setSimulationName('Simulation 1'); savedDraft.current = null; draftBaseline.current = null; baselinePending.current = true;
     setGeometry(null); setGeometries([]); setAdoption([]);
     setConditions({ air_density_kg_m3: 1.225, air_viscosity_pa_s: 1.81e-5 });
@@ -339,6 +377,13 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     const preferred = configurations.find((item) => item.id === preferredSimulationId) || configurations[0];
     const selectedConfiguration = preferred || (saved.inputs ? saved : { inputs, workflow: await request('/v1/workflow-template'), conditions: { air_density_kg_m3: 1.225, air_viscosity_pa_s: 1.81e-5 } });
     if (epoch !== activation.current) return;
+    if (selectedConfiguration.kind === 'rotor') {
+      const geometryList = await request(`/v1/projects/${saved.id}/geometries`);
+      if (epoch !== activation.current) return;
+      setProject(saved); setSimulations(configurations); setGeometries(geometryList);
+      setKind('rotor'); setSimulation(selectedConfiguration); setSimulationName(selectedConfiguration.name); setActiveRun(null);
+      baselinePending.current = true; onOpen({ ...inputs, project_name: saved.name }); onRotorOpen?.(selectedConfiguration.configuration.spec); return;
+    }
     if (selectedConfiguration.kind && selectedConfiguration.kind !== 'propeller') {
       const geometryList = await request(`/v1/projects/${saved.id}/geometries`);
       if (epoch !== activation.current) return;
@@ -347,7 +392,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
       setSimulation(selectedConfiguration); setSimulationName(selectedConfiguration.name); setActiveRun(null);
       baselinePending.current = true; onOpen({ ...inputs, project_name: saved.name }); onAdvanced(); return;
     }
-    setKind('propeller');
+    setKind('propeller'); onRotorOpen?.(null);
     const checked = await request('/v1/workflows/validate', selectedConfiguration.workflow);
     if (epoch !== activation.current) return;
     const geometryList = await request(`/v1/projects/${saved.id}/geometries`);
@@ -366,11 +411,15 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     if (!await protectDraft()) return;
     if (!project || saved.project_id !== project.id) throw new Error('Simulation does not belong to the open project');
     const epoch = ++activation.current;
+    if (saved.kind === 'rotor') {
+      setKind('rotor'); setSimulation(saved); setSimulationName(saved.name); setActiveRun(null);
+      baselinePending.current = true; onRotorOpen?.(saved.configuration.spec); return;
+    }
     if (saved.kind && saved.kind !== 'propeller') {
       setKind(saved.kind); setExternalText(JSON.stringify(saved.configuration, null, 2));
       setSimulation(saved); setSimulationName(saved.name); setActiveRun(null); baselinePending.current = true; onAdvanced(); return;
     }
-    setKind('propeller');
+    setKind('propeller'); onRotorOpen?.(null);
     const checked = await request('/v1/workflows/validate', saved.workflow);
     if (epoch !== activation.current) return;
     baselinePending.current = true;
@@ -384,7 +433,8 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const newSimulation = async (nextKind = 'propeller') => {
     if (!await protectDraft()) return;
     const epoch = ++activation.current;
-    setKind(nextKind); if (nextKind !== 'propeller') { setExternalText(JSON.stringify(externalDefaults(nextKind), null, 2)); onAdvanced(); }
+    if (nextKind === 'propeller' && familyRef.current !== 'propeller') nextKind = 'rotor';
+    setKind(nextKind); if (nextKind !== 'propeller' && nextKind !== 'rotor') { setExternalText(JSON.stringify(externalDefaults(nextKind), null, 2)); onAdvanced(); }
     const defaults = await request('/v1/workflow-template');
     if (epoch !== activation.current) return;
     setSimulation(null); setActiveRun(null); setValidation(null);
@@ -393,6 +443,14 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     setAssetId(''); setPreview(null); onLoadedModel?.('bemt'); onNewDraft?.(geometry?.definition);
   };
   const cloneSimulation = async () => {
+    if (rotor) {
+      const savedProject = project || await saveProject();
+      const copy = await request('/v1/simulations', { project_id: savedProject.id, kind: 'rotor',
+        name: (simulationName.trim() || 'Simulation').slice(0, 115) + ' copy', configuration: { spec: rotorSpec } });
+      setSimulation(copy); setSimulationName(copy.name); baselinePending.current = true;
+      setSimulations(await request(`/v1/projects/${savedProject.id}/simulations`));
+      setMessage('Independent simulation copy created; the original configuration is unchanged'); return;
+    }
     if (external) {
       const epoch = activation.current;
       const savedProject = project || await saveProject();
@@ -445,6 +503,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   [project, ...simulations, ...geometries, ...projectRuns].forEach(findReferences);
   if (assetId) referencedAssets.add(assetId);
   const openExecution = async (r) => {
+    if (r.simulation_kind === 'rotor') { if (r.state === 'succeeded') { onRotorResult?.(r); onShowResults?.(); } else setMessage(`${r.simulation_name} · ${r.state}${r.error ? ` · ${r.error}` : ''}`); return; }
     if (r.external_job) { setActiveRun(r); onAdvanced(); return; }
     if (r.study || r.comparison) { onShowStudies?.(r); return; }
     if (r.optimization) { setMessage('Optimization candidate and diagnostics are available in Studies / Inverse design.'); onShowStudies?.(); return; }
@@ -489,7 +548,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
       <div className="flex flex-wrap gap-2"><button className={button} disabled={guardSaving} onClick={() => decide('save')}>Save changes</button><button className={button} disabled={guardSaving} onClick={() => decide('discard')}>Discard changes</button><button className={button} disabled={guardSaving} onClick={() => decide('cancel')}>Keep editing</button></div>
       {error && <p role="alert" className="text-xs text-nv-err-ink">{error}</p>}
     </div></div>, document.body)}
-    {!external && portal('revision', <>
+    {!external && !rotor && portal('revision', <>
       <label className="grid grid-cols-[104px_minmax(0,1fr)] items-center gap-3 text-[13px] text-nv-muted">Revision
         <select aria-label="Geometry revision" className={field} value={geometry?.id || ''} disabled={locked || !project} onChange={(e) => act(() => chooseGeometry(e.target.value))}><option value="">Unpublished draft</option>{geometries.map((g) => <option key={g.id} value={g.id}>{g.name} · r{g.geometry_revision}</option>)}</select></label>
       {geometryEdited && <p className="m-0 text-xs leading-relaxed text-nv-warn-ink">Edits are not published yet. Save or Run publishes a revision for this simulation only; other simulations keep their geometry.</p>}
@@ -498,7 +557,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
       {geometry && simulations.length > 0 && <details className="text-[13px]"><summary className="cursor-pointer py-1 text-nv-reference">Apply revision to saved simulations</summary><div className="mt-2 flex flex-col gap-2">{simulations.filter((item) => !item.kind || item.kind === 'propeller').map((item) => <label key={item.id} className="flex items-center gap-2 text-[13px]"><input aria-label={`Adopt geometry for ${item.name}`} type="checkbox" className="accent-nv-accent" checked={adoption.includes(item.id)} onChange={(e) => { const checked = e.target.checked; setAdoption((ids) => checked ? [...new Set([...ids, item.id])] : ids.filter((id) => id !== item.id)); }} />{item.name} <span className="text-nv-muted">· now r{item.geometry_revision || '—'}</span></label>)}<button className={button} disabled={locked || !adoption.length} onClick={() => act(adoptGeometry)}>Apply to selected simulations</button></div></details>}
       <p className="m-0 text-xs leading-relaxed text-nv-muted">Publishing creates an immutable revision. Applying it changes only the selected simulations; earlier results keep their original geometry.</p>
     </>)}
-    {!external && portal('data', <>
+    {!external && !rotor && portal('data', <>
       <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Aerodynamic data<select className={field} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
         <option value="">Select polar asset…</option>{assets.filter((a) => a.airfoil === inputs.airfoil).map((a) => <option key={a.id} value={a.id}>{a.filename}{a.demonstration ? ' — demonstration only' : ''}</option>)}</select></label>
       {selectedAsset?.demonstration && <p className="m-0 text-xs leading-relaxed text-nv-warn-ink">Demonstration data. Results are not physically meaningful.</p>}
@@ -518,7 +577,8 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
       <p className="m-0 text-xs leading-relaxed text-nv-muted">Static (hover) axial analysis. Coordinate lofting does not assign spanwise polars. Imported polars use disclosed endpoint clipping.</p>
     </>)}
     {portal('graphSide', <>
-      {!external && <>
+      {rotor && <p className="m-0 text-[13px] text-nv-muted">This {String(rotorSpec?.kind || '').toUpperCase()} simulation runs on the rotor engine. Build constrained chains of rotor blocks in Block workflows.</p>}
+      {!external && !rotor && <>
         <h2 className="m-0 text-[13px] font-semibold">Selected block</h2>
         {chosen ? <p className="m-0 text-[13px] text-nv-muted">{chosen.id} · {chosen.type}</p> : <p className="m-0 text-[13px] text-nv-muted">Select a block to inspect its settings.</p>}
         {chosen?.type === 'analysis' && editable && <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Solver<select className={field} aria-label="Node solver" value={chosen.config.model} onChange={(e) => updateConfig({ ...chosen.config, model: e.target.value })}>
@@ -530,7 +590,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
         <p className="m-0 text-xs leading-relaxed text-nv-muted">Configure execution environments in Integrations. Save preserves this case in the project; Run saves changes before execution.</p>
       </>}
     </>)}
-    {!external && portal('graph', <div className="flex h-full min-h-[600px] min-w-0 flex-col lg:min-h-0">
+    {!external && !rotor && portal('graph', <div className="flex h-full min-h-[600px] min-w-0 flex-col lg:min-h-0">
       <div className="shrink-0 space-y-3 border-b border-nv-line px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-[15px] font-semibold">Execution graph</h2>
           <p className="m-0 mt-1 text-[13px] text-nv-muted">{editable ? 'Customized workflow · connect and configure blocks' : 'Default workflow · customize to edit'}</p></div>

@@ -6,10 +6,13 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
-- Rotors workspace and `/api/v1/rotors/*`: HAWT, VAWT, air and marine
-  propellers with Cp–λ (turbines) and K_T/K_Q/η–J (propellers) curves, a
-  dashed reference curve to compare correction sets, and radial or azimuthal
-  distributions. See `docs/ROTOR_MODELS.md`.
+- Rotor type chosen at the start of the Design flow (air propeller, marine
+  propeller, HAWT, VAWT). Sizing, Geometry, Analysis and Results adapt to it:
+  turbine sizing from rated power, marine sizing from thrust/J with Keller,
+  only the corrections that apply to the chosen type, Cp–λ or K_T/10K_Q/η–J
+  curves, run-to-run comparison and a requirement check. Non-propeller types
+  are saved as `rotor` simulations in v2 projects and archives.
+  `/api/v1/rotors/*` exposes the models. See `docs/ROTOR_MODELS.md`.
 - VAWT single, double, multiple and double-multiple streamtube models with
   finite-aspect-ratio, flow-curvature, Gormont–Berg dynamic-stall, strut-drag
   and shaft-wake corrections; straight and troposkien blades.

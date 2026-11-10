@@ -4,9 +4,10 @@ import { api, apiFetch as fetch, download } from './backend.js';
 import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
 import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
 import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
-import RotorsWorkspace from './workspaces/RotorsWorkspace.jsx';
+import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingStage, requirementDefaults } from './stages/RotorStages.jsx';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import { Segmented } from './ui/controls.jsx';
+import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
 import AppHeader, { stages } from './shell/AppHeader.jsx';
 import WorkspaceRail from './shell/WorkspaceRail.jsx';
@@ -34,6 +35,11 @@ const stageIds = stages.map((stage) => stage.id);
 const geometryFields = ['propeller_type', 'diameter', 'blades', 'airfoil', 'geometry_method', 'geometry_parameters', 'airfoil_assignments'];
 const geometryKeyOf = (source) => JSON.stringify(Object.fromEntries(geometryFields.map((key) => [key, source?.[key] ?? null])));
 const activeRun = (record) => Boolean(record) && ['queued', 'running', 'cancelling'].includes(record.state);
+
+// Key-order independent JSON, used to tell whether a rotor run matches the current inputs.
+const sortedValue = (value) => Array.isArray(value) ? value.map(sortedValue) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortedValue(value[key])])) : value;
+const stableJson = (value) => JSON.stringify(sortedValue(value ?? null));
 
 async function post(endpoint, body) {
   const response = await fetch(api(endpoint), {
@@ -112,6 +118,13 @@ function App() {
   const [workspaceContext, setWorkspaceContext] = useState(null);
   const [slots, setSlots] = useState({});
   const [workflowMode, setWorkflowMode] = useState('project');
+  // Rotor family of the open simulation. The air propeller uses the native
+  // propeller pipeline; the other families use rotor-engine simulations whose
+  // specification is edited in the same four Design stages.
+  const [rotorFamily, setRotorFamily] = useState('propeller');
+  const [rotorCatalog, setRotorCatalog] = useState(null);
+  const [rotorSpecs, setRotorSpecs] = useState({});
+  const [rotorRun, setRotorRun] = useState(null);
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -142,6 +155,17 @@ function App() {
   const geometryKey = geometryKeyOf(payload);
   const geometryCurrent = Boolean(canonical) && geometryStamp === geometryKey;
   const set = (key, value) => setInputs((current) => ({ ...current, [key]: value }));
+  useEffect(() => { backendRequest('/v1/rotors/catalog').then(setRotorCatalog).catch(() => {}); }, []);
+  const rotorSpec = rotorFamily === 'propeller' || !rotorCatalog ? null : rotorSpecs[rotorFamily]
+    || { ...rotorCatalog.defaults[rotorFamily], requirements: { ...requirementDefaults[rotorFamily] } };
+  const setRotorSpec = (spec) => setRotorSpecs((all) => ({ ...all, [rotorFamily]: spec }));
+  const rotorStale = Boolean(rotorRun && rotorSpec && stableJson(rotorRun.inputs?.spec) !== stableJson(rotorSpec));
+  const chooseFamily = (family) => { if (family !== rotorFamily) { setRotorFamily(family); setRotorRun(null); } };
+  const openRotor = useCallback((spec) => {
+    setRotorRun(null);
+    if (!spec) { setRotorFamily('propeller'); return; }
+    setRotorFamily(spec.kind); setRotorSpecs((all) => ({ ...all, [spec.kind]: spec }));
+  }, []);
   const run = async (action) => {
     setBusy(true); setError('');
     try { await action(); } catch (caught) { setError(caught.message); } finally { setBusy(false); }
@@ -456,10 +480,11 @@ function App() {
   // Opening Results without a loaded run shows the latest run of the simulation.
   const latestRun = workspaceContext?.lastRun;
   useEffect(() => {
-    if (phase === 'results' && !analyses.length && latestRun) workbench.current?.openRun(latestRun);
-  }, [phase, analyses.length, latestRun]);
+    if (phase !== 'results' || !latestRun) return;
+    if (rotorFamily === 'propeller' ? !analyses.length : !rotorRun) workbench.current?.openRun(latestRun);
+  }, [phase, analyses.length, latestRun, rotorFamily, rotorRun]);
 
-  const completed = {
+  const completed = rotorFamily !== 'propeller' ? { sizing: true, geometry: true, analysis: Boolean(rotorRun && !rotorStale) } : {
     sizing: Number(inputs.diameter) > 0,
     geometry: geometryCurrent && !previewError,
     analysis: Boolean(workspaceContext?.lastRun && !workspaceContext?.lastRunStale),
@@ -470,7 +495,16 @@ function App() {
   };
 
   let body;
-  if (phase === 'sizing') body = <SizingStage inputs={inputs} set={set} sizing={sizing} onEstimate={estimate} busy={busy} onContinue={() => go('geometry')} />;
+  const rotorStage = rotorFamily !== 'propeller' && stageIds.includes(phase);
+  if (rotorStage && !rotorSpec) body = <div className="grid flex-1 place-items-center text-[13px] text-nv-muted">Loading rotor models…</div>;
+  else if (rotorStage && phase === 'sizing') body = <RotorSizingStage family={rotorFamily} onFamily={chooseFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog}
+    projectName={inputs.project_name} onProjectName={(v) => set('project_name', v)} onContinue={() => go('geometry')} />;
+  else if (rotorStage && phase === 'geometry') body = <RotorGeometryStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onContinue={() => go('analysis')} />;
+  else if (rotorStage && phase === 'analysis') body = <RotorAnalysisStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onRun={handleRun} runDisabled={runDisabled || runActive} />;
+  else if (rotorStage && phase === 'results') body = <RotorResultsStage family={rotorFamily} run={rotorRun} stale={rotorStale}
+    runs={(workspaceContext?.simulationRuns || []).filter((r) => r.simulation_kind === 'rotor')} onRun={handleRun} runDisabled={runDisabled || runActive} onNavigate={go} />;
+  else if (phase === 'sizing') body = <SizingStage inputs={inputs} set={set} sizing={sizing} onEstimate={estimate} busy={busy} onContinue={() => go('geometry')}
+    family={rotorFamily} onFamily={chooseFamily} />;
   else if (phase === 'geometry') body = <GeometryStage g={{
     inputs, set, airfoils, coordinateAirfoils, bezier, setBezier, laguerre, setLaguerre, designMode, setDesignMode, setBezierPointCount,
     useAirfoilLoft, setUseAirfoilLoft, bezierProfileAssignments, setBezierProfileAssignments, laguerreProfileAssignments, updateLaguerreProfileStation,
@@ -491,7 +525,6 @@ function App() {
     onRun: handleRun, runDisabled: runDisabled || runActive, onNavigate: go, projectName: inputs.project_name,
   }} />;
   else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows />;
-  else if (phase === 'rotors') body = <RotorsWorkspace />;
   else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
     inputs={<>
       <StageTitle title="Workflow" detail="Inspect, customize and execute the project graph." />
@@ -538,7 +571,8 @@ function App() {
     <EngineeringWorkspace ref={workbench} inputs={payload} model={model}
       onResult={receiveResult} onOpen={openDraft} onProjectChange={setActiveProjectId} onConfigChange={setExecutionStamp} onCompatibility={setGuidedCompatible} onAdvanced={() => setPhase('workflow')}
       onNewDraft={defaultSimulation} onContextChange={setWorkspaceContext} onLoadedModel={setModel} onShowResults={() => go('results')}
-      onShowStudies={(record) => { setSelectedStudyRun(record || null); go('studies'); }} onBrowseProjects={() => { setLibraryTab('projects'); go('library'); }} uiBusy={busy} slots={slots} />
+      onShowStudies={(record) => { setSelectedStudyRun(record || null); go('studies'); }} onBrowseProjects={() => { setLibraryTab('projects'); go('library'); }} uiBusy={busy} slots={slots}
+      rotorFamily={rotorFamily} rotorSpec={rotorSpec} onRotorOpen={openRotor} onRotorResult={(record) => { setRotorRun(record); go('results'); }} />
     <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex w-[min(440px,calc(100vw-32px))] flex-col gap-2 md:left-[72px]">
       <div ref={slotRef('notices')} className="pointer-events-auto flex flex-col gap-2" />
       {error && <div role="alert" className="pointer-events-auto flex items-start gap-3 rounded-lg border border-nv-err/40 bg-nv-panel px-3.5 py-2.5 text-[13px] text-nv-err-ink shadow-xl shadow-black/40">
