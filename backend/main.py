@@ -45,6 +45,7 @@ from nova.transport.external_api import router as external_router
 from nova.transport.external_archive_api import router as external_archive_router
 from nova.transport.external_case_api import router as external_case_router
 from nova.transport.mixed_api import router as mixed_router
+from nova.transport.rotor_api import router as rotor_router
 from nova.transport.simulation_api import router as simulation_router
 
 
@@ -444,6 +445,7 @@ app.include_router(external_archive_router)
 app.include_router(external_case_router)
 app.include_router(simulation_router)
 app.include_router(mixed_router)
+app.include_router(rotor_router)
 
 
 @app.on_event("shutdown")
