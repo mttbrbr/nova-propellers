@@ -131,8 +131,25 @@ def templates():
     return [{'id': key, 'name': t['name'], 'description': t['description']} for key, t in TEMPLATES.items()]
 
 
+def layout(nodes, edges, columns=4):
+    """Layered left-to-right layout that wraps long chains into bands."""
+    depth = {n['id']: 0 for n in nodes}
+    for _ in nodes:
+        for e in edges:
+            depth[e['target']] = max(depth[e['target']], depth[e['source']] + 1)
+    bands = {}
+    for node in nodes:
+        level = depth[node['id']]
+        slot = (level // columns, level % columns)
+        row = bands.setdefault(slot, 0)
+        bands[slot] = row + 1
+        node['position'] = {'x': slot[1] * 270, 'y': slot[0] * 330 + row * 150}
+    return nodes
+
+
 def template(key):
     if key not in TEMPLATES:
         raise ValueError(f'Unknown block template {key!r}')
     t = copy.deepcopy(TEMPLATES[key])
+    layout(t['nodes'], t['edges'])
     return {'schema_version': 2, 'kind': 'blocks', 'template': key, **t}

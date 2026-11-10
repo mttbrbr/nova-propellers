@@ -6,6 +6,25 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Rotors workspace and `/api/v1/rotors/*`: HAWT, VAWT, air and marine
+  propellers with Cp–λ (turbines) and K_T/K_Q/η–J (propellers) curves, a
+  dashed reference curve to compare correction sets, and radial or azimuthal
+  distributions. See `docs/ROTOR_MODELS.md`.
+- VAWT single, double, multiple and double-multiple streamtube models with
+  finite-aspect-ratio, flow-curvature, Gormont–Berg dynamic-stall, strut-drag
+  and shaft-wake corrections; straight and troposkien blades.
+- Axial BEMT (Ning's 1-D residual) for propellers and turbines with Prandtl or
+  Shen tip loss, hub loss, Glauert/Buhl/Spera high induction, Snel rotational
+  augmentation and Prandtl–Glauert compressibility.
+- Marine propeller theory: B-series outline, hull interaction, σ₀.₇R, Burrill
+  τc, Keller minimum area ratio and local cavitation number.
+- Block workflows (Workflow → Block workflows, `/api/v1/blocks/*`): typed DAG
+  of general blocks (parameters with limits, expressions, constraints, sweep,
+  filter, select, optimizer, report) and rotor-specific blocks (rotors,
+  operating point, hull, corrections, solver, performance curve, design
+  checks). Hard/soft constraints report margins; "stop" blocks downstream
+  work. Templates and saved workflows included.
+
 - `POST /api/v1/simulations/{id}/solver-comparison` runs one saved simulation
   with 2–4 solvers as a frozen comparison without creating simulations.
 - `GET /api/v2/project-index` returns lightweight project summaries;

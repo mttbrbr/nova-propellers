@@ -20,7 +20,8 @@
     "test:external-cases": "node tests/external-cases.mjs",
     "test:execution-monitor": "node tests/execution-monitor.mjs",
     "test:openfast-inspection": "node tests/openfast-inspection.mjs",
-    "test:studies-library": "node tests/studies-library.mjs"
+    "test:studies-library": "node tests/studies-library.mjs",
+    "test:rotors-blocks": "node tests/rotors-blocks.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.0.0",
