@@ -24,8 +24,9 @@ class MixedArchiveTests(unittest.TestCase):
 
     def project(self):
         project = library.save('project', {'schema_version': 2, 'name': 'Mixed'})
-        from nova.application.simulation_cases import freeze_case
         from test_pywake_adapter import case
+
+        from nova.application.simulation_cases import freeze_case
         asset = library.make_asset(freeze_case('pywake', 'Farm', case()))
         simulation = library.save('simulation', {'schema_version': 2, 'project_id': project['id'],
             'kind': 'pywake', 'name': 'Wind farm', 'configuration': {'asset_id': asset['id']},
@@ -96,7 +97,7 @@ class MixedArchiveTests(unittest.TestCase):
             'inputs': {}, 'external_job': {'adapter_id': 'openfast', 'artifact_root': str(directory)},
             'result': {'schema_version': 1, 'kind': 'external', 'adapter_id': 'openfast',
                 'data': None, 'artifacts': ['source/raw.out'], 'working_directory': str(directory)}})
-        link = library.save('run_link', {'schema_version': 2, 'project_id': project['id'], 'run_id': run['id']})
+        library.save('run_link', {'schema_version': 2, 'project_id': project['id'], 'run_id': run['id']})
         archive = mixed_archives.export_project(project['id'])
         self.assertNotIn(b'/private/bin/openfast', archive)
         restored = mixed_archives.import_project(archive)
@@ -155,7 +156,8 @@ class MixedArchiveTests(unittest.TestCase):
 
     def test_native_simulation_in_neutral_project_validates_and_round_trips(self):
         from test_api_contract import ApiContractTests
-        from nova.transport.api import checked_project, ProjectRequest
+
+        from nova.transport.api import ProjectRequest, checked_project
         from nova.workflow.engine import template
         project = library.save('project', {'schema_version': 2, 'name': 'Native'})
         document = checked_project(ProjectRequest(name='Propeller', inputs=ApiContractTests.geometry_payload(), workflow=template()))

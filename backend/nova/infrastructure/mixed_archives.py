@@ -3,16 +3,17 @@ import base64
 import hashlib
 import io
 import os
-from pathlib import Path
 import shutil
 import stat
 import tempfile
 import uuid
 import zipfile
+from pathlib import Path
 
 import database
 from nova.core.data import canonical_json, content_hash
-from nova.infrastructure import library, external_archive as external
+from nova.infrastructure import external_archive as external
+from nova.infrastructure import library
 
 GROUPS = {'assets': 'asset', 'simulations': 'simulation', 'geometries': 'geometry',
           'runs': 'run', 'run_links': 'run_link'}

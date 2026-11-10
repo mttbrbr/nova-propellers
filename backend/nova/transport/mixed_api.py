@@ -7,18 +7,24 @@ import uuid
 import zipfile
 from typing import Literal
 
-import database
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import Field
 
+import database
 from nova.adapters.registry import get as adapter_for
 from nova.application.external import configuration as local_configuration
-from nova.application.simulation_cases import freeze_case, materialize_asset, revise_case, validate_asset
+from nova.application.simulation_cases import (
+    freeze_case,
+    materialize_asset,
+    revise_case,
+    validate_asset,
+)
 from nova.core.data import content_hash
 from nova.infrastructure import jobs, library
 from nova.transport.api import ProjectRequest, Request, checked_project, project
 from nova.transport.external_api import discard_unreferenced
-from nova.transport.simulation_api import CloneRequest, RunRequest, run_simulation as run_native
+from nova.transport.simulation_api import CloneRequest, RunRequest
+from nova.transport.simulation_api import run_simulation as run_native
 from nova.workflow.engine import external_template
 
 router = APIRouter(prefix='/api/v2')
@@ -259,7 +265,8 @@ class ArchiveImport(Request):
 @router.post('/projects/import')
 def import_archive(request: ArchiveImport):
     from nova.infrastructure.mixed_archives import import_project
-    from nova.transport.api import ArchiveImport as LegacyImport, import_archive as import_legacy
+    from nova.transport.api import ArchiveImport as LegacyImport
+    from nova.transport.api import import_archive as import_legacy
     try:
         content = base64.b64decode(request.content_base64, validate=True)
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
