@@ -7,6 +7,7 @@ import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
 import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingStage, familyLabel, requirementDefaults } from './stages/RotorStages.jsx';
 import DesignSheet, { useTargets } from './shell/DesignSheet.jsx';
 import RunCard from './shell/RunCard.jsx';
+import RunChooser from './shell/RunChooser.jsx';
 import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import { Segmented } from './ui/controls.jsx';
@@ -131,6 +132,9 @@ function App() {
   // Design sheet: which sections are open; the active view is `phase`.
   const [openSections, setOpenSections] = useState(['sizing']);
   const [sheetTargets, sheetRef] = useTargets();
+  // Run always asks which models to execute; the choice is applied, then the run starts.
+  const [runChooser, setRunChooser] = useState(false);
+  const [pendingRun, setPendingRun] = useState(null);
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -442,15 +446,41 @@ function App() {
   const runActive = activeRun(nativeRun);
   const runDisabled = busy || Boolean(workspaceContext?.busy) || !workspaceContext?.ready;
   const defaultSimulation = (geometryDefinition) => openDraft({ ...initial, project_name: inputs.project_name, ...(geometryDefinition || Object.fromEntries(geometryFields.map((key) => [key, payload[key]]))) });
+  const executeRun = (main = model, extra = []) => run(async () => {
+    await workbench.current.execute();
+    // Extra models run on the same frozen simulation after the main run.
+    if (extra.length) trackStudyExecution(await workbench.current.solverComparison([main, ...extra]));
+  });
   const handleRun = () => {
     if (runActive || runDisabled) return;
-    run(async () => {
-      await workbench.current.execute();
-      // "Also compare with" runs the same frozen simulation with the extra solvers afterwards.
-      const extra = guidedCompatible ? compareModels.filter((id) => id !== model) : [];
-      if (extra.length) trackStudyExecution(await workbench.current.solverComparison([model, ...extra]));
-    });
+    // Customized graphs carry their own analysis nodes; they run as configured.
+    if (rotorFamily === 'propeller' && !guidedCompatible) { executeRun(); return; }
+    setRunChooser(true);
   };
+  const confirmRun = (selection) => {
+    setRunChooser(false);
+    if (rotorFamily === 'propeller') {
+      const [main, ...extra] = selection;
+      chooseModel(main); setCompareModels(extra);
+      setPendingRun({ kind: 'propeller', main, extra });
+    } else if (rotorFamily === 'vawt') {
+      setRotorSpec({ ...rotorSpec, method: selection[0] });
+      setPendingRun({ kind: 'vawt', method: selection[0] });
+    } else {
+      setPendingRun({ kind: 'rotor' });
+    }
+  };
+  // Start only once the chosen model reached the workspace controller.
+  useEffect(() => {
+    if (!pendingRun) return;
+    if (pendingRun.kind === 'propeller' && model !== pendingRun.main) return;
+    if (pendingRun.kind === 'vawt' && rotorSpec?.method !== pendingRun.method) return;
+    const next = pendingRun;
+    setPendingRun(null);
+    executeRun(next.main, next.extra || []);
+    // executeRun reads the latest controller through its ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRun, model, rotorSpec]);
   const openSavedProject = (id, simulationId = null) => { workbench.current?.openProjectById(id, simulationId); go('design'); };
   const compareProjects = (ids) => { setStudyRequest({ type: 'design', projectIds: ids, nonce: Date.now() }); go('studies'); };
   const deleteProjects = async (ids) => {
@@ -633,6 +663,12 @@ function App() {
       onNewDraft={defaultSimulation} onContextChange={setWorkspaceContext} onLoadedModel={setModel} onShowResults={() => go('results')}
       onShowStudies={(record) => { setSelectedStudyRun(record || null); go('studies'); }} onBrowseProjects={() => { setLibraryTab('projects'); go('library'); }} uiBusy={busy} slots={slots}
       rotorFamily={rotorFamily} rotorSpec={rotorSpec} onRotorOpen={openRotor} onRotorResult={(record) => { setRotorRun(record); go('results'); }} />
+    {runChooser && <RunChooser family={rotorFamily} title={workspaceContext?.simulationName || inputs.project_name}
+      methods={(computationalMethods.length ? computationalMethods : [{ id: 'bemt', name: 'BEMT', fidelity: 'preliminary' }, { id: 'llt', name: 'LLT', fidelity: 'preliminary' },
+        { id: 'vlm', name: 'VLM', fidelity: 'experimental' }, { id: 'bem', name: 'BEM', fidelity: 'experimental' }]).filter((m) => m.role !== 'sizing_reference' && m.id !== 'actuator_disk')}
+      vawtMethods={rotorCatalog?.vawt_methods || []} polarsMissing={rotorFamily === 'propeller' && !workspaceContext?.selectedAsset}
+      initial={rotorFamily === 'propeller' ? [model, ...compareModels.filter((id) => id !== model)] : rotorFamily === 'vawt' ? [rotorSpec?.method] : ['bemt']}
+      onCancel={() => setRunChooser(false)} onConfirm={confirmRun} />}
     <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex w-[min(440px,calc(100vw-32px))] flex-col gap-2 md:left-[72px]">
       <div ref={slotRef('notices')} className="pointer-events-auto flex flex-col gap-2" />
       {error && <div role="alert" className="pointer-events-auto flex items-start gap-3 rounded-lg border border-nv-err/40 bg-nv-panel px-3.5 py-2.5 text-[13px] text-nv-err-ink shadow-xl shadow-black/40">

@@ -43,6 +43,7 @@ try {
   });
   const response = page.waitForResponse((item) => item.request().method() === 'POST' && item.url().endsWith(`/simulations/${simulation.id}/run`));
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   submitted = await (await response).json();
   assert.ok(['queued', 'running'].includes(submitted.state));
   await page.getByRole('alert').filter({ hasText: 'Connection interrupted while monitoring the run. Retrying; the submitted job is unchanged.' }).waitFor();

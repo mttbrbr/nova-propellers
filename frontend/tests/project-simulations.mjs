@@ -40,6 +40,7 @@ try {
   await page.locator('select').filter({ has: page.locator('option:checked', { hasText: 'demonstration only' }) }).waitFor();
   await (await simulationOptions()).getByRole('textbox', { name: 'Simulation name', exact: true }).fill('BEMT baseline');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 30000 });
   const projectId = await currentProjectId(page);
   const baselineId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
@@ -50,6 +51,7 @@ try {
   assert.equal(await executions.count(), 1);
   const firstRunLabel = await executions.first().getAttribute('aria-label');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await executions.nth(1).waitFor({ timeout: 30000 });
   assert.equal(await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue(), baselineId);
   await (await simulationOptions()).getByRole('button', { name: 'New simulation', exact: true }).click();
@@ -60,6 +62,7 @@ try {
   await page.getByLabel('Design RPM', { exact: true }).fill('6500');
   await navigation.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await executions.nth(2).waitFor({ timeout: 30000 });
   const comparisonId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.notEqual(comparisonId, baselineId);

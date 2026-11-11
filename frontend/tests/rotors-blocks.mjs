@@ -26,6 +26,7 @@ try {
   assert.deepEqual(await correctionBoxes(), ['Correction tip_loss', 'Correction hub_loss', 'Correction high_induction', 'Correction rotational_augmentation']);
   assert.match(await page.getByRole('region', { name: 'Not applicable' }).innerText(), /Compressibility/);
   await page.getByRole('button', { name: 'Run analysis' }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('img', { name: 'Power coefficient Cp versus λ' }).waitFor({ timeout: 60000 });
   assert.match(await page.getByRole('region', { name: 'Performance' }).innerText(), /Cp max/);
   await shot('rotors-hawt');
@@ -34,6 +35,7 @@ try {
   await stages.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('combobox', { name: 'Correction tip_loss' }).selectOption('none');
   await page.getByRole('button', { name: 'Run analysis' }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('img', { name: 'Power coefficient Cp versus λ' }).waitFor({ timeout: 60000 });
   const compare = page.getByRole('combobox', { name: 'Compare with run' });
   await page.waitForFunction(() => document.querySelector('select[aria-label="Compare with run"]')?.options.length > 1);
@@ -48,6 +50,7 @@ try {
   await page.getByRole('combobox', { name: 'VAWT method' }).selectOption('double_multiple_streamtube');
   await page.getByRole('combobox', { name: 'Correction dynamic_stall' }).selectOption('gormont_berg');
   await page.getByRole('button', { name: 'Run analysis' }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('img', { name: /Blade torque/ }).waitFor({ timeout: 90000 });
   assert.match(await page.getByRole('region', { name: 'Performance' }).innerText(), /Cp – λ/);
   await shot('rotors-vawt');
@@ -59,6 +62,7 @@ try {
   await stages.getByRole('button', { name: 'Analysis', exact: true }).click();
   assert.deepEqual(await correctionBoxes(), ['Correction tip_loss', 'Correction hub_loss']);
   await page.getByRole('button', { name: 'Run analysis' }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('region', { name: 'Marine assessment' }).waitFor({ timeout: 60000 });
   assert.ok(await page.getByRole('img', { name: 'Open-water diagram versus J' }).isVisible());
   assert.match(await page.getByRole('region', { name: 'Requirement check' }).innerText(), /Propeller thrust required/);
