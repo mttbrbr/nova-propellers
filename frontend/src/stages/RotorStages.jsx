@@ -4,7 +4,7 @@ import { request } from '../backend.js';
 import { formatValue, niceTicks } from '../lib/blade.js';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import LineChart from '../ui/LineChart.jsx';
-import { Button, Disclosure, Field, KeyValue, LabeledSegmented, Metric, Notice, Section, SelectField } from '../ui/controls.jsx';
+import { Button, Disclosure, Field, KeyValue, Metric, Notice, Section, Segmented, SelectField } from '../ui/controls.jsx';
 
 // The rotor family is chosen once, at the start of the Design flow; every stage
 // then shows only the inputs, corrections and results that apply to it.
@@ -17,8 +17,11 @@ const fmt = (value, digits = 4) => value == null || Number.isNaN(value) ? '—' 
 const GRAVITY = 9.80665;
 
 export function FamilySelector({ value, onChange, disabled }) {
-  return <LabeledSegmented label="Rotor type" value={value} onChange={onChange} disabled={disabled} size="sm"
-    options={families.map(([id, label]) => [id, label.replace(' propeller', '')])} />;
+  return <div className="flex flex-col gap-1.5">
+    <span className="text-[13px] text-nv-muted">Rotor type</span>
+    <Segmented label="Rotor type" value={value} onChange={onChange} disabled={disabled} size="sm"
+      options={families.map(([id, label]) => [id, label.replace(' propeller', '')])} />
+  </div>;
 }
 
 export const requirementDefaults = {

@@ -17,23 +17,6 @@ function Logo() {
   </svg>;
 }
 
-export function StageStepper({ phase, onNavigate, guidedCompatible, completed }) {
-  return <nav aria-label="Design stages" className="flex min-w-0 justify-center">
-    <ol className="m-0 flex list-none items-center gap-0.5 p-0">
-      {stages.map((stage, index) => {
-        const current = phase === stage.id;
-        const blocked = !guidedCompatible && index < 3;
-        return <li key={stage.id}><button type="button" aria-current={current ? 'step' : undefined} disabled={blocked}
-          title={blocked ? 'This customized project uses the Workflow workspace' : `${stage.label} · Alt+${stage.key}`}
-          onClick={() => onNavigate(stage.id)}
-          className={`flex h-8 items-center gap-2 rounded-full px-3 text-[13px] transition disabled:cursor-not-allowed disabled:opacity-35 ${current ? 'bg-nv-hover text-nv-ink-strong' : 'text-nv-muted hover:text-nv-ink'}`}>
-          <span className={`font-mono ${current ? 'text-nv-accent' : completed?.[stage.id] ? 'text-nv-ok' : ''}`} aria-hidden="true">{completed?.[stage.id] && !current ? '✓' : index + 1}</span>{stage.label}
-        </button></li>;
-      })}
-    </ol>
-  </nav>;
-}
-
 const statusLabel = (context) => {
   if (!context?.project) return ['warn', 'Unsaved draft'];
   if (context.simulationStatus === 'modified') return ['warn', 'Unsaved changes'];
@@ -41,7 +24,7 @@ const statusLabel = (context) => {
   return ['warn', 'Draft'];
 };
 
-export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot, phase, onNavigate, guidedCompatible, completed,
+export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot,
   onSave, saveDisabled, run, onRun, onCancel, runDisabled, onNewProject, onCloseProject, projectActionsDisabled }) {
   const [tone, status] = statusLabel(context);
   const models = context?.models?.map((m) => m.toUpperCase()).join(' + ');
@@ -59,7 +42,7 @@ export default function AppHeader({ context, projectSlot, simulationSlot, manage
         <div ref={manageSlot} className="flex flex-col gap-3 p-4" />
       </Popover>
     </div>
-    <div className="order-last w-full min-w-0 overflow-x-auto xl:order-none xl:w-auto xl:flex-1"><StageStepper phase={phase} onNavigate={onNavigate} guidedCompatible={guidedCompatible} completed={completed} /></div>
+    <div className="flex-1" />
     <div className="ml-auto flex items-center gap-1">
       {running && <span role="status" className="mr-2 hidden items-center gap-2 text-xs text-nv-warn-ink sm:inline-flex"><Loader2 size={14} className="animate-spin" aria-hidden="true" />
         {run.external_job ? 'External analysis' : run.comparison ? 'Comparison' : run.study ? 'Study' : run.optimization ? 'Optimization' : 'Simulation'} · {run.state}{Number.isFinite(run.progress) ? ` · ${Math.round(run.progress * 100)}%` : ''}</span>}
