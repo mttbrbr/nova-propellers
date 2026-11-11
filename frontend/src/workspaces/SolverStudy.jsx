@@ -5,7 +5,7 @@ import { Button, Disclosure, Notice, SelectField, StatusDot } from '../ui/contro
 import LineChart from '../ui/LineChart.jsx';
 import SimulationComparison from './SimulationComparison.jsx';
 
-export const caseColors = ['#4CC9F0', '#B49CFB', '#F2A93B', '#46D19A', '#F27C7C', '#C4CAD2', '#8FDDF6', '#F2C46D'];
+export const caseColors = ['#FF8533', '#B49CFB', '#4CC9F0', '#46D19A', '#F27C7C', '#C4CAD2', '#FFB27A', '#F2C46D'];
 const solverIds = ['bemt', 'llt', 'vlm', 'bem'];
 const active = (run) => ['queued', 'running', 'cancelling'].includes(run?.state);
 const percent = (row, metric) => {

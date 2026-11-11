@@ -7,7 +7,7 @@ import LineChart from '../ui/LineChart.jsx';
 import { Button, Disclosure, KeyValue, Notice, Section, SelectField, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
-const typeColor = { record: '#4CC9F0', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#F2A93B', report: '#F27C7C' };
+const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
 const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink focus:border-nv-accent focus:outline-none';
@@ -336,7 +336,7 @@ function TableValue({ port, table }) {
   const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => !['state', 'error'].includes(k)).slice(0, 8);
   return <div className="flex flex-col gap-2">
     <span className="text-xs text-nv-muted">{port}: {table.kind} · {table.rows.length} rows{table.filtered_from != null ? ` (of ${table.filtered_from})` : ''}</span>
-    {points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`} series={[{ id: 'y', color: '#4CC9F0', points }]} height={170}
+    {points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`} series={[{ id: 'y', color: '#FF8533', points }]} height={170}
       xDomain={[lo, hi]} xTicks={ticks.length > 1 ? ticks : [lo, hi]} xLabel={x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : ''} />}
     <details className="text-xs"><summary className="cursor-pointer text-nv-reference">Rows</summary><div className="mt-1 max-h-64 overflow-auto">
       <table className="w-full text-left tabular-nums"><thead className="text-nv-muted"><tr>{columns.map((c) => <th key={c} className="p-1 font-normal">{c}</th>)}</tr></thead>

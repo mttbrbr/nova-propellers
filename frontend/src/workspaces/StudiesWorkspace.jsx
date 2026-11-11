@@ -36,7 +36,7 @@ function SweepPlot({ rows, parameter, units }) {
   const coordinates = points.map((p) => `${30 + (p.value - xmin) / Math.max(xmax - xmin, 1e-12) * 540},${170 - (p.thrust_n - ymin) / Math.max(ymax - ymin, 1e-12) * 140}`).join(' ');
   return <div className="rounded border border-nv-line p-4">
     <div className="flex justify-between text-xs text-nv-muted"><span>Thrust [N]: {number(ymin)}–{number(ymax)}</span><select aria-label="Plot analysis node" className={field} value={selected} onChange={(e) => setSelection(e.target.value)}>{ids.map((id) => <option key={id}>{id}</option>)}</select></div>
-    <svg viewBox="0 0 600 200" role="img" aria-label="Thrust versus sweep parameter" className="mt-3 max-h-64 w-full"><path d="M30 20V175H575" fill="none" stroke="#3A424E"/><polyline points={coordinates} fill="none" stroke="#4CC9F0" strokeWidth="2"/></svg>
+    <svg viewBox="0 0 600 200" role="img" aria-label="Thrust versus sweep parameter" className="mt-3 max-h-64 w-full"><path d="M30 20V175H575" fill="none" stroke="#3A424E"/><polyline points={coordinates} fill="none" stroke="#FF8533" strokeWidth="2"/></svg>
     <p className="text-xs text-nv-muted">{parameter} [{units}]: {number(xmin)}–{number(xmax)}. Failed cases are excluded from the curve and retained in the table.</p>
   </div>;
 }

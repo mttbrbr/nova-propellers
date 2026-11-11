@@ -84,11 +84,11 @@ export function RotorSizingStage({ family, onFamily, familyLocked, spec, setSpec
   useEffect(() => setApplied(false), [family]);
   const apply = () => { setSpec(applySizing(family, { ...spec, requirements: req }, sized)); setApplied(true); };
   const sweep = family === 'marine'
-    ? { x: 'advance_ratio', label: 'J', lo: 0.3, hi: 1.0, y: [['Diameter', 'm', (v) => sizeRotor(family, { ...req, advance_ratio: v }, fluid).diameter, '#4CC9F0'],
-      ['Required KT', '', (v) => sizeRotor(family, { ...req, advance_ratio: v }, fluid).kt, '#F2A93B']] }
+    ? { x: 'advance_ratio', label: 'J', lo: 0.3, hi: 1.0, y: [['Diameter', 'm', (v) => sizeRotor(family, { ...req, advance_ratio: v }, fluid).diameter, '#FF8533'],
+      ['Required KT', '', (v) => sizeRotor(family, { ...req, advance_ratio: v }, fluid).kt, '#4CC9F0']] }
     : { x: 'rated_wind_m_s', label: 'm/s', lo: Math.max(3, req.rated_wind_m_s * 0.6), hi: req.rated_wind_m_s * 1.5,
-      y: [['Radius', 'm', (v) => sizeRotor(family, { ...req, rated_wind_m_s: v }, fluid).radius, '#4CC9F0'],
-        ['Rotor speed', 'rpm', (v) => sizeRotor(family, { ...req, rated_wind_m_s: v }, fluid).rpm, '#F2A93B']] };
+      y: [['Radius', 'm', (v) => sizeRotor(family, { ...req, rated_wind_m_s: v }, fluid).radius, '#FF8533'],
+        ['Rotor speed', 'rpm', (v) => sizeRotor(family, { ...req, rated_wind_m_s: v }, fluid).rpm, '#4CC9F0']] };
   const span = Array.from({ length: 40 }, (_, i) => sweep.lo + (sweep.hi - sweep.lo) * i / 39);
   const current = req[sweep.x];
   const metrics = family === 'marine'
@@ -141,7 +141,7 @@ function RotorSketch({ family, spec }) {
     const curve = Array.from({ length: 21 }, (_, i) => { const z = -H / 2 + H * i / 20; const r = g.shape === 'troposkien' ? R * (1 - (2 * z / H) ** 2) : R; return [r * scale, 300 - z * scale]; });
     return <div className="aspect-square w-full rounded-xl border border-nv-line bg-[#0A0C0F]"><svg viewBox="0 0 600 600" role="img" aria-label={`VAWT ${formatValue(2 * R)} m diameter, ${formatValue(H)} m high`} className="h-full w-full">
       <line x1="300" x2="300" y1={y0 - 30} y2={y0 + h + 40} stroke="#3A424E" strokeWidth="3" />
-      {[1, -1].map((side) => <polyline key={side} points={curve.map(([r, y]) => `${300 + side * r},${y}`).join(' ')} fill="none" stroke="#4CC9F0" strokeWidth="4" />)}
+      {[1, -1].map((side) => <polyline key={side} points={curve.map(([r, y]) => `${300 + side * r},${y}`).join(' ')} fill="none" stroke="#FF8533" strokeWidth="4" />)}
       <text x="300" y={y0 + h + 70} textAnchor="middle" className="fill-nv-muted font-mono text-[18px]">Ø {formatValue(2 * R)} m · H {formatValue(H)} m</text>
       <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#2A303A" strokeDasharray="6 6" />
     </svg></div>;
@@ -152,7 +152,7 @@ function RotorSketch({ family, spec }) {
     <circle cx="300" cy="300" r="220" fill="none" stroke="#2A303A" strokeDasharray="6 6" />
     {Array.from({ length: blades }, (_, i) => { const a = 2 * Math.PI * i / blades - Math.PI / 2; return <path key={i}
       d={`M300 300 Q ${300 + 120 * Math.cos(a - 0.25)} ${300 + 120 * Math.sin(a - 0.25)} ${300 + 215 * Math.cos(a)} ${300 + 215 * Math.sin(a)} Q ${300 + 120 * Math.cos(a + 0.12)} ${300 + 120 * Math.sin(a + 0.12)} 300 300`}
-      fill={family === 'marine' ? '#B49CFB33' : '#4CC9F033'} stroke={family === 'marine' ? '#B49CFB' : '#4CC9F0'} strokeWidth="2" />; })}
+      fill={family === 'marine' ? '#B49CFB33' : '#FF853333'} stroke={family === 'marine' ? '#B49CFB' : '#FF8533'} strokeWidth="2" />; })}
     <circle cx="300" cy="300" r="18" fill="#161A20" stroke="#3A424E" />
     <text x="300" y="560" textAnchor="middle" className="fill-nv-muted font-mono text-[18px]">Ø {formatValue(2 * radius)} m · {blades} blades</text>
   </svg></div>;
@@ -211,8 +211,8 @@ export function RotorGeometryStage({ family, spec, setSpec, catalog, onContinue 
     content={axial ? <>
       <h1 className="m-0 text-lg font-semibold">Blade distributions</h1>
       {blade ? <>
-        <LineChart title="Chord" unit="c/R" xLabel="r/R" series={[{ id: 'chord', color: '#4CC9F0', points: blade.r_over_R.map((x, i) => ({ x, y: blade.chord_m[i] / blade.tip_radius_m })) }]} />
-        <LineChart title="Twist + pitch" unit="deg" xLabel="r/R" series={[{ id: 'twist', color: '#F2A93B', points: blade.r_over_R.map((x, i) => ({ x, y: blade.twist_deg[i] + (spec.geometry.pitch_deg || 0) })) }]} />
+        <LineChart title="Chord" unit="c/R" xLabel="r/R" series={[{ id: 'chord', color: '#FF8533', points: blade.r_over_R.map((x, i) => ({ x, y: blade.chord_m[i] / blade.tip_radius_m })) }]} />
+        <LineChart title="Twist + pitch" unit="deg" xLabel="r/R" series={[{ id: 'twist', color: '#4CC9F0', points: blade.r_over_R.map((x, i) => ({ x, y: blade.twist_deg[i] + (spec.geometry.pitch_deg || 0) })) }]} />
       </> : <p className="m-0 text-[13px] text-nv-muted">Computing blade…</p>}
     </> : <>
       <h1 className="m-0 text-lg font-semibold">Rotor proportions</h1>
@@ -323,14 +323,14 @@ export function RotorResultsStage({ family, run, runs, stale, onRun, runDisabled
   const eta = family === 'marine' ? 'open_water_efficiency' : 'efficiency';
   const ref = (field, label) => reference ? [curveSeries({ ...reference, variable }, field, '#B49CFB', { label, dashed: true })] : [];
   const charts = turbine(family) ? [
-    ['Power coefficient Cp', '', [curveSeries(curve, 'CP', '#4CC9F0', { label: 'Cp' }), { id: 'betz', label: 'Betz 16/27', color: '#C4CAD2', dashed: true, width: 1.2, points: [{ x: xDomain[0], y: 16 / 27 }, { x: xDomain[1], y: 16 / 27 }] }, ...ref('CP', 'Compared run')]],
-    ['Thrust coefficient CT', '', [curveSeries(curve, 'CT', '#F2A93B', { label: 'CT' }), ...ref('CT', 'Compared run')]],
+    ['Power coefficient Cp', '', [curveSeries(curve, 'CP', '#FF8533', { label: 'Cp' }), { id: 'betz', label: 'Betz 16/27', color: '#C4CAD2', dashed: true, width: 1.2, points: [{ x: xDomain[0], y: 16 / 27 }, { x: xDomain[1], y: 16 / 27 }] }, ...ref('CP', 'Compared run')]],
+    ['Thrust coefficient CT', '', [curveSeries(curve, 'CT', '#4CC9F0', { label: 'CT' }), ...ref('CT', 'Compared run')]],
     ['Torque coefficient CQ', '', [curveSeries(curve, 'CQ', '#46D19A', { label: 'CQ' }), ...ref('CQ', 'Compared run')]],
   ] : [
-    ['Open-water diagram', 'KT · 10KQ · η', [curveSeries(curve, 'KT', '#4CC9F0', { label: 'KT' }),
-      { ...curveSeries(curve, 'KQ', '#F2A93B', { label: '10 KQ' }), points: curveSeries(curve, 'KQ', '#F2A93B').points.map((p) => ({ ...p, y: 10 * p.y })) },
+    ['Open-water diagram', 'KT · 10KQ · η', [curveSeries(curve, 'KT', '#FF8533', { label: 'KT' }),
+      { ...curveSeries(curve, 'KQ', '#4CC9F0', { label: '10 KQ' }), points: curveSeries(curve, 'KQ', '#4CC9F0').points.map((p) => ({ ...p, y: 10 * p.y })) },
       curveSeries(curve, eta, '#46D19A', { label: 'η' }), ...ref(eta, 'Compared η')]],
-    ['Power coefficient CP = P/(ρn³D⁵)', '', [curveSeries(curve, 'CP_prop', '#4CC9F0', { label: 'CP' }), ...ref('CP_prop', 'Compared run')]],
+    ['Power coefficient CP = P/(ρn³D⁵)', '', [curveSeries(curve, 'CP_prop', '#FF8533', { label: 'CP' }), ...ref('CP_prop', 'Compared run')]],
   ];
   const others = runs.filter((r) => r.id !== run.id && r.state === 'succeeded');
   return <StageLayout inputsLabel="Stage inputs" contentLabel="Performance" sideLabel="Operating point"
@@ -416,7 +416,7 @@ function MarinePanel({ marine: m }) {
 
 function RadialCharts({ stations }) {
   const series = (field, color) => [{ id: field, color, points: stations.map((s) => ({ x: s.r_over_R, y: s[field] })) }];
-  return <>{[['alpha_deg', 'Angle of attack', 'deg', '#4CC9F0'], ['a', 'Axial induction a', '', '#F2A93B'], ['loss_factor', 'Tip × hub loss F', '', '#B49CFB'], ['cl', 'Lift coefficient', '', '#46D19A']]
+  return <>{[['alpha_deg', 'Angle of attack', 'deg', '#FF8533'], ['a', 'Axial induction a', '', '#4CC9F0'], ['loss_factor', 'Tip × hub loss F', '', '#B49CFB'], ['cl', 'Lift coefficient', '', '#46D19A']]
     .map(([field, title, unit, color]) => <LineChart key={field} title={title} unit={unit} height={150} series={series(field, color)} xLabel="r/R" />)}</>;
 }
 
@@ -425,7 +425,7 @@ function AzimuthCharts({ points }) {
   const common = { xDomain: [0, 360], xTicks: [0, 90, 180, 270, 360], xLabel: 'deg', height: 150 };
   return <>
     <p className="m-0 text-xs text-nv-muted">Azimuth 0–180° upwind, 180–360° downwind; equatorial section.</p>
-    {[['alpha_deg', 'Angle of attack', 'deg', '#4CC9F0'], ['blade_torque_nm', 'Blade torque', 'N·m', '#46D19A'], ['induction', 'Induction a', '', '#F2A93B'], ['relative_velocity_ratio', 'Relative velocity W/V∞', '', '#B49CFB']]
+    {[['alpha_deg', 'Angle of attack', 'deg', '#FF8533'], ['blade_torque_nm', 'Blade torque', 'N·m', '#46D19A'], ['induction', 'Induction a', '', '#4CC9F0'], ['relative_velocity_ratio', 'Relative velocity W/V∞', '', '#B49CFB']]
       .map(([field, title, unit, color]) => <LineChart key={field} title={title} unit={unit} series={series(field, color)} {...common} />)}
   </>;
 }

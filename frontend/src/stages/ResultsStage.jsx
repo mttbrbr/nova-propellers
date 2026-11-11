@@ -111,7 +111,7 @@ export function ReportBody({ title, eyebrow = 'Technical report', viewing, analy
         </div>
         <div className="grid gap-x-8 gap-y-7 md:grid-cols-2 2xl:grid-cols-3">
           {distributionFields.map((field) => <LineChart key={field.id} title={field.title} unit={field.unit} height={180} selection={station} onSelect={setStation}
-            series={[{ id: 'run', color: '#4CC9F0', points: stationSeries(stations, field.id) },
+            series={[{ id: 'run', color: '#FF8533', points: stationSeries(stations, field.id) },
               ...compares.map((item) => ({ id: item.label, color: item.color, dashed: item.dashed, points: stationSeries(item.analysis?.stations, field.id) }))]} />)}
         </div>
       </section>
@@ -144,7 +144,7 @@ function ResidualChart({ analysis }) {
   const total = series('residual', '#F2F4F6', 'Total');
   return <LineChart title="Residual" unit="" height={190} xDomain={[0, last]} xTicks={[0, Math.round(last / 2), last]} xLabel="it" legend
     formatTick={(value) => `1e${Math.round(value)}`} formatReadout={(value) => (10 ** value).toExponential(2)}
-    series={[total, series('axial_residual', '#4CC9F0', 'Axial'), series('tangential_residual', '#B49CFB', 'Tangential'),
+    series={[total, series('axial_residual', '#FF8533', 'Axial'), series('tangential_residual', '#B49CFB', 'Tangential'),
       { id: 'tolerance', color: '#46D19A', dashed: true, width: 1.2, points: [{ x: 0, y: tolerance }, { x: last, y: tolerance }] }]} />;
 }
 
@@ -190,7 +190,7 @@ export default function ResultsStage({ r }) {
   const comparisonRun = solverComparisons.find((run) => `cmp:${run.id}` === selectedCompare);
   const compares = comparisonRun
     ? (comparisonRun.result.cases || []).filter((sample) => sample.state === 'succeeded' && sample.result.analyses[0].model !== analysis?.model)
-      .map((sample, index) => ({ label: sample.result.analyses[0].model.toUpperCase(), analysis: sample.result.analyses[0], color: ['#B49CFB', '#F2A93B', '#46D19A'][index % 3] }))
+      .map((sample, index) => ({ label: sample.result.analyses[0].model.toUpperCase(), analysis: sample.result.analyses[0], color: ['#B49CFB', '#4CC9F0', '#46D19A'][index % 3] }))
     : compareRun ? [{ label: (compareRun.result.analyses[0].model || '').toUpperCase(), analysis: compareRun.result.analyses[0], color: '#C4CAD2', dashed: true }] : [];
   const field = distributionFields.find((item) => item.id === colorField);
   const series = stationSeries(analysis?.stations, colorField);

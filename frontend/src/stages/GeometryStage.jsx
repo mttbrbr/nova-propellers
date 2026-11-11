@@ -115,7 +115,7 @@ export default function GeometryStage({ g }) {
       {preview.error && <Notice tone="err" role="alert">Preview not updated: {preview.error}</Notice>}
       <LineChart title="Chord" unit="mm" height={250} legend selection={station} onSelect={setStation} digits={3}
         yDomain={bezierMode ? [0, Number(inputs.diameter) * 0.16 * 1000] : undefined}
-        series={[{ id: 'draft', label: published ? 'Draft' : undefined, color: '#4CC9F0', points: chordSeries },
+        series={[{ id: 'draft', label: published ? 'Draft' : undefined, color: '#FF8533', points: chordSeries },
           ...(bezierMode && publishedChanged('chord_points') ? [{ id: 'published', label: `Published r${published.geometry_revision}`, color: '#6B7480', dashed: true, points: toMm(sampleBezier(publishedParams.chord_points)) }] : [])]}
         controlPoints={bezierMode ? toMm(bezier.chord_points) : undefined} onMovePoint={bezierMode ? moveChord : undefined}
         selectedPoint={g.selectedPoint.curve === 'chord' ? g.selectedPoint.index : undefined} onSelectPoint={(index) => g.setSelectedPoint({ curve: 'chord', index })} />

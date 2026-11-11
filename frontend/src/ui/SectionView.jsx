@@ -19,7 +19,7 @@ export default function SectionView({ outline, chordMm, twistDeg, caption, heigh
         <line x1={8} x2={width - 8} y1={originY} y2={originY} stroke="#2A303A" />
         <g transform={`translate(${originX} ${originY}) rotate(${angle})`}>
           <line x1={-6} x2={scale + 6} y1={0} y2={0} stroke="#4A5260" strokeDasharray="3 4" />
-          <polygon points={points} fill="rgba(76,201,240,.14)" stroke="#4CC9F0" strokeWidth="1.8" strokeLinejoin="round" />
+          <polygon points={points} fill="rgba(255, 133, 51,.14)" stroke="#FF8533" strokeWidth="1.8" strokeLinejoin="round" />
         </g>
         <path d={`M ${originX + arcRadius} ${originY} A ${arcRadius} ${arcRadius} 0 0 0 ${originX + arcRadius * Math.cos(arcAngle)} ${originY - arcRadius * Math.sin(arcAngle)}`} fill="none" stroke="#9AA3AE" strokeWidth="1.2" />
         <text x={originX + arcRadius + 10} y={originY - 10} className="fill-nv-muted font-mono text-[11.5px]">θ {formatValue(twistDeg)}°</text>
