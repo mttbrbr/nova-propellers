@@ -24,13 +24,14 @@ const statusLabel = (context) => {
   return ['warn', 'Draft'];
 };
 
-export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot,
+export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot, tabs,
   onSave, saveDisabled, run, onRun, onCancel, runDisabled, onNewProject, onCloseProject, projectActionsDisabled }) {
   const [tone, status] = statusLabel(context);
   const models = context?.models?.map((m) => m.toUpperCase()).join(' + ');
   const running = run && ['queued', 'running', 'cancelling'].includes(run.state);
   return <header className="relative z-30 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-nv-line bg-nv-canvas py-2 pl-[18px] pr-3">
     <Logo />
+    {tabs}
     <div aria-label="Project and simulation context" role="group" className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       <div ref={projectSlot} className="min-w-0 max-w-[220px]" />
       <span className="text-nv-edge-strong" aria-hidden="true">/</span>

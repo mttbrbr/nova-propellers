@@ -11,7 +11,13 @@ try {
   const rail = page.getByRole('navigation', { name: 'Workspaces' });
   const shot = async (name) => { if (process.env.NOVA_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.NOVA_SCREENSHOT_DIR}/${name}.png` }); };
 
-  const stages = page.getByRole('navigation', { name: 'Design stages' });
+  const sheet = page.getByRole('navigation', { name: 'Design stages' });
+  // Open a design-sheet section as the active view (a second click on the active one folds it).
+  const stages = { getByRole: (_role, { name }) => ({ click: async () => {
+    const title = sheet.getByRole('button', { name, exact: true });
+    await title.click();
+    if (await title.getAttribute('aria-expanded') !== 'true') await title.click();
+  } }) };
   const family = (name) => page.getByRole('group', { name: 'Rotor type' }).getByRole('button', { name, exact: true }).click();
   const correctionBoxes = async () => page.getByRole('combobox', { name: /^Correction / }).evaluateAll((items) => items.map((i) => i.getAttribute('aria-label')));
 
@@ -67,6 +73,15 @@ try {
   assert.ok(await page.getByRole('img', { name: 'Open-water diagram versus J' }).isVisible());
   assert.match(await page.getByRole('region', { name: 'Requirement check' }).innerText(), /Propeller thrust required/);
   await shot('rotors-marine');
+
+  // Projects open as tabs: a new draft gets its own tab, the saved project reopens from its tab.
+  const projectTabs = page.getByRole('tablist', { name: 'Open projects' });
+  await projectTabs.getByRole('tab', { name: /^Rotor families/ }).waitFor();
+  await page.getByRole('button', { name: 'Create a new project' }).click();
+  await projectTabs.getByRole('tab', { name: /Unsaved draft/ }).waitFor();
+  await projectTabs.getByRole('tab', { name: /^Rotor families/ }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Open projects"] [aria-selected="true"]')?.textContent.includes('Rotor families'));
+  await page.getByRole('region', { name: 'Marine assessment' }).or(page.getByRole('navigation', { name: 'Design stages' })).first().waitFor();
 
   // Back to the air propeller: the native actuator-disk sizing returns.
   await stages.getByRole('button', { name: 'Sizing', exact: true }).click();

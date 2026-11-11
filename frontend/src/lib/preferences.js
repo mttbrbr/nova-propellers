@@ -23,4 +23,10 @@ export function rememberProject(id) {
 export function forgetProject(id) {
   write(PINNED, pinnedProjects().filter((item) => item !== id));
   write(RECENT, recentProjects().filter((item) => item !== id));
+  write('nova.openTabs', read('nova.openTabs').filter((tab) => tab.id !== id));
 }
+
+// Projects open as tabs in the header (most recent order is the user's order).
+const TABS = 'nova.openTabs';
+export const openTabs = () => read(TABS);
+export function saveTabs(tabs) { write(TABS, tabs.slice(0, 12)); }
