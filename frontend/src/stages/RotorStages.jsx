@@ -245,6 +245,25 @@ const correctionText = {
 };
 const optionLabel = (value) => typeof value === 'boolean' ? (value ? 'On' : 'Off') : String(value).replaceAll('_', ' ');
 
+// Fidelity levels for this rotor, stated honestly: what runs today and what is planned.
+function ModelLadder({ family, method, catalog }) {
+  const current = family === 'vawt' ? (catalog.vawt_methods.find((m) => m.id === method)?.label.split(' (')[0] || method) : 'Blade-element momentum (BEMT)';
+  const rows = [
+    ['L0', 'Actuator disk', 'Ideal momentum limit (Betz); drawn as reference in Results.', 'reference'],
+    ['L1', current, family === 'vawt' ? 'Streamtube momentum with the corrections below; four variants, chosen at Run.' : 'Annular momentum with 2-D polars and the corrections below.', 'available'],
+    ['L2', 'Free-vortex wake', 'Lifting line with a convected wake: tip vortices and unsteady inflow.', 'planned'],
+    ...(family === 'hawt' ? [['L3', 'OpenFAST aeroelastic', 'Time domain with structure and controller, in your local installation.', 'Integrations']] : []),
+  ];
+  return <section aria-label="Model ladder" className="flex flex-col gap-2">
+    <h2 className="m-0 text-[15px] font-semibold">Models for this rotor</h2>
+    {rows.map(([level, name, detail, state]) => <div key={level} className={`grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border px-3.5 py-2.5 ${state === 'available' ? 'border-nv-accent/60' : 'border-nv-line'} ${state === 'planned' ? 'opacity-60' : ''}`}>
+      <span className={`font-mono text-[13px] ${state === 'available' ? 'text-nv-accent' : 'text-nv-muted'}`}>{level}</span>
+      <span className="min-w-0"><span className="block text-[13.5px] font-medium">{name}</span><span className="block text-[12.5px] text-nv-muted">{detail}</span></span>
+      <span className="text-xs text-nv-muted">{state}</span>
+    </div>)}
+  </section>;
+}
+
 export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runDisabled }) {
   const operating = spec.operating || {};
   const options = family === 'vawt' ? catalog.vertical_corrections : catalog.axial_corrections;
@@ -286,6 +305,7 @@ export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runD
       </Disclosure>
     </>}
     content={<>
+      <ModelLadder family={family} method={spec.method} catalog={catalog} />
       <h1 className="m-0 text-lg font-semibold">Corrections for a {familyLabel[family].toLowerCase()}</h1>
       <div className="grid gap-x-10 gap-y-5 lg:grid-cols-2">{applicable.map((key) => <div key={key} className="flex flex-col gap-1">
         <span className="text-[13px] font-medium">{correctionText[key][0]} <span className="ml-2 font-mono text-xs text-nv-accent">{optionLabel(spec.corrections[key])}</span></span>
