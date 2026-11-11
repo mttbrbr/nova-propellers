@@ -11,6 +11,7 @@ import RunChooser from './shell/RunChooser.jsx';
 import ProjectTabs from './shell/ProjectTabs.jsx';
 import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
+import ComparisonsWorkspace from './workspaces/ComparisonsWorkspace.jsx';
 import { Segmented } from './ui/controls.jsx';
 import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
@@ -646,6 +647,10 @@ function App() {
     : <DesignSheet sections={sections} open={openSections} active={phase} onSection={onSection}
       onExpandAll={() => setOpenSections([...stageIds])} onFoldAll={() => setOpenSections([])}
       views={views} view={phase} onView={go} targetRef={sheetRef} runCard={runCard} />;
+  else if (phase === 'comparisons') body = <ComparisonsWorkspace onOpenRun={(record) => run(async () => {
+    await workbench.current?.openProjectById(record.project_id, record.simulation_id);
+    workbench.current?.openRun(record); go('results');
+  })} />;
   else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows />;
   else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
     inputs={<>
