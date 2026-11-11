@@ -172,6 +172,23 @@ class BlockApiTests(unittest.TestCase):
         run = self.client.post('/api/v1/blocks/run', json={'workflow': self.client.get('/api/v1/blocks/templates/marine_cavitation').json()}).json()
         self.assertEqual(run['status'], 'succeeded')
 
+    def test_rotor_sweep_with_limits_and_refinement(self):
+        body = {'spec': {'kind': 'hawt', 'requirements': {'rated_power_w': 1}}, 'path': 'geometry.radius_m', 'values': [4, 5, 6, 7],
+                'checks': [{'quantity': 'power_w', 'operator': '>=', 'value': 11000}, {'quantity': 'thrust_n', 'operator': '<=', 'value': 4500}]}
+        sweep = self.client.post('/api/v1/rotors/sweep', json=body)
+        self.assertEqual(sweep.status_code, 200, sweep.text)
+        rows = sweep.json()['rows']
+        self.assertEqual([r['value'] for r in rows], [4, 5, 6, 7])
+        self.assertEqual([r['feasible'] for r in rows], [False, False, True, False])
+        self.assertIn('thrust_n', rows[3]['violations'])
+        vawt = {'spec': {'kind': 'vawt'}, 'path': 'operating.tip_speed_ratio', 'values': [3, 4]}
+        coarse = self.client.post('/api/v1/rotors/sweep', json={**vawt, 'method': 'single_streamtube'}).json()
+        fine = self.client.post('/api/v1/rotors/sweep', json={**vawt, 'method': 'double_multiple_streamtube'}).json()
+        self.assertEqual(fine['method'], 'double_multiple_streamtube')
+        self.assertNotAlmostEqual(coarse['rows'][1]['CP'], fine['rows'][1]['CP'], places=3)
+        for bad in ({**vawt, 'method': 'magic'}, {**body, 'method': 'single_streamtube'}, {**body, 'path': 'secret.value'}):
+            self.assertEqual(self.client.post('/api/v1/rotors/sweep', json=bad).status_code, 422)
+
 
 if __name__ == '__main__':
     unittest.main()

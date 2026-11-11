@@ -1,11 +1,15 @@
 """Rotor physics and block-workflow endpoints."""
+import copy
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from nova.blocks import catalog as block_catalog
 from nova.blocks import engine, templates
+from nova.blocks.constraints import normalise, report
 from nova.infrastructure import library
 from nova.physics import rotors
+from nova.physics.vawt import METHODS as VAWT_METHODS
 
 router = APIRouter(prefix='/api/v1')
 
@@ -23,6 +27,14 @@ class CurveRequest(Request):
     variable: str | None = None
     values: list[float] | None = Field(None, min_length=2, max_length=200)
     points: int | None = Field(None, ge=2, le=200)
+
+
+class SweepRequest(Request):
+    spec: dict
+    path: str = Field(min_length=3, max_length=80)
+    values: list[float] = Field(min_length=1, max_length=41)
+    method: str | None = None
+    checks: list[dict] = Field(default_factory=list, max_length=20)
 
 
 class BlockWorkflowRequest(Request):
@@ -59,6 +71,41 @@ def analyze_rotor(request: RotorRequest):
 def rotor_curve(request: CurveRequest):
     return _guard(lambda: rotors.performance_curve(request.spec, variable=request.variable,
                                                    values=request.values, points=request.points))
+
+
+@router.post('/rotors/sweep')
+def rotor_sweep(request: SweepRequest):
+    """Vary one specification field; optionally evaluate every point with another model."""
+    def sweep():
+        # Complete the specification first so a swept field never replaces a whole group.
+        base = {k: v for k, v in rotors.merged(copy.deepcopy(request.spec)).items() if k not in ('curve', 'requirements')}
+        engine.set_path({}, request.path, 0)
+        if request.method:
+            if base.get('kind') == 'vawt':
+                if request.method not in VAWT_METHODS:
+                    raise ValueError(f'Unknown VAWT method {request.method!r}')
+            elif request.method != 'bemt':
+                raise ValueError('Axial rotors use the BEMT method')
+        for check in request.checks:
+            normalise(check)
+        rows = []
+        for value in request.values:
+            point = engine.set_path(copy.deepcopy(base), request.path, value)
+            if request.method:
+                point['method'] = request.method
+            try:
+                result = rotors.analyze(point)
+                values = rotors.scalar_outputs(result)
+                row = {'value': value, 'state': 'succeeded', 'converged': result['converged'], **values}
+                if request.checks:
+                    checked = report(request.checks, values)
+                    row['feasible'] = checked['feasible']
+                    row['violations'] = [c['label'] for c in checked['checks'] if not c['satisfied']]
+            except ValueError as exc:
+                row = {'value': value, 'state': 'failed', 'error': str(exc)}
+            rows.append(row)
+        return {'path': request.path, 'method': request.method or base.get('method', 'bemt'), 'rows': rows}
+    return _guard(sweep)
 
 
 @router.get('/blocks/catalog')
