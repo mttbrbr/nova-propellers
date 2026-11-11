@@ -1,8 +1,9 @@
-import { Database, FlaskConical, GitBranch, Layers3, Plug } from 'lucide-react';
+import { Database, FlaskConical, GitBranch, GitCompareArrows, Layers3, Plug } from 'lucide-react';
 import { IconButton } from '../ui/controls.jsx';
 
 export const workspaces = [
   { id: 'design', label: 'Design', icon: Layers3, detail: 'Sizing, geometry, analysis and results' },
+  { id: 'comparisons', label: 'Comparisons', icon: GitCompareArrows, detail: 'Compare runs across projects' },
   { id: 'studies', label: 'Studies', icon: FlaskConical, detail: 'Sweeps and solver comparisons' },
   { id: 'workflow', label: 'Workflow', icon: GitBranch, detail: 'Project graph and constraint-driven block workflows' },
   { id: 'library', label: 'Library', icon: Database, detail: 'Airfoils, polars, models and archives' },
