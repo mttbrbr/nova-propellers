@@ -6,6 +6,19 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Design sheet replaces the stage bar: Sizing, Geometry, Analysis and Results
+  are stacked sections (several open at once, summaries and status dots when
+  closed), with view tabs in the centre and an always-visible latest-run card.
+- Open projects as tabs in the header.
+- Run opens a model chooser every time (several models for the air propeller,
+  one streamtube model for VAWT, BEMT for HAWT and marine).
+- Comparisons workspace: runs from any project overlaid, baseline deltas,
+  input differences with an attribution warning, saved comparisons.
+- Sweep lens for rotor-engine designs with limits, VAWT refinement with a more
+  complete model, adopt-into-design and open-as-block-workflow;
+  `POST /api/v1/rotors/sweep`.
+- New NOVA logo and app icon (dashed-O wordmark), orange primary colour.
+
 - Rotor type chosen at the start of the Design flow (air propeller, marine
   propeller, HAWT, VAWT). Sizing, Geometry, Analysis and Results adapt to it:
   turbine sizing from rated power, marine sizing from thrust/J with Keller,
