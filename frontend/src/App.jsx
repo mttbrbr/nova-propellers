@@ -8,6 +8,7 @@ import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingS
 import DesignSheet, { useTargets } from './shell/DesignSheet.jsx';
 import RunCard from './shell/RunCard.jsx';
 import RunChooser from './shell/RunChooser.jsx';
+import ProjectTabs from './shell/ProjectTabs.jsx';
 import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import { Segmented } from './ui/controls.jsx';
@@ -21,7 +22,7 @@ import GeometryStage from './stages/GeometryStage.jsx';
 import AnalysisStage from './stages/AnalysisStage.jsx';
 import ResultsStage from './stages/ResultsStage.jsx';
 import LibraryWorkspace from './stages/LibraryWorkspace.jsx';
-import { forgetProject } from './lib/preferences.js';
+import { forgetProject, openTabs, saveTabs } from './lib/preferences.js';
 
 const initial = {
   project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
@@ -135,6 +136,8 @@ function App() {
   // Run always asks which models to execute; the choice is applied, then the run starts.
   const [runChooser, setRunChooser] = useState(false);
   const [pendingRun, setPendingRun] = useState(null);
+  // Projects open as tabs; the active tab follows the project in the workspace.
+  const [tabs, setTabs] = useState(openTabs);
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -439,6 +442,34 @@ function App() {
     setModel('bemt'); setGuidedCompatible(true); setLastStage('sizing'); setPhase('sizing');
   };
 
+  // Keep the active project's tab in sync with its name, simulation and rotor type.
+  const contextProject = workspaceContext?.project;
+  const contextSimulation = workspaceContext?.simulation;
+  useEffect(() => {
+    if (!activeProjectId || !contextProject || contextProject.id !== activeProjectId) return;
+    setTabs((current) => {
+      const entry = { id: activeProjectId, name: contextProject.name, simulationId: contextSimulation?.id || null,
+        simulationName: contextSimulation?.name || '', family: rotorFamily };
+      const index = current.findIndex((tab) => tab.id === activeProjectId);
+      const next = index < 0 ? [...current, entry] : current.map((tab, i) => i === index ? entry : tab);
+      if (JSON.stringify(next) === JSON.stringify(current)) return current;
+      saveTabs(next);
+      return next;
+    });
+  }, [activeProjectId, contextProject, contextSimulation, rotorFamily]);
+  const selectTab = (tab) => workbench.current?.openProjectById(tab.id, tab.simulationId);
+  const closeTab = async (tab) => {
+    const remaining = tabs.filter((item) => item.id !== tab.id);
+    if (tab.id === activeProjectId) {
+      if (!await workbench.current?.guard()) return;
+      const index = tabs.findIndex((item) => item.id === tab.id);
+      const neighbour = remaining[Math.min(index, remaining.length - 1)];
+      if (neighbour) workbench.current?.openProjectById(neighbour.id, neighbour.simulationId);
+      else { workbench.current?.reset(); openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] }); setModel('bemt'); setGuidedCompatible(true); }
+    }
+    setTabs(remaining); saveTabs(remaining);
+  };
+
   useExecutionMonitor(studyExecution, setStudyExecution, setError);
   useExecutionMonitor(externalExecution, setExternalExecution, setError);
 
@@ -488,6 +519,7 @@ function App() {
       await fetch(api(`/v2/projects/${id}`), { method: 'DELETE' });
       forgetProject(id);
     }
+    setTabs((current) => current.filter((tab) => !ids.includes(tab.id)));
     if (ids.includes(workbench.current?.projectId())) {
       workbench.current.reset();
       openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] });
@@ -642,7 +674,8 @@ function App() {
   }} />;
 
   return <div className="flex min-h-screen flex-col bg-nv-canvas text-nv-ink xl:h-screen xl:overflow-hidden">
-    <AppHeader context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
+    <AppHeader tabs={<ProjectTabs tabs={tabs} activeId={activeProjectId} dirty={Boolean(workspaceContext?.dirty)} disabled={busy || Boolean(workspaceContext?.busy)}
+      onSelect={selectTab} onClose={closeTab} onNew={resetProject} />} context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
       onSave={handleSave} saveDisabled={runDisabled} run={runActive ? nativeRun : null} onRun={handleRun} onCancel={handleCancel} runDisabled={runDisabled}
       onNewProject={resetProject} onCloseProject={resetProject} projectActionsDisabled={busy || Boolean(workspaceContext?.busy)} />
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
