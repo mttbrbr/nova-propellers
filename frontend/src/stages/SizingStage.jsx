@@ -19,13 +19,13 @@ export function idealDisk(thrust, loading, density = AIR_DENSITY) {
 function DiskPreview({ diameter, induced }) {
   return <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-nv-line bg-[#0A0C0F]">
     <svg viewBox="0 0 600 600" className="absolute inset-0 h-full w-full" role="img" aria-label={`Ideal actuator disk of ${formatValue(diameter)} metres with its contracting slipstream`}>
-      <defs><linearGradient id="disk-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#4CC9F0" stopOpacity=".35" /><stop offset="1" stopColor="#4CC9F0" stopOpacity=".08" /></linearGradient></defs>
+      <defs><linearGradient id="disk-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FF8533" stopOpacity=".35" /><stop offset="1" stopColor="#FF8533" stopOpacity=".08" /></linearGradient></defs>
       <g fill="none" stroke="#2A303A" strokeWidth="1.2"><path d="M 140 200 C 150 320, 200 420, 214 560" /><path d="M 460 200 C 450 320, 400 420, 386 560" /></g>
       <g fill="none" stroke="#3A424E" strokeDasharray="4 6"><path d="M 220 210 C 228 320, 250 420, 258 560" /><path d="M 300 210 L 300 560" /><path d="M 380 210 C 372 320, 350 420, 342 560" /></g>
-      <ellipse cx="300" cy="200" rx="160" ry="44" fill="url(#disk-fill)" stroke="#4CC9F0" strokeWidth="2" />
+      <ellipse cx="300" cy="200" rx="160" ry="44" fill="url(#disk-fill)" stroke="#FF8533" strokeWidth="2" />
       <g stroke="#C4CAD2" strokeWidth="1.2"><line x1="140" y1="120" x2="460" y2="120" /><line x1="140" y1="112" x2="140" y2="128" /><line x1="460" y1="112" x2="460" y2="128" /></g>
       <text x="300" y="106" textAnchor="middle" className="fill-nv-ink-strong font-mono text-[14px]">Ø {formatValue(diameter)} m</text>
-      <g stroke="#4CC9F0" strokeWidth="2" fill="none"><line x1="300" y1="300" x2="300" y2="400" /><path d="M 292 390 L 300 404 L 308 390" /></g>
+      <g stroke="#FF8533" strokeWidth="2" fill="none"><line x1="300" y1="300" x2="300" y2="400" /><path d="M 292 390 L 300 404 L 308 390" /></g>
       <text x="314" y="360" className="fill-nv-accent font-mono text-[13px]">vᵢ {formatValue(induced)} m/s</text>
       <text x="300" y="588" textAnchor="middle" className="fill-nv-muted text-[12px]">Ideal slipstream contracts to half the disk area</text>
     </svg>
@@ -73,9 +73,9 @@ export default function SizingStage({ inputs, set, sizing, onEstimate, onContinu
         </div>
         <div className="grid gap-8 lg:grid-cols-2">
           <LineChart title="Diameter" unit="m" xDomain={[low, high]} xTicks={ticks} xLabel="N/m²" selection={loading} onSelect={choose}
-            series={[{ id: 'diameter', color: '#4CC9F0', points: span.map((x) => ({ x, y: idealDisk(thrust, x).diameter })) }]} />
+            series={[{ id: 'diameter', color: '#FF8533', points: span.map((x) => ({ x, y: idealDisk(thrust, x).diameter })) }]} />
           <LineChart title="Ideal power" unit="W" xDomain={[low, high]} xTicks={ticks} xLabel="N/m²" selection={loading} onSelect={choose}
-            series={[{ id: 'power', color: '#F2A93B', points: span.map((x) => ({ x, y: idealDisk(thrust, x).power })) }]} />
+            series={[{ id: 'power', color: '#4CC9F0', points: span.map((x) => ({ x, y: idealDisk(thrust, x).power })) }]} />
         </div>
       </section>
       <section aria-labelledby="sizing-method" className="grid gap-x-10 gap-y-4 sm:grid-cols-3">

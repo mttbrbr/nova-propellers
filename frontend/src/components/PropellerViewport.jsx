@@ -11,8 +11,8 @@ const views = {
   axis: { label: 'Along the axis', position: [0, 0, 4.1], up: [0, 1, 0] },
   side: { label: 'Side', position: [0, -4.1, 0.02], up: [0, 0, 1] },
 };
-const ramp = ['#1D3B52', '#2F7DA0', '#9BE3F7', '#EAF9FD'].map((hex) => new THREE.Color(hex));
-export const rampGradient = 'linear-gradient(90deg, #1D3B52, #2F7DA0 40%, #9BE3F7 75%, #EAF9FD)';
+const ramp = ['#3A1C0B', '#A84A12', '#FF9A52', '#FFE8D6'].map((hex) => new THREE.Color(hex));
+export const rampGradient = 'linear-gradient(90deg, #3A1C0B, #A84A12 40%, #FF9A52 75%, #FFE8D6)';
 
 function rampColor(t, target) {
   const scaled = Math.min(0.9999, Math.max(0, t)) * (ramp.length - 1);
@@ -98,7 +98,7 @@ function Propeller({ geometry, displayMode, station, rootFraction, colorField })
         metalness={displayMode === 'mesh' ? 0 : colored ? 0.05 : 0.3} roughness={colored ? 0.55 : 0.3} clearcoat={displayMode === 'mesh' || colored ? 0 : 0.6}
         clearcoatRoughness={0.22} wireframe={displayMode === 'mesh'} side={THREE.DoubleSide} />
     </mesh>
-    {ring && <lineLoop geometry={ring}><lineBasicMaterial color="#4CC9F0" /></lineLoop>}
+    {ring && <lineLoop geometry={ring}><lineBasicMaterial color="#FF8533" /></lineLoop>}
   </group>;
 }
 
@@ -107,7 +107,7 @@ function Scene({ geometry, displayMode, view, fitKey, station, rootFraction, col
     <color attach="background" args={['#0A0C0F']} />
     <hemisphereLight args={['#ffffff', '#16181d', 1.4]} />
     <directionalLight position={[3, -4, 6]} intensity={3.6} color="#ffffff" />
-    <directionalLight position={[-4, 2, 2]} intensity={1.8} color="#9fd9f2" />
+    <directionalLight position={[-4, 2, 2]} intensity={1.8} color="#e4e7eb" />
     <gridHelper args={[4, 24, '#2A303A', '#1C2027']} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.45]} />
     {geometry && <Propeller geometry={geometry} displayMode={displayMode} station={station} rootFraction={rootFraction} colorField={colorField} />}
     <SceneControls view={view} fitKey={fitKey} />
