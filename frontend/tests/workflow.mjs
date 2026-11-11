@@ -28,6 +28,7 @@ try {
   assert.equal(await page.getByRole('button', { name: /Generate geometry/ }).count(), 0);
   await page.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('button', { name: /Workflow/ }).first().click();
   const editor = page.getByRole('region', { name: 'Workflow editor', exact: true });
