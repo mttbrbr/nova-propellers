@@ -12,6 +12,7 @@ from pydantic import Field
 
 import database
 from nova.adapters.registry import get as adapter_for
+from nova.application import rotor_simulations
 from nova.application.external import configuration as local_configuration
 from nova.application.simulation_cases import (
     freeze_case,
@@ -43,7 +44,7 @@ class NeutralProjectRequest(Request):
 
 class TypedSimulationRequest(NeutralProjectRequest):
     project_id: str = Field(min_length=1)
-    kind: Literal['propeller', 'openfast', 'pywake']
+    kind: Literal['propeller', 'openfast', 'pywake', 'rotor']
     configuration: dict
 
 
@@ -52,7 +53,7 @@ class TypedRunRequest(RunRequest):
 
 
 def typed(stored):
-    if stored.get('kind') in ('openfast', 'pywake'):
+    if stored.get('kind') in ('openfast', 'pywake', 'rotor'):
         return stored
     return {**stored, 'kind': 'propeller', 'configuration': {key: stored[key] for key in
         ('inputs', 'workflow', 'conditions', 'polar_asset_id', 'geometry_id', 'geometry_revision') if key in stored}}
@@ -150,6 +151,8 @@ def save_simulation(request: TypedSimulationRequest):
             document.update(validated)
             document.update(schema_version=2, configuration={key: validated[key] for key in
                 ('inputs', 'workflow', 'conditions', 'polar_asset_id', 'geometry_id', 'geometry_revision') if key in validated})
+        elif request.kind == 'rotor':
+            document.update(configuration=rotor_simulations.validate_configuration(request.configuration))
         else:
             config = request.configuration
             if set(config) - {'case', 'asset_id', 'notes', 'demonstration'}:
@@ -194,6 +197,8 @@ def run_simulation(simulation_id: str, request: TypedRunRequest):
         raise HTTPException(409, 'Revision conflict; reload before running')
     if stored['kind'] == 'propeller':
         return run_native(simulation_id, RunRequest(expected_revision=request.expected_revision))
+    if stored['kind'] == 'rotor':
+        return run_rotor(stored)
     root = None
     try:
         if not request.integration_id:
@@ -217,6 +222,21 @@ def run_simulation(simulation_id: str, request: TypedRunRequest):
     except ERRORS as exc:
         discard_unreferenced(root)
         raise invalid(exc) from exc
+
+
+def run_rotor(stored):
+    """Rotor-engine runs are short and deterministic: evaluate and store one completed run."""
+    snapshot = {'schema_version': 2, 'name': stored['name'], 'project_id': stored['project_id'],
+                'project_revision': project(stored['project_id'])['revision'], 'simulation_id': stored['id'],
+                'simulation_name': stored['name'], 'simulation_revision': stored['revision'], 'simulation_kind': 'rotor',
+                'inputs': copy.deepcopy(stored['configuration']), 'created_at': library.now(), 'progress': 1}
+    try:
+        result = rotor_simulations.execute(stored['configuration'])
+        record = {**snapshot, 'state': 'succeeded', 'result': result,
+                  'logs': [f"{result['analysis']['method_label']}: operating point and {len(result['curve']['rows'])}-point curve"]}
+    except ERRORS as exc:
+        record = {**snapshot, 'state': 'failed', 'error': str(exc), 'logs': [str(exc)]}
+    return library.save('run', record)
 
 
 class RunAssociation(Request):

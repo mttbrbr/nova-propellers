@@ -8,9 +8,9 @@ what the current task needs; optional groups open in place.
 
 | Region | Contents |
 | --- | --- |
-| Header | Project picker (Ctrl+P), simulation selector, save state, configured models, **Simulation options**, stage stepper, Save, **More actions**, Run / Cancel |
-| Rail | Design, Studies, Workflow, Library, Integrations (icons with tooltips) |
-| Stage area | Inputs on the left, data in the centre, square 3D render with linked data on the right |
+| Header | NOVA wordmark, **open project tabs** (+ for a new project), project picker (Ctrl+P), simulation selector, save state, configured models, **Simulation options**, Save, **More actions**, Run / Cancel |
+| Rail | Design, Comparisons, Studies, Workflow, Library, Integrations (icons with tooltips) |
+| Design area | Design sheet on the left, the active view in the centre, latest run and render on the right |
 | Notices | Confirmations bottom-left (fade after 8 s); errors stay until dismissed |
 
 - **Project picker** (Ctrl+P) searches every saved project by name, simulation,
@@ -21,18 +21,36 @@ what the current task needs; optional groups open in place.
   New PyWake/OpenFAST simulation.
 - **More actions** holds New/Close project and `.nova` export/import. Export
   uses the saved project.
-- Run is the only accent-coloured button. While a run, study or external job is
-  active it becomes Cancel and shows the job state and progress. Leaving the
-  workspace or changing project keeps that job cancellable.
+- **Project tabs.** Every opened project becomes a tab showing its rotor type;
+  selecting a tab reopens that project (unsaved changes ask save/discard first),
+  × closes it. Open tabs are remembered in this computer's browser storage.
+- Run is the only accent-coloured (orange) button. It always opens a chooser:
+  several models for the air propeller (the first is the main run, the others
+  run on the same frozen inputs and are overlaid in Results), one streamtube
+  model for a VAWT, BEMT for HAWT and marine propellers. Customised graphs run
+  as configured. While a run, study or external job is active the button
+  becomes Cancel and shows the job state and progress.
 
-## Design stages
+## Design sheet
 
-| Stage | Inputs | Centre | Right |
+There is no stage bar. The rotor type is chosen in Sizing and the process reads
+top to bottom as sections of a **design sheet**: Sizing, Geometry, Analysis,
+Results. Several sections can be open; a closed section keeps a one-line
+summary and a status dot (green up to date, amber needs attention or changed
+since the last run, grey not run). Clicking a section title makes it the active
+view; clicking the active one folds it. View tabs above the centre switch views
+directly; rotor-engine designs (marine, HAWT, VAWT) add a **Sweep** lens.
+
+| Section / view | Sheet inputs | Centre | Right |
 | --- | --- | --- | --- |
-| Sizing | Project, target thrust, diameter (manual or from disk loading) | Ideal actuator-disk trade-off charts, method, presets | Disk schematic and ideal values |
-| Geometry | Blade, shape (approach, method, control points or Laguerre coefficients), inverse design, airfoil loft, shared-geometry revision, STL export | Chord and twist curves with draggable points, published revision dashed underneath, point tables | Render with station ring, geometry summary, section at the selected station |
-| Analysis | Solver with maturity, **Also compare with** (extra solvers run on the same frozen inputs after Run), rotation speed, airfoil polars and air data | Polar curves the solver will use, solver description and warnings, project explorer | Render, last run (faded with a reason when out of date), current execution and CSV export |
-| Results | Runs of the simulation, comparison (the newest solver comparison is overlaid by default), provenance, exports | Performance band, six spanwise distributions, station table, convergence details | Render coloured by dT, α, Re or Cl, residual history, limiting station |
+| Sizing | Project, rotor type, target thrust or requirements (rated power, wind, Cp; ship thrust, wake, J) | Sizing trade-off charts and formulas | Rotor schematic and sized values |
+| Geometry (Blade / Rotor) | Blade or rotor shape, inverse design, airfoil loft, revisions, STL export | Chord and twist with draggable points, or blade distributions | 3-D render with station ring and section, or rotor proportions |
+| Analysis | Solver/model, operating point, only the corrections that apply, polars and air data | Polars or the model ladder and correction notes | Render and last run |
+| Results | Runs, comparison, provenance, exports | Performance, spanwise distributions, Cp–λ or open-water curves | Render coloured by a result, convergence, operating point |
+| Sweep (rotor engine) | — | Vary one input over a range with a model and limits; chart and table with feasibility | Refine feasible points with a higher-fidelity model (VAWT), adopt a value, open as block workflow |
+
+A **Latest run** card stays on the right in every view except Results and marks
+the run out of date when inputs change.
 
 - **Live preview.** The geometry preview regenerates automatically about
   350 ms after an edit, so there is no Generate step. A failed request keeps the
@@ -41,14 +59,15 @@ what the current task needs; optional groups open in place.
   tip) is shared everywhere. Clicking a chart or a station row, or pressing
   ←/→, moves the dashed line, value labels, highlighted row and the ring on the
   render together.
-- **Custom graphs.** Graphs that the guided forms cannot represent disable the
-  first three stages and route to Workflow.
+- **Custom graphs.** Graphs that the guided forms cannot represent route
+  Sizing, Geometry and Analysis to Workflow.
 
 ## Other workspaces
 
 | Workspace | Contents |
 | --- | --- |
-| Workflow | Full-height execution graph; selected block, airfoil data and project explorer in the left column; external case editors (PyWake, OpenFAST) in the centre |
+| Comparisons | Runs from any project overlaid (Cp–λ, CT–λ, KT–J, η–J, spanwise thrust and incidence), a table against a baseline with Δ power, the inputs that differ and a warning when a difference has more than one cause; saved comparisons; open any run in a tab |
+| Workflow | **Project graph** or **Block workflows** (general and rotor blocks with constraints). Full-height execution graph; selected block, airfoil data and project explorer in the left column; external case editors (PyWake, OpenFAST) in the centre |
 | Studies | Three study types with a shared history: **Solver comparison** (one saved simulation, 2–4 solvers, no extra simulations; saved-simulation comparisons remain available underneath), **Design comparison** (2–4 finished runs from this or any project, with a like-for-like check, overlaid chord/twist/loading and a to-scale planform) and **Parameter sweep** (one or two axes) |
 | Library | **Projects** (search, filters, sort, multi-select compare/export/delete, detail panel; deleting asks for the project name), airfoils and polars (import `.dat`, create, edit, delete), physical models with maturity and warnings, legacy snapshot archive with its report |
 | Integrations | External software configuration, OpenFAST import and saved external runs |
@@ -57,10 +76,10 @@ what the current task needs; optional groups open in place.
 
 | Action | Keys |
 | --- | --- |
-| Run simulation | Ctrl+Enter |
+| Run (opens the model chooser; Enter starts) | Ctrl+Enter |
 | Open project | Ctrl+P |
 | Save | Ctrl+S |
-| Go to stage 1–4 | Alt+1 … Alt+4 |
+| Open design-sheet section 1–4 | Alt+1 … Alt+4 |
 | Previous / next station | ← / → (Geometry, Results) |
 | Fit render to view | F |
 | Move a focused control point | ↑ / ↓ (Shift for larger steps) |
@@ -70,9 +89,9 @@ what the current task needs; optional groups open in place.
 
 | Width | Layout |
 | --- | --- |
-| ≥ 1600 px | Inputs 340 px, flexible content, render column 660 px |
-| 1280–1600 px | Inputs 300 px, flexible content, render column 500 px |
-| 768–1280 px | Inputs beside content; render and linked data move below the content |
+| ≥ 1600 px | Design sheet 360 px, flexible content, right column 640 px |
+| 1280–1600 px | Design sheet 340 px, flexible content, right column 540 px |
+| 768–1280 px | Design sheet beside content; latest run and render move below the content |
 | < 768 px | Everything stacks; the rail becomes a top bar |
 
 ## Design tokens
@@ -82,8 +101,12 @@ Colours live in `frontend/tailwind.config.js` under `nv`:
 - surfaces: `canvas`, `chrome`, `panel`, `raised`, `hover`, `active`;
 - lines: `line`, `edge`, `edge-strong`;
 - text: `muted`, `ink`, `ink-strong`;
-- signals: `accent`, `ok`, `warn`, `err`;
-- data series: `series2`, `series3`, `reference`.
+- signals: `accent` (orange `#FF8533`), `ok`, `warn`, `err`;
+- data series: `series2`, `series3` (cyan), `reference`.
+
+The logo is the NOVA wordmark with a dashed O (three blade-tip paths); the app
+icon is that O on a rounded tile. Both are generated by
+`tools/brand/make_logo.py` (see `docs/media/PROVENANCE.md`).
 
 Numbers use the monospace stack with tabular figures. The minimum text size is
 11 px.

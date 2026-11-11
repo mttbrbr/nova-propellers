@@ -6,6 +6,41 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Design sheet replaces the stage bar: Sizing, Geometry, Analysis and Results
+  are stacked sections (several open at once, summaries and status dots when
+  closed), with view tabs in the centre and an always-visible latest-run card.
+- Open projects as tabs in the header.
+- Run opens a model chooser every time (several models for the air propeller,
+  one streamtube model for VAWT, BEMT for HAWT and marine).
+- Comparisons workspace: runs from any project overlaid, baseline deltas,
+  input differences with an attribution warning, saved comparisons.
+- Sweep lens for rotor-engine designs with limits, VAWT refinement with a more
+  complete model, adopt-into-design and open-as-block-workflow;
+  `POST /api/v1/rotors/sweep`.
+- New NOVA logo and app icon (dashed-O wordmark), orange primary colour.
+
+- Rotor type chosen at the start of the Design flow (air propeller, marine
+  propeller, HAWT, VAWT). Sizing, Geometry, Analysis and Results adapt to it:
+  turbine sizing from rated power, marine sizing from thrust/J with Keller,
+  only the corrections that apply to the chosen type, Cp–λ or K_T/10K_Q/η–J
+  curves, run-to-run comparison and a requirement check. Non-propeller types
+  are saved as `rotor` simulations in v2 projects and archives.
+  `/api/v1/rotors/*` exposes the models. See `docs/ROTOR_MODELS.md`.
+- VAWT single, double, multiple and double-multiple streamtube models with
+  finite-aspect-ratio, flow-curvature, Gormont–Berg dynamic-stall, strut-drag
+  and shaft-wake corrections; straight and troposkien blades.
+- Axial BEMT (Ning's 1-D residual) for propellers and turbines with Prandtl or
+  Shen tip loss, hub loss, Glauert/Buhl/Spera high induction, Snel rotational
+  augmentation and Prandtl–Glauert compressibility.
+- Marine propeller theory: B-series outline, hull interaction, σ₀.₇R, Burrill
+  τc, Keller minimum area ratio and local cavitation number.
+- Block workflows (Workflow → Block workflows, `/api/v1/blocks/*`): typed DAG
+  of general blocks (parameters with limits, expressions, constraints, sweep,
+  filter, select, optimizer, report) and rotor-specific blocks (rotors,
+  operating point, hull, corrections, solver, performance curve, design
+  checks). Hard/soft constraints report margins; "stop" blocks downstream
+  work. Templates and saved workflows included.
+
 - `POST /api/v1/simulations/{id}/solver-comparison` runs one saved simulation
   with 2–4 solvers as a frozen comparison without creating simulations.
 - `GET /api/v2/project-index` returns lightweight project summaries;

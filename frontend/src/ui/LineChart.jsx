@@ -85,15 +85,15 @@ export default function LineChart({ title, unit, series, height = 220, xDomain =
         </g>)}
         {shownXTicks.map((tick, index) => <text key={tick} x={sx(tick)} y={height - 6} textAnchor={index === 0 ? 'start' : index === shownXTicks.length - 1 ? 'end' : 'middle'} className="fill-nv-muted font-mono text-[11px]">
           {index === shownXTicks.length - 1 ? `${tick} ${xLabel}` : tick}</text>)}
-        {selection != null && <line x1={sx(selection)} x2={sx(selection)} y1={margin.top} y2={margin.top + plotH} stroke="#4CC9F0" strokeDasharray="2 4" opacity=".6" />}
+        {selection != null && <line x1={sx(selection)} x2={sx(selection)} y1={margin.top} y2={margin.top + plotH} stroke="#FF8533" strokeDasharray="2 4" opacity=".6" />}
         {controlPoints && <polyline points={controlPoints.map((point) => `${sx(point.x)},${sy(point.y)}`).join(' ')} fill="none" stroke="#2A303A" strokeDasharray="3 4" />}
         {[...visible].reverse().map((item) => <polyline key={item.id} points={item.points.map((point) => `${sx(point.x)},${sy(point.y)}`).join(' ')}
           fill="none" stroke={item.color} strokeWidth={item.width || (item.dashed ? 1.6 : 2.25)} strokeDasharray={item.dashed ? '6 5' : undefined} strokeLinejoin="round" />)}
         {controlPoints?.map((point, index) => {
           const active = index === selectedPoint;
           return <g key={index}>
-            {active && <circle cx={sx(point.x)} cy={sy(point.y)} r={11} fill={primary?.color || '#4CC9F0'} opacity=".2" />}
-            <circle cx={sx(point.x)} cy={sy(point.y)} r={active ? 6 : 5.5} fill={active ? primary?.color || '#4CC9F0' : '#0B0D10'} stroke={primary?.color || '#4CC9F0'} strokeWidth="2"
+            {active && <circle cx={sx(point.x)} cy={sy(point.y)} r={11} fill={primary?.color || '#FF8533'} opacity=".2" />}
+            <circle cx={sx(point.x)} cy={sy(point.y)} r={active ? 6 : 5.5} fill={active ? primary?.color || '#FF8533' : '#0B0D10'} stroke={primary?.color || '#FF8533'} strokeWidth="2"
               className={onMovePoint ? 'cursor-ns-resize' : ''} tabIndex={onMovePoint ? 0 : undefined} role={onMovePoint ? 'slider' : undefined}
               aria-label={onMovePoint ? `${title} point P${index + 1}` : undefined} aria-valuenow={onMovePoint ? Number(point.y.toFixed(4)) : undefined}
               aria-valuemin={onMovePoint ? yMin : undefined} aria-valuemax={onMovePoint ? yMax : undefined}

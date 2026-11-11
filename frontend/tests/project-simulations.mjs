@@ -30,6 +30,8 @@ try {
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   const navigation = page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ });
   const context = page.locator('[aria-label="Project and simulation context"]');
+  // The design sheet can show Sizing and Geometry together; both edit the diameter.
+  const geometrySection = page.locator('section[aria-labelledby="sheet-geometry"]');
   await projectAction('New project');
   await context.getByText('Unsaved draft', { exact: true }).waitFor();
   await page.getByLabel('Project name', { exact: true }).fill('Multiple simulation browser project');
@@ -38,6 +40,7 @@ try {
   await page.locator('select').filter({ has: page.locator('option:checked', { hasText: 'demonstration only' }) }).waitFor();
   await (await simulationOptions()).getByRole('textbox', { name: 'Simulation name', exact: true }).fill('BEMT baseline');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await page.getByRole('button', { name: 'Export CSV', exact: true }).waitFor({ timeout: 30000 });
   const projectId = await currentProjectId(page);
   const baselineId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
@@ -48,6 +51,7 @@ try {
   assert.equal(await executions.count(), 1);
   const firstRunLabel = await executions.first().getAttribute('aria-label');
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await executions.nth(1).waitFor({ timeout: 30000 });
   assert.equal(await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue(), baselineId);
   await (await simulationOptions()).getByRole('button', { name: 'New simulation', exact: true }).click();
@@ -58,6 +62,7 @@ try {
   await page.getByLabel('Design RPM', { exact: true }).fill('6500');
   await navigation.getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Run / }).getByRole('button', { name: 'Start run', exact: true }).click();
   await executions.nth(2).waitFor({ timeout: 30000 });
   const comparisonId = await page.getByRole('combobox', { name: 'Open saved simulation' }).inputValue();
   assert.notEqual(comparisonId, baselineId);
@@ -91,7 +96,7 @@ try {
   // Publishing is explicit and cannot silently revise sibling configurations or old runs.
   await navigation.getByRole('button', { name: 'Geometry', exact: true }).click();
   const originalGeometry = baseline.geometry_revision;
-  await page.getByLabel('Diameter', { exact: true }).fill('0.27');
+  await geometrySection.getByLabel('Diameter', { exact: true }).fill('0.27');
   await context.getByText('Unsaved changes', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Publish geometry revision', exact: true }).click();
   await page.getByText(/Published geometry r/).waitFor();
@@ -117,12 +122,12 @@ try {
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(baselineId);
   await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
   await context.getByText('Saved', { exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Diameter', { exact: true }).inputValue(), '0.27');
+  assert.equal(await geometrySection.getByLabel('Diameter', { exact: true }).inputValue(), '0.27');
   await page.getByRole('combobox', { name: 'Open saved simulation' }).selectOption(cloneId);
   await context.getByText('Saved', { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('input[aria-label="Diameter"]')?.value === '0.25');
   // One global Save publishes changed geometry only for the current simulation.
-  await page.getByLabel('Diameter', { exact: true }).fill('0.26');
+  await geometrySection.getByLabel('Diameter', { exact: true }).fill('0.26');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByText(/published geometry r.*for this simulation only/).waitFor();
   await context.getByText('Saved', { exact: true }).waitFor();
@@ -134,7 +139,7 @@ try {
   const stillOld = await (await page.request.get(`http://127.0.0.1:8777/api/v1/runs/${firstRunLabel.replace('View execution ', '')}`)).json();
   assert.equal(stillOld.result.geometry.diameter_m, 0.25);
   // Duplicate includes unsaved geometry edits without replacing its saved source.
-  await page.getByLabel('Diameter', { exact: true }).fill('0.28');
+  await geometrySection.getByLabel('Diameter', { exact: true }).fill('0.28');
   await (await simulationOptions()).getByRole('button', { name: 'Duplicate simulation', exact: true }).click();
   await page.getByText('Independent simulation copy created', { exact: true }).waitFor();
   await context.getByText('Saved', { exact: true }).waitFor();

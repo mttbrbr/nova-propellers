@@ -82,6 +82,8 @@ jobs:
           NOVA_CHROMIUM_PATH=managed npm run test:openfast-inspection
           NOVA_CHROMIUM_PATH=managed npm run test:mixed-projects
           NOVA_CHROMIUM_PATH=managed npm run test:studies-library
+          NOVA_CHROMIUM_PATH=managed npm run test:rotors-blocks
+          NOVA_CHROMIUM_PATH=managed npm run test:comparisons
 
   compose:
     runs-on: ubuntu-latest

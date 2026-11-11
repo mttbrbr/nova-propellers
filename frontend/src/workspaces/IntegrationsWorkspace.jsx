@@ -156,13 +156,14 @@ export default function IntegrationsWorkspace({ activeExecution, onExecutionChan
     setCurrent(await request('/v1/external-runs', { integration_id: configurationId, case: definition }));
     await refreshRuns();
   });
+  // Refresh the run list before selecting the imported run, so the selector always has its option.
   const importOutput = (file) => act(async () => {
-    setCurrent(await request('/v1/openfast/import', { filename: file.name, content_base64: await fileBase64(file) }));
-    await refreshRuns();
+    const imported = await request('/v1/openfast/import', { filename: file.name, content_base64: await fileBase64(file) });
+    await refreshRuns(); setCurrent(imported);
   });
   const importArchive = (file) => act(async () => {
-    setCurrent(await request('/v1/external-runs/import', { content_base64: await fileBase64(file, 128 * 1024 * 1024) }));
-    await refreshRuns();
+    const imported = await request('/v1/external-runs/import', { content_base64: await fileBase64(file, 128 * 1024 * 1024) });
+    await refreshRuns(); setCurrent(imported);
   });
   const updateRow = (setter, index, key, value) => setter((rows) => rows.map((row, i) => i === index ? { ...row, [key]: value } : row));
   const result = current?.result;

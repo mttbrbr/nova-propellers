@@ -23,9 +23,9 @@ export function PolarCharts({ points, title, detail, demonstration }) {
     {demonstration && <div className="mb-4"><Notice>Synthetic demonstration polars, not measurements.</Notice></div>}
     <div className="grid gap-8 lg:grid-cols-2">
       <LineChart title="Lift" unit="Cl" xDomain={domain} xTicks={ticks} xLabel="α °" empty="Select or import polars to preview them."
-        series={[{ id: 'cl', color: '#4CC9F0', points: rows.map((r) => ({ x: Number(r.alpha_deg), y: Number(r.cl) })) }]} />
+        series={[{ id: 'cl', color: '#FF8533', points: rows.map((r) => ({ x: Number(r.alpha_deg), y: Number(r.cl) })) }]} />
       <LineChart title="Drag" unit="Cd" xDomain={domain} xTicks={ticks} xLabel="α °" digits={3} empty="Select or import polars to preview them."
-        series={[{ id: 'cd', color: '#F2A93B', points: rows.map((r) => ({ x: Number(r.alpha_deg), y: Number(r.cd) })) }]} />
+        series={[{ id: 'cd', color: '#4CC9F0', points: rows.map((r) => ({ x: Number(r.alpha_deg), y: Number(r.cd) })) }]} />
     </div>
   </section>;
 }
@@ -80,7 +80,7 @@ export default function AnalysisStage({ a }) {
         <legend className="float-left mb-1 p-0 text-[13px] font-semibold">Also compare with</legend>
         <div className="clear-both flex flex-wrap gap-2">{methods.filter((method) => method.id !== a.model).map((method, index) => {
           const checked = a.compareModels.includes(method.id);
-          return <label key={method.id} className="flex h-8 cursor-pointer items-center gap-2 rounded-full border px-3 text-[13px]" style={{ borderColor: checked ? ['#B49CFB', '#F2A93B', '#46D19A'][index % 3] : '#2A303A' }}>
+          return <label key={method.id} className="flex h-8 cursor-pointer items-center gap-2 rounded-full border px-3 text-[13px]" style={{ borderColor: checked ? ['#B49CFB', '#4CC9F0', '#46D19A'][index % 3] : '#2A303A' }}>
             <input type="checkbox" className="accent-nv-accent" checked={checked} aria-label={`Also compare with ${method.name}`}
               onChange={() => a.setCompareModels((list) => checked ? list.filter((id) => id !== method.id) : [...list, method.id])} />{method.id.toUpperCase()}
           </label>;

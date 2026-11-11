@@ -169,9 +169,13 @@ def read_archive(content):
         raise ValueError('Run association does not reference a run')
     for simulation in records['simulations']:
         kind = simulation.get('kind', 'propeller')
-        if simulation.get('schema_version') not in (1, 2) or kind not in ('propeller', 'openfast', 'pywake'):
+        if simulation.get('schema_version') not in (1, 2) or kind not in ('propeller', 'openfast', 'pywake', 'rotor'):
             raise ValueError('Invalid simulation kind or version')
-        if kind != 'propeller':
+        if kind == 'rotor':
+            from nova.application.rotor_simulations import validate_configuration
+            if validate_configuration(simulation.get('configuration'))['spec'] != simulation['configuration']['spec']:
+                raise ValueError('Rotor specification is not in canonical form')
+        elif kind != 'propeller':
             asset = assets.get(simulation.get('asset_id'), {})
             if asset.get('type') != 'simulation_case' or asset.get('kind') != kind:
                 raise ValueError('Simulation case asset mismatch')
@@ -200,7 +204,8 @@ def read_archive(content):
     if entries:
         raise ValueError('Unexpected archive payloads')
     native_simulations = [s for s in records['simulations'] if s.get('kind', 'propeller') == 'propeller']
-    native_runs = [r for r in records['runs'] if (r.get('result') or {}).get('kind') != 'external']
+    native_runs = [r for r in records['runs'] if (r.get('result') or {}).get('kind') not in ('external', 'rotor')
+                   and r.get('simulation_kind') != 'rotor']
     if native_simulations or native_runs or 'inputs' in project or records['geometries']:
         # Reuse the established scientific/history validator on a native view of
         # the graph. External cases have their own adapter validation above.

@@ -1,6 +1,6 @@
 pkgname=nova-propellers
 pkgver=0.1.0.alpha.2
-pkgrel=5
+pkgrel=9
 pkgdesc="Local-first propeller design and analysis desktop workbench"
 arch=('x86_64')
 url="https://github.com/mttbrbr/nova-propellers"

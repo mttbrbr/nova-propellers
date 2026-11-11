@@ -10,7 +10,7 @@ from database import connect
 from nova.core.data import canonical_json, content_hash
 from nova.core.geometry_assets import geometry_definition, geometry_hash
 
-KINDS = {'project', 'asset', 'workflow', 'run', 'integration', 'simulation', 'geometry', 'run_link'}
+KINDS = {'project', 'asset', 'workflow', 'run', 'integration', 'simulation', 'geometry', 'run_link', 'block_workflow'}
 
 
 def now():
