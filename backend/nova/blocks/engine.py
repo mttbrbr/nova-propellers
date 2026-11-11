@@ -193,6 +193,8 @@ def _rotor(node, args):
         spec['geometry'] = copy.deepcopy(config['geometry'])
     if config.get('section'):
         spec['section'] = copy.deepcopy(config['section'])
+    if config.get('method'):
+        spec['method'] = config['method']
     spec = rotors.merged(spec)
     _bind(spec, config.get('bindings'), args.get('parameters'))
     return {'spec': _check_spec(spec)}

@@ -27,7 +27,7 @@ def port(name, kind, optional=False, label=None):
 
 def _rotor_defaults(kind):
     d = copy.deepcopy(DEFAULTS[kind])
-    return {'geometry': d['geometry'], 'section': d['section'], 'bindings': {}}
+    return {'geometry': d['geometry'], 'section': d['section'], 'method': d['method'], 'bindings': {}}
 
 
 BLOCKS = {

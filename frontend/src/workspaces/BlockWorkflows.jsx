@@ -65,7 +65,7 @@ const fromFlow = (nodes, edges, name) => ({
   edges: edges.map((e) => ({ source: e.source, source_port: e.sourceHandle, target: e.target, target_port: e.targetHandle })),
 });
 
-export default function BlockWorkflows() {
+export default function BlockWorkflows({ seed = null }) {
   const [catalog, setCatalog] = useState(null);
   const [rotorCatalog, setRotorCatalog] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -91,8 +91,11 @@ export default function BlockWorkflows() {
       .then(([c, r, t, s]) => { setCatalog(c); setRotorCatalog(r); setTemplates(t); setSaved(s); }).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
-    if (catalog && !nodes.length && templates.length) request(`/v1/blocks/templates/${templates[0].id}`).then((w) => load(w)).catch((e) => setError(e.message));
-  }, [catalog, templates]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!catalog || !templates.length) return;
+    // A workflow handed over from the design sheet (e.g. "Open as workflow") wins over the default template.
+    if (seed?.workflow) { load(seed.workflow); return; }
+    if (!nodes.length) request(`/v1/blocks/templates/${templates[0].id}`).then((w) => load(w)).catch((e) => setError(e.message));
+  }, [catalog, templates, seed?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const workflow = () => fromFlow(nodes, edges, name);
   const act = async (task) => { setBusy(true); setError(''); try { await task(); } catch (e) { setError(e.message); } finally { setBusy(false); } };

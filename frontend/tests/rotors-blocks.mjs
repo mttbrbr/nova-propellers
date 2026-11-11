@@ -61,6 +61,26 @@ try {
   assert.match(await page.getByRole('region', { name: 'Performance' }).innerText(), /Cp – λ/);
   await shot('rotors-vawt');
 
+  // Sweep lens: explore with the single streamtube, refine feasible points with DMST, adopt one value.
+  await page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name: 'Sweep' }).click();
+  await page.getByRole('combobox', { name: 'Sweep model' }).selectOption('single_streamtube');
+  await page.getByRole('button', { name: 'Run sweep' }).click();
+  const sweepTable = page.getByRole('table', { name: 'Sweep results' });
+  await sweepTable.waitFor({ timeout: 60000 });
+  assert.equal(await sweepTable.getByRole('row').count(), 8);
+  await page.getByRole('button', { name: /^Refine \d+ feasible/ }).click();
+  await page.getByText('Mean Δ power').waitFor({ timeout: 120000 });
+  await sweepTable.getByRole('button', { name: 'Select' }).nth(4).click();
+  await page.getByRole('button', { name: 'Adopt 1.2 into the design' }).click();
+  await page.locator('#sheet-geometry-summary').filter({ hasText: /^R 1\.2 ·/ }).waitFor();
+  // The same study opens as an editable block workflow and runs there.
+  await page.getByRole('tablist', { name: 'Views' }).getByRole('tab', { name: 'Sweep' }).click();
+  await page.getByRole('button', { name: 'Open as workflow' }).click();
+  await page.locator('.react-flow__node', { hasText: 'sweep' }).first().waitFor();
+  await page.getByRole('button', { name: 'Run workflow', exact: true }).click();
+  await page.getByText(/^succeeded/).first().waitFor({ timeout: 90000 });
+  await rail.getByRole('button', { name: 'Design', exact: true }).click();
+
   // Marine propeller: only tip and hub loss apply; open-water diagram and cavitation.
   await stages.getByRole('button', { name: 'Sizing', exact: true }).click();
   await family('Marine');

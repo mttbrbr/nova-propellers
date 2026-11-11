@@ -12,6 +12,7 @@ import ProjectTabs from './shell/ProjectTabs.jsx';
 import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import ComparisonsWorkspace from './workspaces/ComparisonsWorkspace.jsx';
+import RotorSweep from './stages/RotorSweep.jsx';
 import { Segmented } from './ui/controls.jsx';
 import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
@@ -139,6 +140,8 @@ function App() {
   const [pendingRun, setPendingRun] = useState(null);
   // Projects open as tabs; the active tab follows the project in the workspace.
   const [tabs, setTabs] = useState(openTabs);
+  const [blockCatalog, setBlockCatalog] = useState(null);
+  const [blockSeed, setBlockSeed] = useState(null);
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -169,7 +172,13 @@ function App() {
   const geometryKey = geometryKeyOf(payload);
   const geometryCurrent = Boolean(canonical) && geometryStamp === geometryKey;
   const set = (key, value) => setInputs((current) => ({ ...current, [key]: value }));
-  useEffect(() => { backendRequest('/v1/rotors/catalog').then(setRotorCatalog).catch(() => {}); }, []);
+  useEffect(() => {
+    backendRequest('/v1/rotors/catalog').then(setRotorCatalog).catch(() => {});
+    backendRequest('/v1/blocks/catalog').then(setBlockCatalog).catch(() => {});
+  }, []);
+  // The design sheet also hosts lenses that are not stages (Sweep for rotor-engine families).
+  const designViews = rotorFamily === 'propeller' ? stageIds : [...stageIds, 'sweep'];
+  useEffect(() => { if (phase === 'sweep' && rotorFamily === 'propeller') setPhase('results'); }, [phase, rotorFamily]);
   const rotorSpec = rotorFamily === 'propeller' || !rotorCatalog ? null : rotorSpecs[rotorFamily]
     || { ...rotorCatalog.defaults[rotorFamily], requirements: { ...requirementDefaults[rotorFamily] } };
   const setRotorSpec = (spec) => setRotorSpecs((all) => ({ ...all, [rotorFamily]: spec }));
@@ -423,7 +432,7 @@ function App() {
     await refreshAirfoils();
   });
 
-  const workspace = stageIds.includes(phase) ? 'design' : phase;
+  const workspace = stageIds.includes(phase) || phase === 'sweep' ? 'design' : phase;
   const go = (target) => {
     let id = target === 'design' ? lastStage : target;
     if (!guidedCompatible && ['sizing', 'geometry', 'analysis'].includes(id)) id = 'workflow';
@@ -637,12 +646,22 @@ function App() {
     : <RunCard when={timeOf(lastPropellerRun)} stale={workspaceContext?.lastRunStale} staleDetail={workspaceContext?.changedSinceRun?.join(', ')}
       onOpen={lastPropellerRun ? () => go('results') : null} onRun={handleRun} runDisabled={runDisabled || runActive}
       metrics={propellerPerformance ? [['Thrust', short(propellerPerformance.thrust_n, 4), 'N'], ['Power', short(propellerPerformance.power_w, 4), 'W'], ['FoM', short(propellerPerformance.efficiency)]] : null} />;
-  const views = [['sizing', 'Sizing'], ['geometry', rotorMode ? 'Rotor' : 'Blade'], ['analysis', 'Analysis'], ['results', 'Results']].map(([id, label]) => ({ id, label }));
+  const views = [['sizing', 'Sizing'], ['geometry', rotorMode ? 'Rotor' : 'Blade'], ['analysis', 'Analysis'], ['results', 'Results'], ...(rotorMode ? [['sweep', 'Sweep']] : [])]
+    .map(([id, label]) => ({ id, label }));
+  const adoptSweep = (path, value) => {
+    const [group, key] = path.split('.');
+    setRotorSpec({ ...rotorSpec, [group]: { ...rotorSpec[group], [key]: value } });
+    go(group === 'geometry' ? 'geometry' : 'analysis');
+  };
 
-  const sheetStages = stageIds.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id}
+  const sweepLens = phase === 'sweep' && rotorMode && rotorSpec && rotorCatalog
+    ? <RotorSweep key={rotorFamily} family={rotorFamily} spec={rotorSpec} catalog={rotorCatalog} presets={blockCatalog?.constraint_presets}
+      targets={{ content: sheetTargets.content, side: sheetTargets.side }} onAdopt={adoptSweep}
+      onOpenWorkflow={(workflow) => { setBlockSeed({ workflow, nonce: Date.now() }); setWorkflowMode('blocks'); go('workflow'); }} /> : null;
+  const sheetStages = designViews.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id}
     targets={{ inputs: sheetTargets[`inputs:${id}`], content: sheetTargets.content, side: sheetTargets.side }}>{stageElements[id]}</SheetStage>) : null;
   let body;
-  if (stageIds.includes(phase)) body = !stageElements
+  if (designViews.includes(phase)) body = !stageElements
     ? <div className="grid flex-1 place-items-center text-[13px] text-nv-muted">Loading rotor models…</div>
     : <DesignSheet sections={sections} open={openSections} active={phase} onSection={onSection}
       onExpandAll={() => setOpenSections([...stageIds])} onFoldAll={() => setOpenSections([])}
@@ -651,7 +670,7 @@ function App() {
     await workbench.current?.openProjectById(record.project_id, record.simulation_id);
     workbench.current?.openRun(record); go('results');
   })} />;
-  else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows />;
+  else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows seed={blockSeed} />;
   else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
     inputs={<>
       <StageTitle title="Workflow" detail="Inspect, customize and execute the project graph." />
@@ -694,6 +713,7 @@ function App() {
           <p className="m-0 border-b border-nv-warn/30 bg-nv-warn/10 px-6 py-2 text-xs text-nv-warn-ink">These results belong to an earlier configuration; the current inputs have changed since this run.</p>}
         {body}
         {sheetStages}
+        {sweepLens}
       </div>
     </div>
     <EngineeringWorkspace ref={workbench} inputs={payload} model={model}
