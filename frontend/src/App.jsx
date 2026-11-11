@@ -4,14 +4,17 @@ import { api, apiFetch as fetch, download } from './backend.js';
 import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
 import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
 import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
-import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingStage, requirementDefaults } from './stages/RotorStages.jsx';
+import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingStage, familyLabel, requirementDefaults } from './stages/RotorStages.jsx';
+import DesignSheet, { useTargets } from './shell/DesignSheet.jsx';
+import RunCard from './shell/RunCard.jsx';
+import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import { Segmented } from './ui/controls.jsx';
 import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
 import AppHeader, { stages } from './shell/AppHeader.jsx';
 import WorkspaceRail from './shell/WorkspaceRail.jsx';
-import StageLayout, { StageTitle } from './shell/StageLayout.jsx';
+import StageLayout, { SheetStage, StageTitle } from './shell/StageLayout.jsx';
 import SizingStage from './stages/SizingStage.jsx';
 import GeometryStage from './stages/GeometryStage.jsx';
 import AnalysisStage from './stages/AnalysisStage.jsx';
@@ -125,6 +128,9 @@ function App() {
   const [rotorCatalog, setRotorCatalog] = useState(null);
   const [rotorSpecs, setRotorSpecs] = useState({});
   const [rotorRun, setRotorRun] = useState(null);
+  // Design sheet: which sections are open; the active view is `phase`.
+  const [openSections, setOpenSections] = useState(['sizing']);
+  const [sheetTargets, sheetRef] = useTargets();
   const slotCallbacks = useRef({});
   // Stable callback refs: each named slot element is handed to the controller.
   const slotRef = useCallback((name) => {
@@ -233,12 +239,13 @@ function App() {
     }
   }, []);
   useEffect(() => {
-    if (!['geometry', 'analysis'].includes(phase) || geometryStamp === geometryKey) return undefined;
+    // The design sheet keeps every stage at hand, so the preview follows edits in any of them.
+    if (!stageIds.includes(phase) || rotorFamily !== 'propeller' || geometryStamp === geometryKey) return undefined;
     const timer = window.setTimeout(() => generatePreview(payload, geometryKey), geometryStamp ? 350 : 0);
     return () => window.clearTimeout(timer);
     // The geometry key captures every field that changes the generated blade.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, geometryKey, geometryStamp]);
+  }, [phase, geometryKey, geometryStamp, rotorFamily]);
 
   const estimate = () => run(async () => {
     const result = await (await post('/sizing/actuator-disk', {
@@ -412,8 +419,13 @@ function App() {
   const go = (target) => {
     let id = target === 'design' ? lastStage : target;
     if (!guidedCompatible && ['sizing', 'geometry', 'analysis'].includes(id)) id = 'workflow';
-    if (stageIds.includes(id)) setLastStage(id);
+    if (stageIds.includes(id)) { setLastStage(id); setOpenSections((list) => list.includes(id) ? list : [...list, id]); }
     setPhase(id);
+  };
+  // First click on a section title makes it the active view; clicking the active one folds it.
+  const onSection = (id) => {
+    if (phase === id) setOpenSections((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+    else go(id);
   };
   const chooseModel = (value) => { setModel(value); workbench.current?.setModel(value); };
   const resetProject = async () => {
@@ -484,46 +496,94 @@ function App() {
     if (rotorFamily === 'propeller' ? !analyses.length : !rotorRun) workbench.current?.openRun(latestRun);
   }, [phase, analyses.length, latestRun, rotorFamily, rotorRun]);
 
-  const completed = rotorFamily !== 'propeller' ? { sizing: true, geometry: true, analysis: Boolean(rotorRun && !rotorStale) } : {
-    sizing: Number(inputs.diameter) > 0,
-    geometry: geometryCurrent && !previewError,
-    analysis: Boolean(workspaceContext?.lastRun && !workspaceContext?.lastRunStale),
-  };
   const exportResultStl = () => {
     if (!resultStlUrl) return;
     const link = document.createElement('a'); link.href = resultStlUrl; link.download = 'nova_result_geometry.stl'; link.click();
   };
 
+  // ---- Design workspace: every stage mounted in the design sheet --------------
+  const rotorMode = rotorFamily !== 'propeller';
+  const stageElements = rotorMode ? (rotorSpec ? {
+    sizing: <RotorSizingStage family={rotorFamily} onFamily={chooseFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog}
+      projectName={inputs.project_name} onProjectName={(v) => set('project_name', v)} onContinue={() => go('geometry')} />,
+    geometry: <RotorGeometryStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onContinue={() => go('analysis')} />,
+    analysis: <RotorAnalysisStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onRun={handleRun} runDisabled={runDisabled || runActive} />,
+    results: <RotorResultsStage family={rotorFamily} run={rotorRun} stale={rotorStale}
+      runs={(workspaceContext?.simulationRuns || []).filter((r) => r.simulation_kind === 'rotor')} onRun={handleRun} runDisabled={runDisabled || runActive} onNavigate={go} />,
+  } : null) : {
+    sizing: <SizingStage inputs={inputs} set={set} sizing={sizing} onEstimate={estimate} busy={busy} onContinue={() => go('geometry')}
+      family={rotorFamily} onFamily={chooseFamily} />,
+    geometry: <GeometryStage g={{
+      inputs, set, airfoils, coordinateAirfoils, bezier, setBezier, laguerre, setLaguerre, designMode, setDesignMode, setBezierPointCount,
+      useAirfoilLoft, setUseAirfoilLoft, bezierProfileAssignments, setBezierProfileAssignments, laguerreProfileAssignments, updateLaguerreProfileStation,
+      removeLaguerreStation: (index) => setLaguerreProfileAssignments((current) => current.filter((_, itemIndex) => itemIndex !== index)),
+      addLaguerreProfileStation, previewLoft, loftPreview, setLoftPreview, inverseSolver, setInverseSolver, inverseResult, optimize: optimizeGeometry,
+      applyInverse: applyInverseResult, clearInverse: () => setInverseResult(null), methods: computationalMethods, busy, slotRef,
+      preview: { canonical, mesh, busy: previewBusy, error: previewError, stlUrl }, published: workspaceContext?.geometry, station, setStation, selectedPoint, setSelectedPoint,
+    }} />,
+    analysis: <AnalysisStage a={{
+      // Guided workflows have a single analysis node driven by the local model state.
+      inputs, set, model, chooseModel, methods: computationalMethods, context: workspaceContext, slotRef, station,
+      preview: { canonical, mesh, busy: previewBusy }, openRun: (record) => workbench.current?.openRun(record), onRun: handleRun, runDisabled: runDisabled || runActive,
+      onCompare: () => { setStudyRequest({ type: 'solver', nonce: Date.now() }); go('studies'); }, compareModels, setCompareModels,
+    }} />,
+    results: <ResultsStage r={{
+      analyses, context: workspaceContext, resultContext, station, setStation, reportModel, setReportModel, resultGeometry, resultMesh, previewMesh: mesh, resultStlUrl,
+      openRun: (record) => workbench.current?.openRun(record), exportCsv: (id) => run(() => download(`/v1/runs/${id}/results.csv`, 'performance.csv')), exportStl: exportResultStl,
+      onRun: handleRun, runDisabled: runDisabled || runActive, onNavigate: go, projectName: inputs.project_name,
+    }} />,
+  };
+
+  const short = (value, digits = 3) => value == null || Number.isNaN(Number(value)) ? '—' : formatValue(Number(value), digits);
+  const timeOf = (record) => record?.created_at ? new Date(record.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  const lastPropellerRun = workspaceContext?.lastRun;
+  const propellerPerformance = lastPropellerRun?.result?.analyses?.[0]?.performance;
+  const rotorBest = rotorRun?.result?.curve?.optimum;
+  const rotorResult = rotorRun?.result?.analysis;
+  let sections;
+  if (rotorMode && rotorSpec) {
+    const g = rotorSpec.geometry, op = rotorSpec.operating || {}, req = rotorSpec.requirements || {};
+    const activeCorrections = Object.values(rotorSpec.corrections || {}).filter((v) => v && v !== 'none').length;
+    const turbineFamily = rotorFamily === 'hawt' || rotorFamily === 'vawt';
+    sections = [
+      ['sizing', 'Sizing', `${familyLabel[rotorFamily]} · ${rotorFamily === 'marine' ? `Tₑ ${short((req.effective_thrust_n || 0) / 1000)} kN at ${short(req.ship_speed_m_s)} m/s` : `${short((req.rated_power_w || 0) / 1000)} kW at ${short(req.rated_wind_m_s)} m/s`}`, 'ok'],
+      ['geometry', 'Geometry', rotorFamily === 'vawt' ? `R ${short(g.radius_m)} · H ${short(g.height_m)} · c ${short(g.chord_m)} m · ${g.blades} blades`
+        : rotorFamily === 'marine' ? `Ø ${short(g.diameter_m)} m · Z ${g.blades} · AE/A0 ${short(g.area_ratio)} · P/D ${short(g.pitch_ratio)}`
+          : `R ${short(g.radius_m)} m · ${g.blades} blades · ${rotorSpec.section?.name || ''}`, 'ok'],
+      ['analysis', 'Analysis', `${rotorFamily === 'vawt' ? (rotorCatalog?.vawt_methods.find((m) => m.id === rotorSpec.method)?.label.split(' (')[0] || rotorSpec.method) : 'BEMT'} · ${activeCorrections} corrections · ${turbineFamily ? `${short(op.velocity_m_s)} m/s · λ ${short(op.tip_speed_ratio)}` : `${short(op.rpm)} rpm · J ${short(op.advance_ratio)}`}`, 'ok'],
+      ['results', 'Results', rotorRun ? `Run ${timeOf(rotorRun)} · ${rotorBest ? `${rotorBest.quantity === 'CP' ? 'Cp' : 'η'} max ${short(rotorBest.value)}` : rotorRun.state}${rotorStale ? ' · out of date' : ''}` : 'Not run yet', rotorRun ? (rotorStale ? 'warn' : 'ok') : 'muted'],
+    ];
+  } else {
+    const asset = workspaceContext?.selectedAsset;
+    sections = [
+      ['sizing', 'Sizing', `Air propeller · Ø ${short(inputs.diameter)} m · T ${short(inputs.thrust_target)} N`, Number(inputs.diameter) > 0 ? 'ok' : 'warn'],
+      ['geometry', 'Geometry', `${inputs.geometry_method === 'bezier' ? 'Bézier' : 'Laguerre'} · ${inputs.blades} blades · ${inputs.airfoil}${previewError ? ' · preview error' : ''}`,
+        previewError ? 'err' : geometryCurrent ? 'ok' : 'muted'],
+      ['analysis', 'Analysis', `${[model, ...compareModels.filter((id) => id !== model)].map((id) => id.toUpperCase()).join(' + ')} · ${short(inputs.rpm, 4)} rpm · ${asset ? asset.filename : 'no polars selected'}`,
+        model === 'bemt' && !asset ? 'warn' : 'ok'],
+      ['results', 'Results', lastPropellerRun ? `Run ${timeOf(lastPropellerRun)} · T ${short(propellerPerformance?.thrust_n)} N${workspaceContext?.lastRunStale ? ' · out of date' : ''}` : 'Not run yet',
+        lastPropellerRun ? (workspaceContext?.lastRunStale ? 'warn' : 'ok') : 'muted'],
+    ];
+  }
+  sections = sections.map(([id, label, summary, tone], index) => ({ id, label, summary, tone, key: String(index + 1) }));
+  const runCard = phase === 'results' ? null : rotorMode
+    ? <RunCard when={rotorRun ? timeOf(rotorRun) : ''} stale={rotorStale} onOpen={rotorRun ? () => go('results') : null} onRun={handleRun} runDisabled={runDisabled || runActive}
+      metrics={rotorResult ? (rotorFamily === 'hawt' || rotorFamily === 'vawt'
+        ? [['Power', short(rotorResult.performance.power_w, 4), 'W'], ['Cp', short(rotorResult.coefficients.CP)], ['Cp max', short(rotorBest?.value)]]
+        : [['Thrust', short(rotorResult.performance.thrust_n, 4), 'N'], ['KT', short(rotorResult.coefficients.KT)], ['η', short(rotorResult.coefficients.efficiency)]]) : null} />
+    : <RunCard when={timeOf(lastPropellerRun)} stale={workspaceContext?.lastRunStale} staleDetail={workspaceContext?.changedSinceRun?.join(', ')}
+      onOpen={lastPropellerRun ? () => go('results') : null} onRun={handleRun} runDisabled={runDisabled || runActive}
+      metrics={propellerPerformance ? [['Thrust', short(propellerPerformance.thrust_n, 4), 'N'], ['Power', short(propellerPerformance.power_w, 4), 'W'], ['FoM', short(propellerPerformance.efficiency)]] : null} />;
+  const views = [['sizing', 'Sizing'], ['geometry', rotorMode ? 'Rotor' : 'Blade'], ['analysis', 'Analysis'], ['results', 'Results']].map(([id, label]) => ({ id, label }));
+
+  const sheetStages = stageIds.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id}
+    targets={{ inputs: sheetTargets[`inputs:${id}`], content: sheetTargets.content, side: sheetTargets.side }}>{stageElements[id]}</SheetStage>) : null;
   let body;
-  const rotorStage = rotorFamily !== 'propeller' && stageIds.includes(phase);
-  if (rotorStage && !rotorSpec) body = <div className="grid flex-1 place-items-center text-[13px] text-nv-muted">Loading rotor models…</div>;
-  else if (rotorStage && phase === 'sizing') body = <RotorSizingStage family={rotorFamily} onFamily={chooseFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog}
-    projectName={inputs.project_name} onProjectName={(v) => set('project_name', v)} onContinue={() => go('geometry')} />;
-  else if (rotorStage && phase === 'geometry') body = <RotorGeometryStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onContinue={() => go('analysis')} />;
-  else if (rotorStage && phase === 'analysis') body = <RotorAnalysisStage family={rotorFamily} spec={rotorSpec} setSpec={setRotorSpec} catalog={rotorCatalog} onRun={handleRun} runDisabled={runDisabled || runActive} />;
-  else if (rotorStage && phase === 'results') body = <RotorResultsStage family={rotorFamily} run={rotorRun} stale={rotorStale}
-    runs={(workspaceContext?.simulationRuns || []).filter((r) => r.simulation_kind === 'rotor')} onRun={handleRun} runDisabled={runDisabled || runActive} onNavigate={go} />;
-  else if (phase === 'sizing') body = <SizingStage inputs={inputs} set={set} sizing={sizing} onEstimate={estimate} busy={busy} onContinue={() => go('geometry')}
-    family={rotorFamily} onFamily={chooseFamily} />;
-  else if (phase === 'geometry') body = <GeometryStage g={{
-    inputs, set, airfoils, coordinateAirfoils, bezier, setBezier, laguerre, setLaguerre, designMode, setDesignMode, setBezierPointCount,
-    useAirfoilLoft, setUseAirfoilLoft, bezierProfileAssignments, setBezierProfileAssignments, laguerreProfileAssignments, updateLaguerreProfileStation,
-    removeLaguerreStation: (index) => setLaguerreProfileAssignments((current) => current.filter((_, itemIndex) => itemIndex !== index)),
-    addLaguerreProfileStation, previewLoft, loftPreview, setLoftPreview, inverseSolver, setInverseSolver, inverseResult, optimize: optimizeGeometry,
-    applyInverse: applyInverseResult, clearInverse: () => setInverseResult(null), methods: computationalMethods, busy, slotRef,
-    preview: { canonical, mesh, busy: previewBusy, error: previewError, stlUrl }, published: workspaceContext?.geometry, station, setStation, selectedPoint, setSelectedPoint,
-  }} />;
-  else if (phase === 'analysis') body = <AnalysisStage a={{
-    // Guided workflows have a single analysis node driven by the local model state.
-    inputs, set, model, chooseModel, methods: computationalMethods, context: workspaceContext, slotRef, station,
-    preview: { canonical, mesh, busy: previewBusy }, openRun: (record) => workbench.current?.openRun(record), onRun: handleRun, runDisabled: runDisabled || runActive,
-    onCompare: () => { setStudyRequest({ type: 'solver', nonce: Date.now() }); go('studies'); }, compareModels, setCompareModels,
-  }} />;
-  else if (phase === 'results') body = <ResultsStage r={{
-    analyses, context: workspaceContext, resultContext, station, setStation, reportModel, setReportModel, resultGeometry, resultMesh, previewMesh: mesh, resultStlUrl,
-    openRun: (record) => workbench.current?.openRun(record), exportCsv: (id) => run(() => download(`/v1/runs/${id}/results.csv`, 'performance.csv')), exportStl: exportResultStl,
-    onRun: handleRun, runDisabled: runDisabled || runActive, onNavigate: go, projectName: inputs.project_name,
-  }} />;
+  if (stageIds.includes(phase)) body = !stageElements
+    ? <div className="grid flex-1 place-items-center text-[13px] text-nv-muted">Loading rotor models…</div>
+    : <DesignSheet sections={sections} open={openSections} active={phase} onSection={onSection}
+      onExpandAll={() => setOpenSections([...stageIds])} onFoldAll={() => setOpenSections([])}
+      views={views} view={phase} onView={go} targetRef={sheetRef} runCard={runCard} />;
   else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows />;
   else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
     inputs={<>
@@ -553,7 +613,6 @@ function App() {
 
   return <div className="flex min-h-screen flex-col bg-nv-canvas text-nv-ink xl:h-screen xl:overflow-hidden">
     <AppHeader context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
-      phase={phase} onNavigate={go} guidedCompatible={guidedCompatible} completed={completed}
       onSave={handleSave} saveDisabled={runDisabled} run={runActive ? nativeRun : null} onRun={handleRun} onCancel={handleCancel} runDisabled={runDisabled}
       onNewProject={resetProject} onCloseProject={resetProject} projectActionsDisabled={busy || Boolean(workspaceContext?.busy)} />
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -566,6 +625,7 @@ function App() {
         {phase === 'results' && analyses.length > 0 && resultStamp && executionStamp && resultStamp !== executionStamp && !resultStamp.startsWith('study:') &&
           <p className="m-0 border-b border-nv-warn/30 bg-nv-warn/10 px-6 py-2 text-xs text-nv-warn-ink">These results belong to an earlier configuration; the current inputs have changed since this run.</p>}
         {body}
+        {sheetStages}
       </div>
     </div>
     <EngineeringWorkspace ref={workbench} inputs={payload} model={model}

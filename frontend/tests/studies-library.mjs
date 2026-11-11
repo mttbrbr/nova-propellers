@@ -65,6 +65,7 @@ try {
   // "Also compare with" runs the same frozen simulation with a second solver after the main run.
   await openProject(page, reference.project.id);
   await waitForProject(page, reference.project.id);
+  await page.getByRole('navigation', { name: 'Workspaces' }).getByRole('button', { name: 'Design', exact: true }).click();
   await page.getByRole('navigation', { name: 'Design stages' }).getByRole('button', { name: 'Analysis', exact: true }).click();
   await page.getByRole('checkbox', { name: /^Also compare with .*Lifting/ }).check();
   const comparison = page.waitForResponse((response) => response.url().endsWith(`/simulations/${reference.simulation.id}/solver-comparison`) && response.request().method() === 'POST', { timeout: 60000 });
@@ -80,6 +81,7 @@ try {
   const solverTable = page.getByRole('table', { name: 'Solver comparison results', exact: true });
   await solverTable.getByText('Reference', { exact: true }).waitFor({ timeout: 30000 });
   assert.equal(await solverTable.getByRole('row').count(), 3);
+  await page.getByRole('navigation', { name: 'Workspaces' }).getByRole('button', { name: 'Design', exact: true }).click();
   await page.getByRole('navigation', { name: 'Design stages' }).getByRole('button', { name: 'Results', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('select[aria-label="Compare with run"]')?.value.startsWith('cmp:'));
 

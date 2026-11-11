@@ -27,7 +27,7 @@ try {
   assert.match(await page.getByRole('region', { name: 'Not applicable' }).innerText(), /Compressibility/);
   await page.getByRole('button', { name: 'Run analysis' }).click();
   await page.getByRole('img', { name: 'Power coefficient Cp versus λ' }).waitFor({ timeout: 60000 });
-  assert.match(await page.getByRole('main', { name: 'Performance' }).innerText(), /Cp max/);
+  assert.match(await page.getByRole('region', { name: 'Performance' }).innerText(), /Cp max/);
   await shot('rotors-hawt');
 
   // Change a correction, run again and compare the two runs of the same simulation.
@@ -49,7 +49,7 @@ try {
   await page.getByRole('combobox', { name: 'Correction dynamic_stall' }).selectOption('gormont_berg');
   await page.getByRole('button', { name: 'Run analysis' }).click();
   await page.getByRole('img', { name: /Blade torque/ }).waitFor({ timeout: 90000 });
-  assert.match(await page.getByRole('main', { name: 'Performance' }).innerText(), /Cp – λ/);
+  assert.match(await page.getByRole('region', { name: 'Performance' }).innerText(), /Cp – λ/);
   await shot('rotors-vawt');
 
   // Marine propeller: only tip and hub loss apply; open-water diagram and cavitation.
