@@ -70,7 +70,8 @@ try {
   await studyType(page, 'Parameter sweep');
   await page.getByRole('button', { name: 'Inspect', exact: true }).first().click();
   await page.getByText('Technical report', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   await page.getByRole('combobox', { name: 'External adapter', exact: true }).locator('option', { hasText: 'PyWake' }).waitFor({ state: 'attached' });
   await page.getByRole('combobox', { name: 'External adapter', exact: true }).selectOption('pywake');
   await page.getByLabel('Python environment interpreter', { exact: true }).waitFor();
@@ -90,7 +91,8 @@ try {
   const importedId = await page.getByRole('combobox', { name: 'Saved external run', exact: true }).inputValue();
   assert.ok(importedId);
   await page.getByRole('button', { name: 'Studies', exact: true }).click();
-  await page.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   await page.getByRole('combobox', { name: 'Saved external run', exact: true }).locator(`option[value="${importedId}"]`).waitFor({ state: 'attached' });
   await page.getByRole('combobox', { name: 'Saved external run', exact: true }).selectOption(importedId);
   await page.getByRole('combobox', { name: 'OpenFAST output channel', exact: true }).waitFor();
@@ -107,7 +109,8 @@ try {
     const pywakeId = await page.getByRole('combobox', { name: 'Saved external run', exact: true }).inputValue();
     assert.ok(pywakeId);
     await page.getByRole('button', { name: 'Studies', exact: true }).click();
-    await page.getByRole('button', { name: 'Integrations', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
     await page.getByRole('combobox', { name: 'Saved external run', exact: true }).locator(`option[value="${pywakeId}"]`).waitFor({ state: 'attached' });
     await page.getByRole('combobox', { name: 'Saved external run', exact: true }).selectOption(pywakeId);
     await page.getByRole('heading', { name: 'Wind farm performance', exact: true }).waitFor();

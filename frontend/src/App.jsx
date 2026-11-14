@@ -3,6 +3,8 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { api, apiFetch as fetch, download } from './backend.js';
 import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
 import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
+import { toggleFullscreen } from './lib/fullscreen.js';
+import SettingsWorkspace from './workspaces/SettingsWorkspace.jsx';
 import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
 import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingStage, familyLabel, requirementDefaults } from './stages/RotorStages.jsx';
 import DesignSheet, { useTargets } from './shell/DesignSheet.jsx';
@@ -427,7 +429,7 @@ function App() {
     await refreshAirfoils();
   });
 
-  const workspace = stageIds.includes(phase) || phase === 'sweep' ? 'design' : phase;
+  const workspace = stageIds.includes(phase) || phase === 'sweep' ? 'design' : phase === 'integrations' ? 'settings' : phase;
   const go = (target) => {
     let id = target === 'design' ? lastStage : target;
     if (!guidedCompatible && ['sizing', 'geometry', 'analysis'].includes(id)) id = 'workflow';
@@ -510,7 +512,11 @@ function App() {
     const onKey = (event) => {
       const actions = shortcuts.current;
       const typing = event.target.closest?.('input, select, textarea, [role="slider"]');
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); actions.handleRun(); }
+      const workflowScreen = actions.phase === 'workflow'; // the block editor owns Ctrl+Enter and Ctrl+S there
+      if (event.key === 'F11') { event.preventDefault(); toggleFullscreen().catch(() => {}); }
+      else if ((event.ctrlKey || event.metaKey) && event.key === ',') { event.preventDefault(); actions.go('settings'); }
+      else if (workflowScreen && (event.ctrlKey || event.metaKey) && ['enter', 's'].includes(event.key.toLowerCase())) return;
+      else if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); actions.handleRun(); }
       else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); actions.handleSave(); }
       else if (event.altKey && ['1', '2', '3', '4'].includes(event.key)) { event.preventDefault(); actions.go(stageIds[Number(event.key) - 1]); }
       else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') { event.preventDefault(); window.dispatchEvent(new Event('nova:open-project-picker')); }
@@ -631,12 +637,13 @@ function App() {
     await workbench.current?.openProjectById(record.project_id, record.simulation_id);
     workbench.current?.openRun(record); go('results');
   })} />;
-  else if (phase === 'workflow') body = <BlockWorkflows seed={blockSeed} />;
+  else if (phase === 'workflow') body = <BlockWorkflows seed={blockSeed} onOpenSettings={() => go('settings')} />;
   else if (phase === 'studies') body = <StudiesWorkspace projectId={activeProjectId} projectControls={workbench} methods={computationalMethods} studyRequest={studyRequest}
     onOpenSource={(record) => { workbench.current?.openProjectById(record.project_id, record.simulation_id); go('analysis'); }}
     configurationBusy={busy || workspaceContext?.busy || !workspaceContext?.ready} selectedRun={selectedStudyRun} activeStudy={studyExecution} onExecutionChange={trackStudyExecution}
     onInverseDesign={() => { setDesignMode('inverse'); go('geometry'); }}
     onInspect={(result, snapshot, runId, index, runContext) => { receiveResult(result, snapshot, runId, `study:${runId}:${index}`, index, runContext).catch((e) => setError(e.message)); go('results'); }} />;
+  else if (phase === 'settings') body = <SettingsWorkspace onOpenLegacy={() => go('integrations')} />;
   else if (phase === 'integrations') body = <div className="min-h-0 flex-1 overflow-auto"><IntegrationsWorkspace activeExecution={externalExecution} onExecutionChange={trackExternalExecution} draft={integrationDraft} onDraftChange={setIntegrationDraft} /></div>;
   else body = <LibraryWorkspace l={{
     tab: libraryTab, setTab: setLibraryTab, methods: computationalMethods,
@@ -653,7 +660,7 @@ function App() {
   return <div className="flex min-h-screen flex-col bg-nv-canvas text-nv-ink xl:h-screen xl:overflow-hidden">
     <AppHeader context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
       onSave={handleSave} saveDisabled={runDisabled} run={runActive ? nativeRun : null} onRun={handleRun} onCancel={handleCancel} runDisabled={runDisabled}
-      onNewProject={resetProject} onCloseProject={resetProject} projectActionsDisabled={busy || Boolean(workspaceContext?.busy)} />
+      onNewProject={resetProject} onCloseProject={resetProject} onOpenSettings={() => go('settings')} onToggleFullscreen={() => toggleFullscreen().catch(() => {})} projectActionsDisabled={busy || Boolean(workspaceContext?.busy)} />
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <WorkspaceRail workspace={workspace} onSelect={go} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

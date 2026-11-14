@@ -25,7 +25,7 @@ const statusLabel = (context) => {
 };
 
 export default function AppHeader({ context, projectSlot, simulationSlot, manageSlot, menuSlot, tabs,
-  onSave, saveDisabled, run, onRun, onCancel, runDisabled, onNewProject, onCloseProject, projectActionsDisabled }) {
+  onSave, saveDisabled, run, onRun, onCancel, runDisabled, onNewProject, onCloseProject, onOpenSettings, onToggleFullscreen, projectActionsDisabled }) {
   const [tone, status] = statusLabel(context);
   const models = context?.models?.map((m) => m.toUpperCase()).join(' + ');
   const running = run && ['queued', 'running', 'cancelling'].includes(run.state);
@@ -55,6 +55,9 @@ export default function AppHeader({ context, projectSlot, simulationSlot, manage
           <MenuItem disabled={projectActionsDisabled} onClick={onNewProject}>New project</MenuItem>
           <MenuItem disabled={projectActionsDisabled || !context?.project} onClick={onCloseProject}>Close project</MenuItem>
           <div ref={menuSlot} className="flex flex-col" />
+          <div className="my-1 h-px bg-nv-line" />
+          <MenuItem hint="F11" onClick={onToggleFullscreen}>Full screen</MenuItem>
+          <MenuItem hint="Ctrl ," onClick={onOpenSettings}>Settings</MenuItem>
         </div>}
       </Popover>
       {running

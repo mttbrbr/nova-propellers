@@ -144,7 +144,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Unconnected required input: expression_1.values' }).waitFor();
   // Templates: the saved workflow is offered as a template.
   await page.getByRole('button', { name: 'Templates', exact: true }).click();
-  await page.getByRole('button', { name: /Browser block workflow/ }).waitFor();
+  await page.getByRole('button', { name: /Browser block workflow/ }).first().waitFor();
   assert.deepEqual(errors, []);
   console.log('Rotors and block workflow journey passed');
 } finally {

@@ -1,5 +1,6 @@
 """OpenFAST blocks in block workflows, run with a fixture program instead of OpenFAST."""
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -76,6 +77,40 @@ class OpenFASTBlockTests(unittest.TestCase):
         self.assertEqual(engine.execute(bad)['blocks']['run']['status'], 'failed')
         self.case['case_directory'] = str(self.root / 'missing')
         self.assertEqual(engine.execute(self.workflow())['blocks']['case']['status'], 'failed')
+
+    def poll(self, run_id, until=('succeeded', 'failed', 'cancelled'), limit=30):
+        deadline = time.time() + limit
+        while time.time() < deadline:
+            run = self.client.get(f'/api/v1/blocks/runs/{run_id}').json()
+            if run['state'] in until:
+                return run
+            time.sleep(0.1)
+        self.fail('block run did not finish')
+
+    def test_background_run_reports_progress_and_result(self):
+        self.configure()
+        started = self.client.post('/api/v1/blocks/runs', json={'workflow': self.workflow()})
+        self.assertEqual(started.status_code, 200, started.text)
+        run = self.poll(started.json()['id'])
+        self.assertEqual(run['state'], 'succeeded')
+        self.assertEqual(run['progress'], 1.0)
+        self.assertEqual(run['result']['blocks']['run']['status'], 'succeeded')
+        self.assertEqual(self.client.get('/api/v1/blocks/runs/nope').status_code, 404)
+        bad = self.workflow()
+        bad['edges'] = []
+        self.assertEqual(self.client.post('/api/v1/blocks/runs', json={'workflow': bad}).status_code, 422)
+
+    def test_background_run_can_be_cancelled(self):
+        self.configure()
+        self.program.write_text(self.program.read_text().replace("Path('case/main.out')", "__import__('time').sleep(20)\nPath('case/main.out')"))
+        run_id = self.client.post('/api/v1/blocks/runs', json={'workflow': self.workflow()}).json()['id']
+        self.poll(run_id, until=('running',))
+        time.sleep(1.0)
+        self.assertIn(self.client.post(f'/api/v1/blocks/runs/{run_id}/cancel').json()['state'], ('running', 'cancelled'))
+        started = time.time()
+        run = self.poll(run_id, until=('cancelled', 'failed', 'succeeded'))
+        self.assertEqual(run['state'], 'cancelled')
+        self.assertLess(time.time() - started, 10)
 
     def test_template_is_valid(self):
         self.assertTrue(engine.validate(templates.template('openfast_limits'))['valid'])

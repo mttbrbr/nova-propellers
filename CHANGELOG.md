@@ -6,6 +6,16 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Settings replaces the Integrations workspace in the rail (gear at the bottom,
+  `Ctrl ,`, header menu): OpenFAST and PyWake paths and detection live in
+  Settings → Integrations, plus the shortcut list. Cases, output import and
+  external archives stay reachable from there until they move into Workflow.
+- F11 toggles full screen (Tauri window or browser Fullscreen API; also in the
+  header menu). The desktop capability gains the set/is-fullscreen permissions,
+  so a rebuilt desktop package is needed for it.
+- Block workflows run in the background (`POST /api/v1/blocks/runs`) with
+  progress, OpenFAST log lines and cancellation; Ctrl Enter runs or cancels.
+  The OpenFAST run block selects the configured executable, or links to Settings.
 - OpenFAST in Workflow: *OpenFAST case* and *OpenFAST run* blocks run a
   self-contained case with the configured executable and expose channel
   statistics to constraints and reports (template *OpenFAST run with limits*).

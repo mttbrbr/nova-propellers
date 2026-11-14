@@ -20,7 +20,8 @@ try {
   const imported = await post('/v1/openfast/import', { filename: 'portable.out', content_base64: source.toString('base64') });
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   const navigation = page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ });
-  await navigation.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   const history = page.getByRole('combobox', { name: 'Saved external run', exact: true });
   await history.locator(`option[value="${imported.id}"]`).waitFor({ state: 'attached' });
   await history.selectOption(imported.id);
@@ -41,7 +42,8 @@ try {
   const raw = await page.request.get(`${api}/v1/external-runs/${restored.id}/artifacts/source/portable.out`);
   assert.deepEqual(await raw.body(), source);
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
-  await navigation.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   await history.locator(`option[value="${restored.id}"]`).waitFor({ state: 'attached' });
   await history.selectOption(restored.id);
   await page.getByRole('img', { name: 'GenPwr versus time', exact: true }).waitFor();
@@ -54,7 +56,8 @@ try {
   const configuration = await post('/v1/adapters/openfast/configure', { executable: fixture, environment_kind: 'local_executable' });
   // Remount to refresh independently saved executable configurations.
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
-  await navigation.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   await page.getByRole('combobox', { name: 'External adapter', exact: true }).selectOption('openfast');
   await page.getByRole('combobox', { name: 'Saved integration configuration', exact: true }).selectOption(configuration.id);
   await page.getByLabel('Case directory', { exact: true }).fill(temporary);
@@ -66,7 +69,8 @@ try {
   await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
   await navigation.getByRole('button', { name: 'Studies', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
-  await navigation.getByRole('button', { name: 'Integrations', exact: true }).click();
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click();
   await page.getByRole('heading', { name: /External run · (queued|running)/ }).waitFor();
   assert.equal(await page.getByRole('button', { name: /Cancel/ }).count(), 1);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();

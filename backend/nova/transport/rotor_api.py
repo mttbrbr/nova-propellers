@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from nova.blocks import catalog as block_catalog
-from nova.blocks import engine, templates
+from nova.blocks import engine, runs, templates
 from nova.blocks.constraints import normalise, report
 from nova.infrastructure import library
 from nova.physics import rotors
@@ -135,6 +135,27 @@ def validate_blocks(request: BlockWorkflowRequest):
 @router.post('/blocks/run')
 def run_blocks(request: BlockWorkflowRequest):
     return _guard(lambda: engine.execute(request.workflow))
+
+
+@router.post('/blocks/runs')
+def start_block_run(request: BlockWorkflowRequest):
+    return _guard(lambda: runs.start(request.workflow))
+
+
+@router.get('/blocks/runs/{run_id}')
+def block_run(run_id: str):
+    try:
+        return runs.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(404, 'Block run not found') from exc
+
+
+@router.post('/blocks/runs/{run_id}/cancel')
+def cancel_block_run(run_id: str):
+    try:
+        return runs.cancel(run_id)
+    except KeyError as exc:
+        raise HTTPException(404, 'Block run not found') from exc
 
 
 @router.get('/blocks/workflows')

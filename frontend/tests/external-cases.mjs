@@ -23,7 +23,7 @@ try {
     await page.waitForFunction((id) => document.querySelector('[aria-label="Saved wind farm case"]')?.value === id, asset.id);
     return asset;
   };
-  const openIntegrations = async () => page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Integrations', exact: true }).click();
+  const openIntegrations = async () => { await page.getByRole('navigation', { name: /^(Design stages|Workspaces)$/ }).getByRole('button', { name: 'Settings', exact: true }).click(); await page.getByRole('button', { name: 'Open external cases and results', exact: true }).click(); };
   await page.goto(process.env.NOVA_UI_TEST_URL || 'http://127.0.0.1:5174');
   await openIntegrations();
   await page.getByRole('combobox', { name: 'External adapter', exact: true }).selectOption('pywake');

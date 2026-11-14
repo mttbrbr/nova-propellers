@@ -10,6 +10,7 @@ Execution is deterministic and headless. A failing block marks its dependants
 ``blocked``; a constraint block with ``on_violation: "stop"`` does the same
 when a hard limit is violated, so infeasible designs never reach later stages.
 """
+import contextvars
 import copy
 import math
 import re
@@ -28,6 +29,7 @@ from .expressions import ExpressionError, evaluate
 NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$')
 SPEC_ROOTS = {'geometry', 'operating', 'fluid', 'corrections', 'marine', 'section', 'method', 'azimuth_tubes'}
 MAX_NODES, MAX_EDGES = 64, 256
+_PROGRESS = contextvars.ContextVar('block_progress', default=None)
 ROTOR_KIND = {'rotor_hawt': 'hawt', 'rotor_vawt': 'vawt', 'rotor_propeller': 'propeller', 'rotor_marine': 'marine'}
 
 
@@ -538,7 +540,14 @@ def _openfast_run(node, args, cancelled):
     root.mkdir(parents=True)
     try:
         frozen = copy_openfast_case(args['case'], root / 'source_case')
-        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled)
+        report = _PROGRESS.get()
+        last = [0.0]
+
+        def log(text):  # throttled: OpenFAST prints one line per time step
+            if report and time.monotonic() - last[0] > 0.5 and text.strip():
+                last[0] = time.monotonic()
+                report(text.strip().splitlines()[-1][:120])
+        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled, on_log=log)
     except AdapterError as exc:
         raise BlockError(str(exc)) from exc
     stats, samples = _window_statistics(output['data'], start)
@@ -580,6 +589,9 @@ def execute(workflow, *, progress=None, cancelled=None):
             continue
         args = {port: outputs[src][out] for port, (src, out) in checked['inbound'][nid].items()}
         started = time.perf_counter()
+        if progress:
+            progress({'node': nid, 'progress': index / len(checked['order']), 'message': f'{nid}: running'})
+        token = _PROGRESS.set(lambda text: progress({'node': nid, 'progress': index / len(checked['order']), 'message': f'{nid}: {text}'}) if progress else None)
         try:
             if node['type'] in LONG:
                 result = LONG[node['type']](node, args, cancelled)
@@ -597,6 +609,8 @@ def execute(workflow, *, progress=None, cancelled=None):
         except (ValueError, KeyError, TypeError) as exc:
             message = str(exc) if isinstance(exc, ValueError) else f'Invalid configuration: {exc}'
             blocks[nid] = {'status': 'failed', 'error': message, 'seconds': round(time.perf_counter() - started, 4)}
+        finally:
+            _PROGRESS.reset(token)
         if progress:
             progress({'node': nid, 'progress': (index + 1) / len(checked['order']), 'message': f'{nid}: {blocks[nid]["status"]}'})
     statuses = [b['status'] for b in blocks.values()]

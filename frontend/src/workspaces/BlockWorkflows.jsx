@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, X } from 'lucide-react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, Square, X } from 'lucide-react';
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState, useReactFlow, useViewport } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { request } from '../backend.js';
@@ -7,6 +7,7 @@ import LineChart from '../ui/LineChart.jsx';
 import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
+const IntegrationsContext = createContext({ list: [], openSettings: null });
 const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
@@ -83,7 +84,7 @@ function layered(nodes, edges) {
   return nodes.map((n) => { const col = depth[n.id], row = rows[col] = (rows[col] ?? -1) + 1; return { ...n, position: { x: col * 260, y: row * 200 } }; });
 }
 
-function BlockEditor({ seed = null }) {
+function BlockEditor({ seed = null, onOpenSettings = null }) {
   const flow = useReactFlow();
   const viewport = useViewport();
   const canvas = useRef(null);
@@ -100,6 +101,8 @@ function BlockEditor({ seed = null }) {
   const [panel, setPanel] = useState(null); // 'results' | 'keys' | null
   const [palette, setPalette] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null); // {id, progress, message} while a run is in the background
+  const [integrations, setIntegrations] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const specs = useMemo(() => Object.fromEntries((catalog?.blocks || []).map((b) => [b.type, b])), [catalog]);
@@ -111,8 +114,8 @@ function BlockEditor({ seed = null }) {
     setTimeout(() => flow.fitView({ padding: 0.2, duration: 200 }), 30);
   }, [specs, setNodes, setEdges, flow]);
   useEffect(() => {
-    Promise.all([request('/v1/blocks/catalog'), request('/v1/rotors/catalog'), request('/v1/blocks/templates'), request('/v1/blocks/workflows')])
-      .then(([c, r, t, s]) => { setCatalog(c); setRotorCatalog(r); setTemplates(t); setSaved(s); }).catch((e) => setError(e.message));
+    Promise.all([request('/v1/blocks/catalog'), request('/v1/rotors/catalog'), request('/v1/blocks/templates'), request('/v1/blocks/workflows'), request('/v1/integrations')])
+      .then(([c, r, t, s, i]) => { setCatalog(c); setRotorCatalog(r); setTemplates(t); setSaved(s); setIntegrations(i); }).catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
     if (!catalog || !templates.length) return;
@@ -151,7 +154,23 @@ function BlockEditor({ seed = null }) {
   const onConnect = (c) => { setEdges((list) => addEdge({ ...c, id: `${c.source}.${c.sourceHandle}-${c.target}.${c.targetHandle}`, style: { stroke: typeColor[portType(c.source, c.sourceHandle, 'outputs')], strokeWidth: 1.6 } }, list)); setResult(null); };
   const setConfig = (id, config) => { setNodes((list) => list.map((n) => n.id === id ? { ...n, data: { ...n.data, config } } : n)); setResult(null); };
   const removeBlock = (id) => { setNodes((list) => list.filter((n) => n.id !== id)); setEdges((list) => list.filter((e) => e.source !== id && e.target !== id)); setSelected(null); setResult(null); };
-  const run = () => act(async () => { const r = await request('/v1/blocks/run', { workflow: workflow() }); setResult(r); setSelected(null); setPanel('results'); });
+  const cancelled = useRef(false);
+  const run = () => act(async () => {
+    cancelled.current = false;
+    let current = await request('/v1/blocks/runs', { workflow: workflow() });
+    setProgress(current); setSelected(null); setPanel(null); setResult(null);
+    try {
+      while (current.state === 'running') {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        current = await request(`/v1/blocks/runs/${current.id}`);
+        setProgress(current);
+      }
+    } finally { setProgress(null); }
+    if (current.state === 'succeeded') { setResult(current.result); setPanel('results'); }
+    else if (current.state === 'cancelled') setMessage('Run cancelled');
+    else throw new Error(current.error || 'The run failed');
+  });
+  const cancelRun = () => progress && request(`/v1/blocks/runs/${progress.id}/cancel`, {}).then(setProgress).catch((e) => setError(e.message));
   const validate = () => act(async () => { const v = await request('/v1/blocks/validate', { workflow: workflow() }); setMessage(`Valid · execution order ${v.order.join(' → ')}`); });
   const save = (copy = false) => act(async () => {
     const stored = await request('/v1/blocks/workflows', { name, workflow: workflow(), id: copy ? undefined : record?.id, expected_revision: copy ? undefined : record?.revision });
@@ -167,12 +186,12 @@ function BlockEditor({ seed = null }) {
   };
 
   const keys = useRef();
-  keys.current = { run, save, duplicate, layout, openPalette, selected, palette, nodes, busy };
+  keys.current = { run, cancelRun, running: Boolean(progress), save, duplicate, layout, openPalette, selected, palette, nodes, busy };
   useEffect(() => {
     const onKey = (e) => {
       const k = keys.current, mod = e.ctrlKey || e.metaKey;
       if (e.key === 'Escape') { setPalette(null); setSelected(null); setPanel(null); return; }
-      if (mod && e.key === 'Enter') { e.preventDefault(); if (!k.busy && k.nodes.length) k.run(); return; }
+      if (mod && e.key === 'Enter') { e.preventDefault(); if (k.running) k.cancelRun(); else if (!k.busy && k.nodes.length) k.run(); return; }
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); if (!k.busy && k.nodes.length) k.save(); return; }
       if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); k.openPalette(); return; }
       if (typing(e.target) || mod && e.key.toLowerCase() !== 'd') return;
@@ -199,7 +218,7 @@ function BlockEditor({ seed = null }) {
     return { left: Math.max(12, right ? x + w + 16 : x - width - 16), top: Math.max(12, Math.min(y - 8, box.height - 120)), width, right, caret: Math.max(18, Math.min(y + h / 2 - Math.max(12, Math.min(y - 8, box.height - 120)) - 6, 380)) };
   })();
 
-  return <div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
+  return <IntegrationsContext.Provider value={{ list: integrations.filter((i) => i.adapter_id === 'openfast'), openSettings: onOpenSettings }}><div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
     onDoubleClick={(e) => { if (e.target.classList?.contains('react-flow__pane')) openPalette({ x: e.clientX, y: e.clientY }); }}>
     <ReactFlow nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) setResult(null); }}
       onConnect={onConnect} isValidConnection={isValidConnection} onNodeClick={(_, n) => { setSelected(n.id); setPalette(null); setPanel(null); }}
@@ -216,7 +235,7 @@ function BlockEditor({ seed = null }) {
     </div>
 
     <div role="toolbar" aria-label="Workflow tools" aria-orientation="vertical" className={`${OVERLAY} right-3.5 top-3.5 flex flex-col gap-0.5 p-1`}>
-      <IconButton label="Run workflow" shortcut="Ctrl Enter" tooltipSide="left" icon={Play} disabled={busy || !nodes.length} onClick={run} className="!bg-nv-accent !text-[#1A0F06] hover:!bg-[#FF9A57] disabled:!bg-transparent disabled:!text-nv-muted" />
+      <IconButton label={progress ? 'Cancel run' : 'Run workflow'} shortcut="Ctrl Enter" tooltipSide="left" icon={progress ? Square : Play} disabled={progress ? progress.state !== 'running' : busy || !nodes.length} onClick={progress ? cancelRun : run} className="!bg-nv-accent !text-[#1A0F06] hover:!bg-[#FF9A57] disabled:!bg-transparent disabled:!text-nv-muted" />
       <IconButton label="Validate" tooltipSide="left" icon={CheckCircle2} disabled={busy || !nodes.length} onClick={validate} />
       <IconButton label="Save workflow" shortcut="Ctrl S" tooltipSide="left" icon={Save} disabled={busy || !nodes.length} onClick={() => save()} />
       <div className="mx-1 my-0.5 h-px bg-nv-line" />
@@ -242,7 +261,10 @@ function BlockEditor({ seed = null }) {
     {(error || message) && <div className="absolute left-1/2 top-3.5 z-20 w-[min(560px,60%)] -translate-x-1/2">
       {error ? <Notice tone="err" role="alert" action={<button type="button" aria-label="Dismiss" className="text-nv-muted" onClick={() => setError('')}>×</button>}>{error}</Notice>
         : <Notice tone="ok"><span role="status">{message}</span></Notice>}</div>}
-    {result && <button type="button" onClick={() => setPanel(panel === 'results' ? null : 'results')} className={`${OVERLAY} bottom-3.5 right-3.5 flex h-9 items-center gap-2 px-3 text-[12.5px] hover:bg-nv-hover`}>
+    {progress && <div role="status" aria-label="Run progress" className={`${OVERLAY} bottom-3.5 right-3.5 flex h-9 max-w-[420px] items-center gap-2.5 px-3 text-[12.5px]`}>
+      <span className="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-nv-line"><span className="block h-full bg-nv-accent transition-all" style={{ width: `${Math.round((progress.progress || 0) * 100)}%` }} /></span>
+      <span className="truncate text-nv-reference">{progress.message}</span></div>}
+    {result && !progress && <button type="button" onClick={() => setPanel(panel === 'results' ? null : 'results')} className={`${OVERLAY} bottom-3.5 right-3.5 flex h-9 items-center gap-2 px-3 text-[12.5px] hover:bg-nv-hover`}>
       <StatusDot tone={tone} />{result.status}{result.feasible != null && <> · {result.feasible ? 'hard constraints met' : 'constraint violation'}</>}<Kbd>Details</Kbd></button>}
 
     {card && !palette && <div className="absolute z-20 rounded-2xl border border-nv-edge bg-nv-panel/[0.97] shadow-2xl shadow-black/60" style={{ left: card.left, top: card.top, width: card.width }}>
@@ -259,7 +281,7 @@ function BlockEditor({ seed = null }) {
       <div className="mb-3 flex items-center"><h2 className="m-0 text-[15px] font-semibold">Shortcuts</h2><button type="button" aria-label="Close" className="ml-auto text-nv-muted hover:text-nv-ink" onClick={() => setPanel(null)}><X size={16} /></button></div>
       <div className="grid grid-cols-1 gap-x-9 sm:grid-cols-2">{shortcuts.map(([label, combo]) => <div key={label} className="flex items-center justify-between border-b border-nv-line py-1.5 text-[12.5px] text-nv-reference">
         <span>{label}</span><span className="flex gap-1">{combo.split(' ').map((c) => <Kbd key={c}>{c}</Kbd>)}</span></div>)}</div></div>}
-  </div>;
+  </div></IntegrationsContext.Provider>;
 }
 
 function BlockSearch({ palette, blocks, onChange, onPick, onClose, bounds }) {
@@ -366,8 +388,20 @@ function ScalarInput({ name, value, onChange, catalog, rotors }) {
   return <input aria-label={name} className={`${fieldClass} ${name === 'expression' || name === 'quantity' ? 'font-mono' : ''}`} value={value ?? ''} onChange={(e) => onChange(e.target.value)} />;
 }
 
+function IntegrationField({ value, onChange }) {
+  const { list, openSettings } = useContext(IntegrationsContext);
+  if (!list.length) return <div className="flex flex-col gap-1.5 rounded-md border border-nv-warn/30 bg-nv-warn/10 p-2.5 text-[12.5px] text-nv-reference">
+    OpenFAST is not set up on this computer.
+    {openSettings && <div><Button onClick={openSettings}>Set up OpenFAST</Button></div>}</div>;
+  return <label className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2 text-[12.5px] text-nv-muted">executable
+    <select aria-label="OpenFAST executable" className={fieldClass} value={value || ''} onChange={(e) => onChange(e.target.value)}>
+      <option value="" className="bg-nv-panel">First configured</option>
+      {list.map((i) => <option key={i.id} value={i.id} className="bg-nv-panel">{i.probe?.version ? `OpenFAST ${i.probe.version}` : 'OpenFAST'} · {String(i.executable).split('/').slice(-4).join('/')}</option>)}</select></label>;
+}
+
 function ConfigField({ name, value, onChange, catalog, rotors, path }) {
   const label = name.replaceAll('_', ' ');
+  if (name === 'integration_id') return <IntegrationField value={value} onChange={onChange} />;
   if (name === 'bindings') return <BindingsEditor value={value || {}} onChange={onChange} />;
   if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {
     return <label className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2 text-[12.5px] text-nv-muted">{label}
