@@ -8,6 +8,7 @@ from nova.application.analysis import run_propeller_analysis
 from nova.application.geometry import create_propeller_geometry
 from nova.core.data import Port, content_hash
 from nova.core.polars import PolarProvider, ViternaPolar
+from nova.physics import wake as upstream
 
 DESIGN = Port('propeller_design', 'SI', shape='record')
 GEOMETRY = Port('rotor_geometry', 'm', shape='radial', frame='rotor', spatial_association='blade')
@@ -101,13 +102,20 @@ def validate(workflow):
         elif node['type'] == 'analysis':
             if config.get('model', 'bemt') not in ('bemt', 'llt', 'vlm', 'bem'):
                 raise ValueError('Unknown aerodynamic solver')
-            if set(config) - {'model', 'max_iterations', 'tolerance', 'tip_loss', 'hub_loss', 'post_stall'}:
+            if set(config) - {'model', 'max_iterations', 'tolerance', 'tip_loss', 'hub_loss', 'post_stall', 'forward_speed_m_s', 'upstream_wake'}:
                 raise ValueError('Unsupported analysis configuration')
             for key in ('tip_loss', 'hub_loss'):
                 if config.get(key, 'prandtl') not in ('prandtl', 'none'):
                     raise ValueError('Tip and hub loss accept prandtl or none')
             if config.get('post_stall', 'clip') not in ('clip', 'viterna'):
                 raise ValueError('Post-stall treatment accepts clip or viterna')
+            forward = config.get('forward_speed_m_s', 0.0)
+            if type(forward) not in (int, float) or not math.isfinite(forward) or not 0 <= forward <= 400:
+                raise ValueError('Forward speed must be a number between 0 and 400 m/s')
+            if forward > 0 and config.get('model', 'bemt') != 'bemt':
+                raise ValueError('Forward speed is available with the BEMT solver')
+            if upstream.validate(config.get('upstream_wake')) and forward <= 0:
+                raise ValueError('An upstream wake needs a forward speed to act on')
             if type(config.get('max_iterations', 200)) is not int:
                 raise ValueError('Iteration budget must be an integer')
             tolerance = config.get('tolerance', 1e-5)
@@ -219,7 +227,11 @@ def execute(workflow, inputs, polar_asset, conditions=None, *, progress=None, ca
                 provider = PolarProvider(polar_asset['points'], polar_asset['mach'], polar_asset['ncrit'])
                 if config.get('post_stall', 'clip') == 'viterna':
                     provider = ViternaPolar(provider)
-                solver = BEMTSolver(air_density=density, air_viscosity=viscosity, polar_provider=provider,
+                # An upstream rotor or body slows the forward flow through the disk (mean deficit, axisymmetric).
+                free_stream = float(config.get('forward_speed_m_s', 0.0))
+                wake = upstream.mean_deficit(config.get('upstream_wake'), args['geometry']['diameter_m'])
+                axial_velocity = free_stream * (1 - wake['mean_deficit'])
+                solver = BEMTSolver(axial_velocity_m_s=axial_velocity, air_density=density, air_viscosity=viscosity, polar_provider=provider,
                                     max_iterations=config.get('max_iterations', 200), tolerance=config.get('tolerance', 1e-5),
                                     tip_loss=config.get('tip_loss', 'prandtl'), hub_loss=config.get('hub_loss', 'prandtl'))
             else:
@@ -230,6 +242,12 @@ def execute(workflow, inputs, polar_asset, conditions=None, *, progress=None, ca
             result = run_propeller_analysis(model=model, geometry_data=args['geometry'], rpm=inputs['rpm'],
                                            target_thrust_n=inputs['thrust_target'], solver=solver)
             if model == 'bemt':
+                if free_stream > 0:
+                    result['inflow'] = {'free_stream_velocity_m_s': free_stream, 'effective_velocity_m_s': axial_velocity,
+                                        **({'upstream_wake': wake} if wake['kind'] != 'none' else {})}
+                    if wake['kind'] != 'none':
+                        result['warnings'].append(f"Upstream {wake['kind']} wake ({wake['model']}) lowers the mean inflow by {100 * wake['mean_deficit']:.1f} %; "
+                                                  'blade load is not resolved around the azimuth')
                 result['corrections'] = {'tip_loss': config.get('tip_loss', 'prandtl'), 'hub_loss': config.get('hub_loss', 'prandtl'),
                                          'post_stall': config.get('post_stall', 'clip')}
                 result['warnings'].append('Polar policy: endpoint clipping; synthetic' if polar_asset.get('demonstration')
@@ -246,16 +264,21 @@ def execute(workflow, inputs, polar_asset, conditions=None, *, progress=None, ca
             result['node_id'] = id
             result['provenance'] = {'workflow_hash': content_hash(workflow), 'inputs_hash': content_hash(inputs),
                                     'polar_hash': (polar_asset.get('content_hash') or content_hash(polar_asset)) if polar_asset else None,
-                                    'conditions': {'air_density_kg_m3': density, 'air_viscosity_pa_s': viscosity, 'axial_velocity_m_s': 0.},
+                                    'conditions': {'air_density_kg_m3': density, 'air_viscosity_pa_s': viscosity,
+                                                   'axial_velocity_m_s': axial_velocity if model == 'bemt' else 0.,
+                                                   'free_stream_velocity_m_s': free_stream if model == 'bemt' else 0.},
                                     'geometry_hash': content_hash(args['geometry']),
                                     'solver_configuration': config,
                                     'polar_conditions': {'mach': polar_asset['mach'], 'ncrit': polar_asset['ncrit']} if polar_asset else None}
+            moving = model == 'bemt' and axial_velocity > 0 and result['performance']['power_w'] > 0
             result['quantities'] = {'figure_of_merit': result['performance']['efficiency'],
-                                   'propulsive_efficiency': None}
+                                   'propulsive_efficiency': result['performance']['thrust_n'] * axial_velocity / result['performance']['power_w'] if moving else None}
             n, d = inputs['rpm'] / 60., args['geometry']['diameter_m']
             result['coefficients'] = {'CT': result['performance']['thrust_n'] / (density*n*n*d**4),
                                       'CP': result['performance']['power_w'] / (density*n**3*d**5),
                                       'CQ': result['performance']['torque_nm'] / (density*n*n*d**5)}
+            if model == 'bemt' and axial_velocity > 0:
+                result['coefficients']['J'] = axial_velocity / (n * d)
             results.append(result)
             if result.get('convergence') and not result['convergence']['converged']:
                 raise NumericalFailure(result)

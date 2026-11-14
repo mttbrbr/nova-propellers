@@ -119,6 +119,31 @@ class ProjectSimulationTests(unittest.TestCase):
         run = self.execute_simulation(saved)
         self.assertEqual(run['result']['analyses'][0]['corrections']['post_stall'], 'viterna')
 
+    def test_forward_speed_and_upstream_wake_act_on_the_native_propeller(self):
+        first = self.save('Forward flight')
+        def configured(**config):
+            edit = {key: first[key] for key in ('name', 'inputs', 'workflow', 'polar_asset_id', 'conditions', 'project_id')}
+            edit['workflow'] = copy.deepcopy(first['workflow'])
+            edit['workflow']['nodes'][3]['config'].update(config)
+            return self.client.post('/api/v1/simulations', json=edit)
+        static = self.execute_simulation(first)['result']['analyses'][0]
+        self.assertNotIn('inflow', static)
+        saved = configured(forward_speed_m_s=12.0)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        cruise = self.execute_simulation(saved.json())['result']['analyses'][0]
+        self.assertEqual(cruise['inflow']['effective_velocity_m_s'], 12.0)
+        self.assertGreater(cruise['quantities']['propulsive_efficiency'], 0.0)
+        self.assertLess(cruise['performance']['thrust_n'], static['performance']['thrust_n'])
+        wake = {'kind': 'body', 'model': 'gaussian', 'diameter_m': 0.1, 'coefficient': 1.0, 'distance_m': 0.3}
+        behind = configured(forward_speed_m_s=12.0, upstream_wake=wake)
+        self.assertEqual(behind.status_code, 200, behind.text)
+        shadowed = self.execute_simulation(behind.json())['result']['analyses'][0]
+        self.assertLess(shadowed['inflow']['effective_velocity_m_s'], 12.0)
+        self.assertEqual(shadowed['inflow']['upstream_wake']['kind'], 'body')
+        self.assertNotEqual(shadowed['performance']['thrust_n'], cruise['performance']['thrust_n'])
+        self.assertEqual(configured(upstream_wake=wake).status_code, 422)
+        self.assertEqual(configured(forward_speed_m_s=-1.0).status_code, 422)
+
     def test_study_and_optimization_keep_saved_simulation_lineage(self):
         simulation = self.save('Saved LLT variant', 'llt')
         changed = copy.deepcopy(self.payload)
