@@ -6,6 +6,14 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- *OpenFAST case from rotor* block: writes a rigid-rotor OpenFAST 5 case
+  (Simplified ElastoDyn with prescribed speed and pitch, AeroDyn BEMT, steady
+  InflowWind) from a Nova horizontal-axis rotor, using Nova's own polars at each
+  station's Reynolds number, and feeds *OpenFAST run*. It also emits Nova's BEMT
+  result for the same rotor. Template *OpenFAST rigid rotor vs Nova BEMT*. On
+  the default 5 m rotor at 8 m/s, TSR 7, OpenFAST 5.0.0 gave power −1.1 %,
+  thrust +0.1 % and torque −1.1 % against Nova's BEMT. No structure, tower or
+  controller is modelled; other rotor families are rejected.
 - Settings replaces the Integrations workspace in the rail (gear at the bottom,
   `Ctrl ,`, header menu): OpenFAST and PyWake paths and detection live in
   Settings → Integrations, plus the shortcut list. Cases, output import and

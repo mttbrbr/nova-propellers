@@ -142,6 +142,29 @@ TEMPLATES = {
         'edges': [_edge('case', 'case', 'run', 'case'), _edge('run', 'values', 'limits', 'values'),
                   _edge('run', 'table', 'report', 'b'), _edge('limits', 'report', 'report', 'c')],
     },
+    'openfast_rigid_vs_bemt': {
+        'name': 'OpenFAST rigid rotor vs Nova BEMT',
+        'description': 'Write a rigid-rotor OpenFAST case from a wind-turbine rotor, run it and compare power, thrust and torque with Nova\'s BEMT.',
+        'nodes': [
+            _node('rotor', 'rotor_hawt', {}, 0, 0),
+            _node('operating', 'operating_point', {'fluid': {'preset': 'air'}, 'operating': {'velocity_m_s': 8.0, 'tip_speed_ratio': 7.0}}, 280, 0),
+            _node('case', 'openfast_rotor_case', {'duration_s': 10.0, 'dt_s': 0.02, 'timeout_seconds': 600.0}, 560, 0),
+            _node('run', 'openfast_run', {'integration_id': '', 'start_time_s': 5.0, 'statistics': [
+                {'channel': 'RtAeroPwr', 'stat': 'mean', 'name': 'openfast_power_w', 'unit': 'W'},
+                {'channel': 'RtAeroFxh', 'stat': 'mean', 'name': 'openfast_thrust_n', 'unit': 'N'},
+                {'channel': 'RtAeroMxh', 'stat': 'mean', 'name': 'openfast_torque_nm', 'unit': 'N·m'}]}, 840, 0),
+            _node('both', 'merge', {}, 1120, 0),
+            _node('difference', 'expression', {'assignments': [
+                {'name': 'power_difference_pct', 'expression': '100 * (openfast_power_w - nova_power_w) / nova_power_w', 'unit': '%'},
+                {'name': 'thrust_difference_pct', 'expression': '100 * (openfast_thrust_n - nova_thrust_n) / nova_thrust_n', 'unit': '%'},
+                {'name': 'torque_difference_pct', 'expression': '100 * (openfast_torque_nm - nova_torque_nm) / nova_torque_nm', 'unit': '%'}]}, 1400, 0),
+            _node('report', 'report', {'title': 'OpenFAST vs Nova BEMT'}, 1680, 0),
+        ],
+        'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'case', 'spec'),
+                  _edge('case', 'case', 'run', 'case'), _edge('case', 'reference', 'both', 'a'), _edge('run', 'values', 'both', 'b'),
+                  _edge('both', 'values', 'difference', 'values'), _edge('run', 'table', 'report', 'b'),
+                  _edge('difference', 'values', 'report', 'a')],
+    },
 }
 
 

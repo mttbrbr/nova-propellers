@@ -562,6 +562,33 @@ def _openfast_run(node, args, cancelled):
             'values': record}
 
 
+def _openfast_rotor_case(node, args):
+    import shutil
+    import uuid
+    import database
+    from nova.adapters.openfast_case import OUTPUT, CaseError, SETTINGS, write_rigid_case
+    config = node.get('config', {})
+    settings = {k: config[k] for k in SETTINGS if k in config}
+    parent = database.DB_PATH.parent / 'generated-cases'
+    parent.mkdir(parents=True, exist_ok=True)
+    scratch = parent / f'.tmp-{uuid.uuid4().hex}'
+    try:
+        info = write_rigid_case(args['spec'], scratch, settings)
+        final = parent / info['case_hash'][:20]
+        if final.exists():
+            shutil.rmtree(scratch)
+        else:
+            scratch.rename(final)
+    except (CaseError, ValueError, KeyError) as exc:
+        shutil.rmtree(scratch, ignore_errors=True)
+        raise BlockError(str(exc)) from exc
+    result = rotors.analyze(args['spec'])
+    reference = {f'nova_{k}': v for k, v in rotors.scalar_outputs(result).items() if k in ('power_w', 'thrust_n', 'torque_nm', 'cp', 'ct')}
+    case = {'case_directory': str(final.resolve()), 'input_file': info['input_file'], 'output_file': OUTPUT,
+            'timeout_seconds': float(config.get('timeout_seconds', 600.0))}
+    return {'case': case, 'reference': reference}
+
+
 HANDLERS = {
     'parameter': _parameter_block, 'parameter_set': _parameter_set, 'expression': _expression,
     'merge': lambda node, args: {'values': {**args['a'], **args['b']}},
@@ -570,6 +597,7 @@ HANDLERS = {
     'operating_point': _operating, 'marine_conditions': _marine,
     'corrections_axial': _corrections, 'corrections_vertical': _corrections,
     'solver': _solver, 'performance_curve': _curve, 'openfast_case': _openfast_case,
+    'openfast_rotor_case': _openfast_rotor_case,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run}
 

@@ -149,6 +149,14 @@ BLOCKS = {
         description='Self-contained OpenFAST input folder (absolute path), its .fst file and the expected output. Inspected, never edited.',
         inputs=[], outputs=[port('case', 'openfast_case')],
         defaults={'case_directory': '', 'input_file': 'model.fst', 'output_file': 'model.outb', 'timeout_seconds': 600.0}),
+    'openfast_rotor_case': dict(
+        family='specific', category='OpenFAST', label='OpenFAST case from rotor',
+        description='Writes a rigid-rotor OpenFAST case (Simplified ElastoDyn, AeroDyn BEMT, steady wind) from the connected '
+                    'horizontal-axis rotor and its operating point. Airfoil tables are Nova\'s own polars. No structure or '
+                    'controller is modelled. Also emits Nova\'s own BEMT result for the same rotor as a reference.',
+        inputs=[port('spec', 'rotor_spec')], outputs=[port('case', 'openfast_case'), port('reference', 'record')],
+        defaults={'duration_s': 10.0, 'dt_s': 0.02, 'hub_height_m': None, 'overhang_m': None, 'shaft_tilt_deg': 0.0,
+                  'precone_deg': 0.0, 'timeout_seconds': 600.0}),
     'openfast_run': dict(
         family='specific', category='OpenFAST', label='OpenFAST run',
         description='Runs the case with the OpenFAST executable configured in Settings → Integrations, then reduces every channel to '

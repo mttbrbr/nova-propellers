@@ -113,6 +113,18 @@ Schema 2 workflows are typed DAGs. Port types: `record` (named scalars),
   marine rotors, operating point (fluid, velocity, rpm/λ/J), hull & immersion,
   axial or VAWT corrections, rotor solver, performance curve and design checks.
 
+* **OpenFAST case from rotor** turns a horizontal-axis rotor (with its operating
+  point) into a rigid-rotor OpenFAST 5 case: `CompElast=3` (Simplified
+  ElastoDyn, prescribed rotor speed and pitch), AeroDyn quasi-steady BEMT with
+  tip/hub loss from the rotor's corrections, steady InflowWind, no controller.
+  Each blade station gets an airfoil file holding Nova's polar at that station's
+  Reynolds number, so both codes use the same section data. Settings: duration,
+  time step, hub height, overhang, shaft tilt, precone; unset geometry takes
+  documented defaults (hub height 1.5 R, overhang −0.05 R). The case folder is
+  content-addressed under the data directory (`generated-cases`). Output
+  `reference` carries Nova's BEMT power, thrust and torque for comparison.
+  AeroDyn is validated for wind turbines, so propellers, VAWTs and marine
+  rotors are rejected.
 * **OpenFAST blocks** (port type `openfast_case`): *OpenFAST case* points at a
   self-contained input folder (absolute path, `.fst`, expected output) and is
   only inspected. *OpenFAST run* snapshots the case, runs the executable
