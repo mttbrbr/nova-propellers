@@ -235,7 +235,7 @@ const correctionText = {
   tip_loss: ['Tip loss', 'Finite blade number: circulation drops to zero at the tip (Prandtl; Shen adds a load-dependent factor).'],
   hub_loss: ['Hub loss', 'Same effect at the blade root next to the hub.'],
   high_induction: ['High induction', 'Momentum theory fails above a ≈ 0.4; Glauert, Buhl or Spera replace it with an empirical thrust curve.'],
-  rotational_augmentation: ['3-D rotation (Snel)', 'Rotating inboard sections stall later and give extra lift.'],
+  rotational_augmentation: ['Rotational stall delay', 'Rotating inboard sections stall later and give extra lift. Snel adds lift only; Du–Selig also raises drag and depends on the local speed ratio.'],
   compressibility: ['Compressibility', 'Prandtl–Glauert lift correction for section Mach numbers up to 0.7.'],
   finite_aspect_ratio: ['Finite aspect ratio (tip)', 'Lanchester–Prandtl lifting line: lower lift slope and induced drag of a finite blade.'],
   flow_curvature: ['Flow curvature', 'A blade on a circular path sees a virtual camber and incidence (Migliore).'],
@@ -243,7 +243,8 @@ const correctionText = {
   strut_drag: ['Strut drag', 'Parasitic torque of the radial struts.'],
   shaft_wake: ['Shaft wake (hub)', 'Velocity deficit behind the central shaft for downwind passages.'],
 };
-const optionLabel = (value) => typeof value === 'boolean' ? (value ? 'On' : 'Off') : String(value).replaceAll('_', ' ');
+const optionNames = { snel: 'Snel', du_selig: 'Du–Selig', gormont_berg: 'Gormont–Berg', prandtl_glauert: 'Prandtl–Glauert', prandtl: 'Prandtl', shen: 'Shen' };
+const optionLabel = (value) => typeof value === 'boolean' ? (value ? 'On' : 'Off') : optionNames[value] || String(value).replaceAll('_', ' ');
 
 // Fidelity levels for this rotor, stated honestly: what runs today and what is planned.
 function ModelLadder({ family, method, catalog }) {
@@ -262,6 +263,32 @@ function ModelLadder({ family, method, catalog }) {
       <span className="text-xs text-nv-muted">{state}</span>
     </div>)}
   </section>;
+}
+
+// Wake of a rotor or body upstream (tandem rotors, fuselage, nacelle, tower): its mean velocity
+// deficit over this disk lowers the inflow. The solver stays axisymmetric; see the notice.
+function UpstreamWake({ family, spec, setSpec, catalog }) {
+  const wake = spec.upstream_wake || { kind: 'none' };
+  const R = (spec.geometry.radius_m ?? (spec.geometry.diameter_m ? spec.geometry.diameter_m / 2 : 1));
+  const defaults = { rotor: { diameter_m: 2 * R, coefficient: 0.75, distance_m: 6 * R, offset_m: 0, decay: catalog.upstream_wake.default_decay.rotor },
+    body: { diameter_m: R, coefficient: 1, distance_m: 4 * R, offset_m: 0, decay: catalog.upstream_wake.default_decay.body } };
+  const set = (patch) => setSpec({ ...spec, upstream_wake: { ...wake, ...patch } });
+  const choose = (kind) => setSpec({ ...spec, upstream_wake: kind === 'none' ? { kind } : { model: 'gaussian', ...defaults[kind], ...(wake.kind === kind ? wake : {}), kind } });
+  const summary = wake.kind === 'none' ? 'None' : `${wake.kind} · ${wake.model} · ${wake.distance_m} m behind`;
+  return <Disclosure title="Upstream wake" summary={summary}>
+    <SelectField label="Source" ariaLabel="Upstream wake source" value={wake.kind} onChange={choose}
+      options={[['none', 'None'], ['rotor', 'Rotor ahead (tandem)'], ['body', 'Body ahead (fuselage, nacelle, tower)']]} />
+    {wake.kind !== 'none' && <>
+      <SelectField label="Wake model" ariaLabel="Upstream wake model" value={wake.model} onChange={(v) => set({ model: v })}
+        options={catalog.upstream_wake.models.map((m) => [m, m === 'jensen' ? 'Jensen (top-hat)' : 'Gaussian'])} />
+      <Field label={wake.kind === 'rotor' ? 'Rotor diameter' : 'Body diameter'} unit="m" value={wake.diameter_m ?? ''} onChange={(v) => set({ diameter_m: v })} />
+      <Field label={wake.kind === 'rotor' ? 'Thrust coefficient Ct' : 'Drag coefficient Cd'} value={wake.coefficient ?? ''} onChange={(v) => set({ coefficient: v })} />
+      <Field label="Distance upstream" unit="m" value={wake.distance_m ?? ''} onChange={(v) => set({ distance_m: v })} />
+      <Field label="Lateral offset" unit="m" value={wake.offset_m ?? 0} onChange={(v) => set({ offset_m: v })} />
+      <Field label="Wake growth k" value={wake.decay ?? ''} onChange={(v) => set({ decay: v })} />
+      <p className="m-0 text-xs leading-relaxed text-nv-muted">The mean deficit over this {family === 'vawt' ? 'swept area' : 'disk'} lowers the inflow velocity; rpm stays as commanded. Load around the azimuth is not resolved in this model.</p>
+    </>}
+  </Disclosure>;
 }
 
 export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runDisabled }) {
@@ -295,6 +322,7 @@ export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runD
           options={options[key].map((o) => [String(o), optionLabel(o)])}
           onChange={(v) => setSpec({ ...spec, corrections: { ...spec.corrections, [key]: typeof options[key][0] === 'boolean' ? v === 'true' : v } })} />)}
       </Section>
+      <UpstreamWake family={family} spec={spec} setSpec={setSpec} catalog={catalog} />
       {family === 'marine' && <Disclosure title="Hull & immersion" summary={`w ${spec.marine.wake_fraction} · t ${spec.marine.thrust_deduction}`}>
         {[['shaft_depth_m', 'Shaft depth', 'm'], ['wake_fraction', 'Wake w', ''], ['thrust_deduction', 'Thrust ded. t', ''], ['relative_rotative_efficiency', 'ηR', ''], ['keller_k', 'Keller K', '']]
           .map(([key, label, unit]) => <Field key={key} label={label} unit={unit} value={spec.marine[key] ?? ''} onChange={(v) => setSpec({ ...spec, marine: { ...spec.marine, [key]: v } })} />)}
@@ -313,8 +341,8 @@ export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runD
       {excluded.length > 0 && <section aria-label="Not applicable" className="flex flex-col gap-2">
         <h2 className="m-0 text-[13px] font-semibold text-nv-muted">Not applicable to this rotor</h2>
         <p className="m-0 text-[13px] leading-relaxed text-nv-muted">{excluded.map((key) => correctionText[key][0]).join(', ')} — {
-          family === 'marine' ? 'water is incompressible, propellers never reach windmill-brake induction and Snel models turbine root stall.'
-            : family === 'propeller' ? 'propellers never reach windmill-brake induction and Snel models turbine root stall.'
+          family === 'marine' ? 'water is incompressible, propellers never reach windmill-brake induction and rotational stall delay models turbine root stall.'
+            : family === 'propeller' ? 'propellers never reach windmill-brake induction.'
               : family === 'hawt' ? 'turbine tip Mach numbers stay well below compressibility effects.' : ''}</p>
       </section>}
     </>}
