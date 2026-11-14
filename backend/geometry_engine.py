@@ -441,6 +441,8 @@ def _evaluate_bemt_arrays(
     low_re_strategy: str = "clip",
     max_tangential_induction_ratio: float = 0.75,
     polar_provider=None,
+    tip_loss: str = "prandtl",
+    hub_loss: str = "prandtl",
 ) -> dict:
     """Evaluate an axial-flow propeller with blade-element/momentum theory.
 
@@ -485,7 +487,7 @@ def _evaluate_bemt_arrays(
                   if polar_provider else _polar_coefficients(spec, alpha, reynolds, low_re_strategy))
         cn = cl * np.cos(phi) - cd * np.sin(phi)
         ct = cl * np.sin(phi) + cd * np.cos(phi)
-        loss = _prandtl_loss(spec.blades, radii, radius, phi)
+        loss = _prandtl_loss(spec.blades, radii, radius, phi, tip_loss, hub_loss)
         dynamic_pressure = 0.5 * air_density * relative_velocity**2
         thrust_per_radius = spec.blades * dynamic_pressure * chord * cn
         torque_per_radius = spec.blades * radii * dynamic_pressure * chord * ct
@@ -579,7 +581,7 @@ def _evaluate_bemt_arrays(
     reynolds = air_density * relative_velocity * chord / air_viscosity
     cl, cd = (polar_provider(np.degrees(alpha), reynolds, low_re_strategy)
               if polar_provider else _polar_coefficients(spec, alpha, reynolds, low_re_strategy))
-    loss = _prandtl_loss(spec.blades, radii, radius, phi)
+    loss = _prandtl_loss(spec.blades, radii, radius, phi, tip_loss, hub_loss)
     dr = np.gradient(radii)
 
     q = 0.5 * air_density * relative_velocity**2
@@ -876,13 +878,14 @@ def _momentum_induced_velocity(spec: PropellerSpec) -> float:
     return sqrt(spec.thrust_target / (2.0 * AIR_DENSITY * disk_area))
 
 
-def _prandtl_loss(blades: int, radii: np.ndarray, radius: float, phi: np.ndarray) -> np.ndarray:
+def _prandtl_loss(blades: int, radii: np.ndarray, radius: float, phi: np.ndarray,
+                  tip: str = "prandtl", hub: str = "prandtl") -> np.ndarray:
     sin_phi = np.maximum(np.sin(np.abs(phi)), 1e-4)
     hub_radius = max(radius * 0.14, 0.012)
     tip_exponent = -blades / 2.0 * (radius - radii) / np.maximum(radii * sin_phi, 1e-6)
     root_exponent = -blades / 2.0 * (radii - hub_radius) / np.maximum(hub_radius * sin_phi, 1e-6)
-    tip_factor = 2.0 / pi * np.arccos(np.clip(np.exp(tip_exponent), 0.0, 1.0))
-    root_factor = 2.0 / pi * np.arccos(np.clip(np.exp(root_exponent), 0.0, 1.0))
+    tip_factor = 2.0 / pi * np.arccos(np.clip(np.exp(tip_exponent), 0.0, 1.0)) if tip == "prandtl" else np.ones_like(radii)
+    root_factor = 2.0 / pi * np.arccos(np.clip(np.exp(root_exponent), 0.0, 1.0)) if hub == "prandtl" else np.ones_like(radii)
     return np.clip(tip_factor * root_factor, 0.12, 1.0)
 
 

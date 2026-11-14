@@ -63,6 +63,62 @@ class ProjectSimulationTests(unittest.TestCase):
             time.sleep(.05)
         self.fail('Small simulation exceeded test budget')
 
+    def test_versions_lock_geometry_after_a_run_and_corrections_change_the_result(self):
+        first = self.save('Baseline')
+        self.assertEqual(first['version'], '1.0.0')
+        plain = self.execute_simulation(first)
+        self.assertEqual(plain['result']['analyses'][0]['corrections'], {'tip_loss': 'prandtl', 'hub_loss': 'prandtl', 'post_stall': 'clip'})
+        edit = {key: first[key] for key in ('name', 'inputs', 'workflow', 'polar_asset_id', 'conditions', 'project_id', 'id')}
+        edit['expected_revision'] = first['revision']
+        # Speed is a condition and stays editable; geometry does not.
+        faster = copy.deepcopy(edit)
+        faster['inputs']['rpm'] = first['inputs']['rpm'] + 500
+        saved = self.client.post('/api/v1/simulations', json=faster)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        wider = copy.deepcopy(edit)
+        wider.update(expected_revision=saved.json()['revision'])
+        wider['inputs']['diameter'] = first['inputs']['diameter'] * 1.1
+        self.assertEqual(self.client.post('/api/v1/simulations', json=wider).status_code, 422)
+        child = self.client.post(f"/api/v2/simulations/{first['id']}/new-version", json={})
+        self.assertEqual(child.status_code, 200, child.text)
+        self.assertEqual(child.json()['version'], '1.0.1')
+        # Switching the corrections off raises the loaded blade's thrust.
+        free = child.json()
+        free_edit = {key: free[key] for key in ('name', 'inputs', 'workflow', 'polar_asset_id', 'conditions', 'project_id', 'id')}
+        free_edit.update(expected_revision=free['revision'])
+        free_edit['workflow']['nodes'][3]['config'].update(tip_loss='none', hub_loss='none')
+        free_saved = self.client.post('/api/v1/simulations', json=free_edit)
+        self.assertEqual(free_saved.status_code, 200, free_saved.text)
+        unloaded = self.execute_simulation(free_saved.json())
+        self.assertEqual(unloaded['result']['analyses'][0]['corrections'], {'tip_loss': 'none', 'hub_loss': 'none', 'post_stall': 'clip'})
+        self.assertNotEqual(unloaded['result']['analyses'][0]['performance']['thrust_n'], plain['result']['analyses'][0]['performance']['thrust_n'])
+
+    def test_viterna_extends_the_polar_only_beyond_the_samples(self):
+        import numpy as np
+        from nova.core.polars import PolarProvider, ViternaPolar
+        base = PolarProvider(self.asset['points'], self.asset['mach'], self.asset['ncrit'])
+        extended = ViternaPolar(base)
+        hi = extended.hi
+        reynolds = np.full(4, base.reynolds[len(base.reynolds) // 2])
+        alpha = np.array([hi - 1.0, hi + 20.0, 90.0, 120.0])
+        clipped_cl, clipped_cd = base(alpha, reynolds)
+        cl, cd = extended(alpha, reynolds)
+        self.assertAlmostEqual(cl[0], clipped_cl[0], places=9)
+        self.assertNotAlmostEqual(cl[1], clipped_cl[1], places=3)
+        self.assertGreater(cd[2], cd[1] * 0.9)
+        self.assertGreater(cd[2], 1.0)
+        self.assertLess(abs(cl[2]), 0.2)
+        self.assertLess(cl[3], 0.0)
+        self.assertTrue(extended.extended)
+        # Selecting it in the workflow is stored with the run.
+        first = self.save('Viterna')
+        edit = {key: first[key] for key in ('name', 'inputs', 'workflow', 'polar_asset_id', 'conditions', 'project_id', 'id')}
+        edit.update(expected_revision=first['revision'])
+        edit['workflow']['nodes'][3]['config']['post_stall'] = 'viterna'
+        saved = self.client.post('/api/v1/simulations', json=edit).json()
+        run = self.execute_simulation(saved)
+        self.assertEqual(run['result']['analyses'][0]['corrections']['post_stall'], 'viterna')
+
     def test_study_and_optimization_keep_saved_simulation_lineage(self):
         simulation = self.save('Saved LLT variant', 'llt')
         changed = copy.deepcopy(self.payload)

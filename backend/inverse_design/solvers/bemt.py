@@ -23,6 +23,8 @@ class BEMTSolver(BaseSolver):
         low_re_strategy: str = "clip",
         max_tangential_induction_ratio: float = 0.75,
         polar_provider=None,
+        tip_loss: str = "prandtl",
+        hub_loss: str = "prandtl",
     ) -> None:
         # Retained only for API compatibility. Analysis must not depend on a
         # requested thrust value.
@@ -37,6 +39,8 @@ class BEMTSolver(BaseSolver):
         self.low_re_strategy = low_re_strategy
         self.max_tangential_induction_ratio = max_tangential_induction_ratio
         self.polar_provider = polar_provider
+        self.tip_loss = tip_loss
+        self.hub_loss = hub_loss
 
     def evaluate(self, geometry_data: GeometryData, rpm: float) -> SolverResult:
         return self.evaluate_detailed(geometry_data, rpm)["performance"]
@@ -65,6 +69,8 @@ class BEMTSolver(BaseSolver):
             low_re_strategy=self.low_re_strategy,
             max_tangential_induction_ratio=self.max_tangential_induction_ratio,
             polar_provider=self.polar_provider,
+            tip_loss=self.tip_loss,
+            hub_loss=self.hub_loss,
         )
         omega = 2.0 * np.pi * rpm / 60.0
         performance = {

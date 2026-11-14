@@ -7,7 +7,7 @@ from dataclasses import asdict
 from nova.application.analysis import run_propeller_analysis
 from nova.application.geometry import create_propeller_geometry
 from nova.core.data import Port, content_hash
-from nova.core.polars import PolarProvider
+from nova.core.polars import PolarProvider, ViternaPolar
 
 DESIGN = Port('propeller_design', 'SI', shape='record')
 GEOMETRY = Port('rotor_geometry', 'm', shape='radial', frame='rotor', spatial_association='blade')
@@ -101,8 +101,13 @@ def validate(workflow):
         elif node['type'] == 'analysis':
             if config.get('model', 'bemt') not in ('bemt', 'llt', 'vlm', 'bem'):
                 raise ValueError('Unknown aerodynamic solver')
-            if set(config) - {'model', 'max_iterations', 'tolerance'}:
+            if set(config) - {'model', 'max_iterations', 'tolerance', 'tip_loss', 'hub_loss', 'post_stall'}:
                 raise ValueError('Unsupported analysis configuration')
+            for key in ('tip_loss', 'hub_loss'):
+                if config.get(key, 'prandtl') not in ('prandtl', 'none'):
+                    raise ValueError('Tip and hub loss accept prandtl or none')
+            if config.get('post_stall', 'clip') not in ('clip', 'viterna'):
+                raise ValueError('Post-stall treatment accepts clip or viterna')
             if type(config.get('max_iterations', 200)) is not int:
                 raise ValueError('Iteration budget must be an integer')
             tolerance = config.get('tolerance', 1e-5)
@@ -212,8 +217,11 @@ def execute(workflow, inputs, polar_asset, conditions=None, *, progress=None, ca
                 if not polar_asset:
                     raise ValueError('Select a polar asset; synthetic data must be explicitly selected')
                 provider = PolarProvider(polar_asset['points'], polar_asset['mach'], polar_asset['ncrit'])
+                if config.get('post_stall', 'clip') == 'viterna':
+                    provider = ViternaPolar(provider)
                 solver = BEMTSolver(air_density=density, air_viscosity=viscosity, polar_provider=provider,
-                                    max_iterations=config.get('max_iterations', 200), tolerance=config.get('tolerance', 1e-5))
+                                    max_iterations=config.get('max_iterations', 200), tolerance=config.get('tolerance', 1e-5),
+                                    tip_loss=config.get('tip_loss', 'prandtl'), hub_loss=config.get('hub_loss', 'prandtl'))
             else:
                 solver = create_solver(model)
                 solver.rho = density
@@ -222,10 +230,14 @@ def execute(workflow, inputs, polar_asset, conditions=None, *, progress=None, ca
             result = run_propeller_analysis(model=model, geometry_data=args['geometry'], rpm=inputs['rpm'],
                                            target_thrust_n=inputs['thrust_target'], solver=solver)
             if model == 'bemt':
+                result['corrections'] = {'tip_loss': config.get('tip_loss', 'prandtl'), 'hub_loss': config.get('hub_loss', 'prandtl'),
+                                         'post_stall': config.get('post_stall', 'clip')}
                 result['warnings'].append('Polar policy: endpoint clipping; synthetic' if polar_asset.get('demonstration')
                                           else 'Polar policy: endpoint clipping; imported data')
                 if provider.clipped:
                     result['warnings'].append('Polar samples clipped outside supplied alpha/Re coverage')
+                if getattr(provider, 'extended', False):
+                    result['warnings'].append('Polar extended beyond the sampled incidence with the Viterna–Corrigan model')
             else:
                 result['warnings'].append('This approximation does not consume imported section polars')
             limits = args['geometry'].get('constraints', {})

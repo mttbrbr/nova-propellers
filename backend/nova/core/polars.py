@@ -113,3 +113,49 @@ class PolarProvider:
                 'alpha_segments_by_re': segments,
                 'reynolds_segment': [self.reynolds[indices[0]], self.reynolds[indices[-1]]],
                 'low_re_strategy': 'clip', 'source': 'selected_polar_asset'}
+
+
+class ViternaPolar:
+    """Extend an imported polar beyond its sampled incidence range (Viterna–Corrigan).
+
+    Inside the data the wrapped provider is used unchanged. Beyond the last
+    sample the coefficients follow the flat-plate-like Viterna model, anchored at
+    that sample, up to ±90°; beyond ±90° the incidence is mirrored with the
+    usual reverse-flow reduction. Nothing is invented inside the measured range.
+    """
+    def __init__(self, base, aspect_ratio=10.0):
+        self.base = base
+        self.cd_max = 1.11 + 0.018 * min(max(aspect_ratio, 1.0), 50.0)
+        self.lo = max(p['alpha_deg'] for p in [part[0] for part in base.slices])
+        self.hi = min(p['alpha_deg'] for p in [part[-1] for part in base.slices])
+        if not self.lo < 0 < self.hi:
+            raise ValueError('Viterna extension needs polar data that bracket zero incidence')
+        self.hi, self.lo = min(self.hi, 88.0), max(self.lo, -88.0)
+        self.extended = False
+
+    def __getattr__(self, name):
+        return getattr(self.base, name)
+
+    def __call__(self, alpha, reynolds, strategy='clip'):
+        from nova.physics.sections import viterna
+        alpha = np.asarray(alpha, dtype=float)
+        reynolds = np.asarray(reynolds, dtype=float)
+        # Reverse-flow angles beyond ±90° mirror onto the forward range.
+        folded = np.where(alpha > 90, 180.0 - alpha, np.where(alpha < -90, -180.0 - alpha, alpha))
+        reverse = np.abs(alpha) > 90
+        inside = np.clip(folded, self.lo, self.hi)
+        cl, cd = (np.array(v, dtype=float) for v in self.base(inside, reynolds, strategy))
+        upper, lower = folded > self.hi, folded < self.lo
+        if upper.any():
+            cl_s, cd_s = (np.array(v, dtype=float) for v in self.base(np.full(alpha.shape, self.hi), reynolds, strategy))
+            for i in np.flatnonzero(upper):
+                cl[i], cd[i] = (float(v) for v in viterna(folded[i], self.hi, cl_s[i], cd_s[i], self.cd_max))
+        if lower.any():
+            cl_s, cd_s = (np.array(v, dtype=float) for v in self.base(np.full(alpha.shape, self.lo), reynolds, strategy))
+            for i in np.flatnonzero(lower):
+                vc, vd = viterna(-folded[i], -self.lo, -cl_s[i], cd_s[i], self.cd_max)
+                cl[i], cd[i] = -float(vc), float(vd)
+        cl = np.where(reverse, -0.7 * cl, cl)
+        self.extended |= bool(upper.any() or lower.any() or reverse.any())
+        return cl, np.maximum(cd, 1e-4)
+
