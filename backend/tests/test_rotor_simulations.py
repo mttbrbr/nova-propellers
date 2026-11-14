@@ -45,8 +45,22 @@ class RotorSimulationTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in runs], [run['id']])
         listed = self.client.get(f'/api/v2/projects/{self.project["id"]}/simulations').json()
         self.assertEqual(listed[0]['configuration']['spec']['kind'], 'hawt')
-        revised = self.save({'kind': 'hawt', 'geometry': {'radius_m': 6.0}}, id=saved['id'], expected_revision=saved['revision'])
-        self.assertEqual(revised['revision'], 2)
+        self.assertEqual((saved['version'], saved['locked']), ('1.0.0', False))
+        self.assertTrue(self.client.get(f'/api/v2/simulations/{saved["id"]}').json()['locked'])
+        # A run freezes the geometry; conditions stay editable.
+        self.post('/api/v2/simulations', {'project_id': self.project['id'], 'name': 'Rotor', 'kind': 'rotor', 'id': saved['id'],
+                                          'expected_revision': saved['revision'],
+                                          'configuration': {'spec': {'kind': 'hawt', 'geometry': {'radius_m': 6.0}}}}, 422)
+        spec = {**saved['configuration']['spec'], 'operating': {**saved['configuration']['spec']['operating'], 'velocity_m_s': 9.0}}
+        revised = self.save(spec, id=saved['id'], expected_revision=saved['revision'])
+        self.assertEqual((revised['revision'], revised['version']), (2, '1.0.0'))
+        # A new version copies the geometry as the next patch and is editable again.
+        child = self.post(f'/api/v2/simulations/{saved["id"]}/new-version', {})
+        self.assertEqual((child['version'], child['locked']), ('1.0.1', False))
+        self.assertEqual(self.post(f'/api/v2/simulations/{saved["id"]}/new-version', {})['version'], '1.0.2')
+        edited = self.save({'kind': 'hawt', 'geometry': {'radius_m': 6.0}}, id=child['id'], expected_revision=child['revision'])
+        self.assertEqual(edited['configuration']['spec']['geometry']['radius_m'], 6.0)
+        self.assertEqual(self.save({'kind': 'vawt'})['version'], '2.0.0')
 
     def test_family_cannot_change_and_invalid_specs_are_rejected(self):
         saved = self.save({'kind': 'vawt'})

@@ -40,7 +40,44 @@ def initialize():
                 db.execute('UPDATE nova_records SET document=? WHERE id=?', (canonical_json(document), row['id']))
 
 
-def save(kind, document, id=None, expected_revision=None, new_asset=None):
+GEOMETRY_FIELDS = ('propeller_type', 'diameter', 'blades', 'airfoil', 'geometry_method', 'geometry_parameters', 'airfoil_assignments')
+ROTOR_GEOMETRY_FIELDS = ('kind', 'geometry', 'section')
+
+
+def geometry_shape(simulation):
+    """What a version freezes once it has been run; None when the kind has no editable geometry."""
+    kind = simulation.get('kind', 'propeller')
+    if kind == 'propeller':
+        inputs = simulation.get('inputs') or {}
+        return {key: inputs.get(key) for key in GEOMETRY_FIELDS}
+    if kind == 'rotor':
+        spec = (simulation.get('configuration') or {}).get('spec') or {}
+        return {key: spec.get(key) for key in ROTOR_GEOMETRY_FIELDS}
+    return None
+
+
+def _parse_version(text):
+    try:
+        major, minor, patch = (int(part) for part in str(text).split('.'))
+        return major, minor, patch
+    except ValueError:
+        return None
+
+
+def next_version(db, project_id, base=None):
+    """A new simulation opens a new major line (1.0.0, 2.0.0, ...); a copy of version X is X's next patch."""
+    taken = {v for row in db.execute("SELECT document FROM nova_records WHERE kind='simulation'").fetchall()
+             for doc in [json.loads(row['document'])] if doc.get('project_id') == project_id
+             for v in [_parse_version(doc.get('version'))] if v}
+    if base and _parse_version(base):
+        major, minor, patch = _parse_version(base)
+        while (major, minor, patch) in taken:
+            patch += 1
+        return f'{major}.{minor}.{patch}'
+    return f'{max((v[0] for v in taken), default=0) + 1}.0.0'
+
+
+def save(kind, document, id=None, expected_revision=None, new_asset=None, base_version=None):
     if kind not in KINDS:
         raise ValueError('Unknown record kind')
     id = id or str(uuid.uuid4())
@@ -57,6 +94,16 @@ def save(kind, document, id=None, expected_revision=None, new_asset=None):
                 raise ValueError('Simulation cannot move to another project')
             if row and json.loads(row['document']).get('kind', 'propeller') != document.get('kind', 'propeller'):
                 raise ValueError('Simulation kind cannot change')
+            if row:
+                previous = json.loads(row['document'])
+                document = {**document, 'version': previous.get('version') or next_version(db, document['project_id'])}
+                shape = geometry_shape(previous)
+                if shape is not None and shape != geometry_shape(document) and any(
+                        json.loads(r['document']).get('simulation_id') == id
+                        for r in db.execute("SELECT document FROM nova_records WHERE kind='run'").fetchall()):
+                    raise ValueError(f"Version {document['version']} has been run, so its geometry is locked; create a new version to change it")
+            else:
+                document = {**document, 'version': document.get('version') if _parse_version(document.get('version')) else next_version(db, document['project_id'], base_version)}
         if row and kind == 'run' and json.loads(row['document']).get('state') in ('succeeded', 'failed', 'cancelled', 'interrupted'):
             raise ValueError('Completed runs are immutable')
         if row and kind in ('asset', 'geometry', 'run_link'):
@@ -195,6 +242,11 @@ def get(kind, id):
     if row is None:
         raise KeyError(id)
     return json.loads(row['document'])
+
+
+def simulation_locked(id):
+    """True once any run was recorded for the simulation (a run freezes the version's geometry)."""
+    return any(run.get('simulation_id') == id for run in list_records('run'))
 
 
 def list_records(kind):

@@ -53,6 +53,7 @@ class TypedRunRequest(RunRequest):
 
 
 def typed(stored):
+    stored = {**stored, 'locked': library.simulation_locked(stored['id'])}
     if stored.get('kind') in ('openfast', 'pywake', 'rotor'):
         return stored
     return {**stored, 'kind': 'propeller', 'configuration': {key: stored[key] for key in
@@ -137,7 +138,7 @@ def simulation(simulation_id: str):
 
 
 @router.post('/simulations')
-def save_simulation(request: TypedSimulationRequest):
+def save_simulation(request: TypedSimulationRequest, base_version=None):
     project(request.project_id)
     try:
         if request.id:
@@ -178,7 +179,7 @@ def save_simulation(request: TypedSimulationRequest):
                 configuration={'case': asset['case'], 'asset_id': asset['id'],
                                'notes': asset.get('notes', ''), 'demonstration': asset.get('demonstration', False)},
                 workflow=external_template(request.kind))
-        return typed(library.save('simulation', document, request.id, request.expected_revision, new_asset=new_asset))
+        return typed(library.save('simulation', document, request.id, request.expected_revision, new_asset=new_asset, base_version=base_version))
     except ERRORS as exc:
         raise invalid(exc) from exc
 
@@ -188,6 +189,14 @@ def clone_simulation(simulation_id: str, request: CloneRequest):
     stored = simulation(simulation_id)
     return save_simulation(TypedSimulationRequest(project_id=stored['project_id'], kind=stored['kind'],
         name=request.name or stored['name'][:115] + ' Copy', configuration=copy.deepcopy(stored['configuration'])))
+
+
+@router.post('/simulations/{simulation_id}/new-version')
+def new_version(simulation_id: str):
+    """Copy a version, geometry and conditions included, as its next patch (4.3.0 -> 4.3.1), editable again."""
+    stored = simulation(simulation_id)
+    return save_simulation(TypedSimulationRequest(project_id=stored['project_id'], kind=stored['kind'],
+        name=stored['name'], configuration=copy.deepcopy(stored['configuration'])), base_version=stored.get('version'))
 
 
 @router.post('/simulations/{simulation_id}/run')
