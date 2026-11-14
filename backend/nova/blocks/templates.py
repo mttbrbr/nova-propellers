@@ -124,6 +124,24 @@ TEMPLATES = {
             _edge('best', 'values', 'report', 'a'), _edge('feasible', 'table', 'report', 'b'),
         ],
     },
+    'openfast_limits': {
+        'name': 'OpenFAST run with limits',
+        'description': 'Run a self-contained OpenFAST case, reduce channels to statistics and check them against limits.',
+        'nodes': [
+            _node('case', 'openfast_case', {'case_directory': '', 'input_file': 'AOC_WSt/AOC_WSt.fst', 'output_file': 'AOC_WSt/AOC_WSt.outb', 'timeout_seconds': 600.0}, 0, 0),
+            _node('run', 'openfast_run', {'integration_id': '', 'start_time_s': 1.0, 'statistics': [
+                {'channel': 'GenPwr', 'stat': 'mean', 'name': 'gen_power_kw', 'unit': 'kW'},
+                {'channel': 'RotSpeed', 'stat': 'max', 'name': 'rotor_speed_rpm_max', 'unit': 'rpm'},
+                {'channel': 'RootMFlp3', 'stat': 'max', 'name': 'root_flap_moment_knm_max', 'unit': 'kN·m'}]}, 280, 0),
+            _node('limits', 'constraint', {'checks': [
+                {'quantity': 'rotor_speed_rpm_max', 'operator': '<=', 'value': 80, 'severity': 'hard', 'label': 'Rotor speed', 'unit': 'rpm'},
+                {'quantity': 'gen_power_kw', 'operator': '>=', 'value': 0, 'severity': 'soft', 'label': 'Positive mean power', 'unit': 'kW'}],
+                'on_violation': 'report'}, 560, 0),
+            _node('report', 'report', {'title': 'OpenFAST run'}, 840, 0),
+        ],
+        'edges': [_edge('case', 'case', 'run', 'case'), _edge('run', 'values', 'limits', 'values'),
+                  _edge('run', 'table', 'report', 'b'), _edge('limits', 'report', 'report', 'c')],
+    },
 }
 
 

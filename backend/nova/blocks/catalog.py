@@ -18,7 +18,7 @@ import copy
 
 from nova.physics.rotors import DEFAULTS
 
-TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report')
+TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case')
 
 
 def port(name, kind, optional=False, label=None):
@@ -143,6 +143,19 @@ BLOCKS = {
         description='Domain limits: Betz, rating, tip speed/Mach, thrust, Keller, Burrill, cavitation, ripple.',
         inputs=[port('values', 'record')], outputs=[port('values', 'record'), port('report', 'report')],
         defaults={'checks': [{'preset': 'tip_speed'}], 'on_violation': 'report'}),
+    # ----------------------------------------------------------- OpenFAST
+    'openfast_case': dict(
+        family='specific', category='OpenFAST', label='OpenFAST case',
+        description='Self-contained OpenFAST input folder (absolute path), its .fst file and the expected output. Inspected, never edited.',
+        inputs=[], outputs=[port('case', 'openfast_case')],
+        defaults={'case_directory': '', 'input_file': 'model.fst', 'output_file': 'model.outb', 'timeout_seconds': 600.0}),
+    'openfast_run': dict(
+        family='specific', category='OpenFAST', label='OpenFAST run',
+        description='Runs the case with the OpenFAST executable configured in Settings → Integrations, then reduces every channel to '
+                    'statistics over the window from start_time_s. The named statistics feed constraints and reports.',
+        inputs=[port('case', 'openfast_case')], outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'integration_id': '', 'start_time_s': 0.0,
+                  'statistics': [{'channel': 'GenPwr', 'stat': 'mean', 'name': 'gen_power_kw', 'unit': 'kW'}]}),
 }
 
 

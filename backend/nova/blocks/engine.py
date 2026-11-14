@@ -486,6 +486,73 @@ def _expression(node, args):
     return {'values': values}
 
 
+STATS = ('mean', 'min', 'max', 'std', 'final')
+
+
+def _openfast_case(node, _args):
+    from nova.adapters.base import AdapterError
+    from nova.adapters.openfast import inspect_openfast_case
+    config = node.get('config', {})
+    case = {key: config[key] for key in ('case_directory', 'input_file', 'output_file', 'timeout_seconds') if key in config}
+    try:
+        inspect_openfast_case(case)
+    except AdapterError as exc:
+        raise BlockError(str(exc)) from exc
+    return {'case': case}
+
+
+def _window_statistics(data, start):
+    time = np.asarray(data['time_s'], dtype=float)
+    values = np.asarray(data['values'], dtype=float)
+    keep = time >= start
+    if not keep.any():
+        raise BlockError(f'start_time_s {start:g} is after the last output sample ({time[-1]:g} s)')
+    window = values[keep]
+    return {c['name']: {'units': c['units'], 'mean': float(window[:, i].mean()), 'min': float(window[:, i].min()),
+                        'max': float(window[:, i].max()), 'std': float(window[:, i].std()), 'final': float(window[-1, i])}
+            for i, c in enumerate(data['channels'])}, int(keep.sum())
+
+
+def _openfast_run(node, args, cancelled):
+    import uuid
+    import database
+    from nova.adapters.base import AdapterError, execute_adapter
+    from nova.adapters.openfast import copy_openfast_case
+    from nova.adapters.registry import get
+    from nova.application.external import configuration
+    from nova.infrastructure import library
+    config = node.get('config', {})
+    start = _number(config.get('start_time_s', 0.0), 'start_time_s')
+    wanted = config.get('statistics', [])
+    if not isinstance(wanted, list) or len(wanted) > 50:
+        raise BlockError('statistics must be a list of at most 50 entries')
+    for item in wanted:
+        if item.get('stat') not in STATS or not NAME.match(str(item.get('name', ''))) or not item.get('channel'):
+            raise BlockError(f'Each statistic needs a channel, a name and a stat in {", ".join(STATS)}')
+    integrations = [r for r in library.list_records('integration') if r.get('adapter_id') == 'openfast']
+    chosen = config.get('integration_id') or ''
+    integration = next((r for r in integrations if r['id'] == chosen), None) if chosen else (integrations[0] if integrations else None)
+    if integration is None:
+        raise BlockError('No OpenFAST executable is configured: add one in Settings → Integrations')
+    root = database.DB_PATH.parent / 'external-runs' / str(uuid.uuid4())
+    root.mkdir(parents=True)
+    try:
+        frozen = copy_openfast_case(args['case'], root / 'source_case')
+        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled)
+    except AdapterError as exc:
+        raise BlockError(str(exc)) from exc
+    stats, samples = _window_statistics(output['data'], start)
+    record = {}
+    for item in wanted:
+        if item['channel'] not in stats:
+            raise BlockError(f'Channel {item["channel"]} is not in the OpenFAST output')
+        record[item['name']] = stats[item['channel']][item['stat']]
+    rows = [{'channel': name, **stat} for name, stat in stats.items()]
+    return {'table': {'kind': 'openfast_statistics', 'rows': rows, 'window_start_s': start, 'samples': samples,
+                      'source': output['data']['source'], 'working_directory': output['working_directory']},
+            'values': record}
+
+
 HANDLERS = {
     'parameter': _parameter_block, 'parameter_set': _parameter_set, 'expression': _expression,
     'merge': lambda node, args: {'values': {**args['a'], **args['b']}},
@@ -493,9 +560,9 @@ HANDLERS = {
     'rotor_hawt': _rotor, 'rotor_vawt': _rotor, 'rotor_propeller': _rotor, 'rotor_marine': _rotor,
     'operating_point': _operating, 'marine_conditions': _marine,
     'corrections_axial': _corrections, 'corrections_vertical': _corrections,
-    'solver': _solver, 'performance_curve': _curve,
+    'solver': _solver, 'performance_curve': _curve, 'openfast_case': _openfast_case,
 }
-LONG = {'sweep': _sweep, 'optimizer': _optimizer}
+LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run}
 
 
 def execute(workflow, *, progress=None, cancelled=None):

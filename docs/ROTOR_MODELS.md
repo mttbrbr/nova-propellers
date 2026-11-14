@@ -113,6 +113,18 @@ Schema 2 workflows are typed DAGs. Port types: `record` (named scalars),
   marine rotors, operating point (fluid, velocity, rpm/λ/J), hull & immersion,
   axial or VAWT corrections, rotor solver, performance curve and design checks.
 
+* **OpenFAST blocks** (port type `openfast_case`): *OpenFAST case* points at a
+  self-contained input folder (absolute path, `.fst`, expected output) and is
+  only inspected. *OpenFAST run* snapshots the case, runs the executable
+  configured in Integrations (the first OpenFAST configuration unless
+  `integration_id` is set) and reduces every channel to mean/min/max/std/final
+  over the window from `start_time_s`. The `statistics` setting names the
+  quantities (`gen_power_kw = mean(GenPwr)`) emitted on the `values` port, so
+  constraints and reports apply to them like to any other record. OpenFAST
+  itself stays an external program; nothing is generated or edited. The run is
+  synchronous (limited by `timeout_seconds`). Template: *OpenFAST run with
+  limits*.
+
 Rotor and operating blocks accept *bindings* (`geometry.radius_m = D / 2`) so
 requirements drive the specification. Constraint checks are
 `quantity operator limit` with hard or soft severity and a normalised margin;

@@ -6,6 +6,9 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- OpenFAST in Workflow: *OpenFAST case* and *OpenFAST run* blocks run a
+  self-contained case with the configured executable and expose channel
+  statistics to constraints and reports (template *OpenFAST run with limits*).
 - Workflow screen is canvas-first: the Project graph and the mode bar are gone;
   blocks are added with a double-click or Ctrl K search, settings open in a
   rounded card beside the block (closed when dragging), and run, validate,

@@ -7,7 +7,7 @@ import LineChart from '../ui/LineChart.jsx';
 import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
-const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C' };
+const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
 const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink focus:border-nv-accent focus:outline-none';
@@ -16,7 +16,7 @@ const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-
 function optionsFor(key, catalog, rotors) {
   const axial = rotors?.axial_corrections || {}, vertical = rotors?.vertical_corrections || {};
   const map = {
-    operator: catalog?.operators, severity: ['hard', 'soft'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
+    operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
     method: ['auto', 'bemt', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
     shape: ['straight', 'troposkien'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
