@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, Square, X } from 'lucide-react';
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState, useReactFlow, useViewport } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -82,6 +82,59 @@ function layered(nodes, edges) {
   for (let pass = 0; pass < nodes.length; pass += 1) edges.forEach((e) => { if (depth[e.source] + 1 > depth[e.target]) depth[e.target] = Math.min(depth[e.source] + 1, nodes.length); });
   const rows = {};
   return nodes.map((n) => { const col = depth[n.id], row = rows[col] = (rows[col] ?? -1) + 1; return { ...n, position: { x: col * 260, y: row * 200 } }; });
+}
+
+// Settings card next to the selected block. Its real size is measured, then the first side where it fits
+// entirely inside the canvas wins (right, left, below, above); otherwise it is clamped on screen.
+const CARD_WIDTH = 340, GAP = 16, MARGIN = 12;
+const clamp = (value, low, high) => Math.max(low, Math.min(value, Math.max(low, high)));
+
+function placeCard(box, rect, height) {
+  const top = (wanted) => clamp(wanted, MARGIN, box.height - height - MARGIN);
+  const left = (wanted) => clamp(wanted, MARGIN, box.width - CARD_WIDTH - MARGIN);
+  const options = [
+    { side: 'right', fits: rect.x + rect.w + GAP + CARD_WIDTH <= box.width - MARGIN, left: rect.x + rect.w + GAP, top: top(rect.y - 8) },
+    { side: 'left', fits: rect.x - GAP - CARD_WIDTH >= MARGIN, left: rect.x - GAP - CARD_WIDTH, top: top(rect.y - 8) },
+    { side: 'below', fits: rect.y + rect.h + GAP + height <= box.height - MARGIN, left: left(rect.x + rect.w / 2 - CARD_WIDTH / 2), top: rect.y + rect.h + GAP },
+    { side: 'above', fits: rect.y - GAP - height >= MARGIN, left: left(rect.x + rect.w / 2 - CARD_WIDTH / 2), top: rect.y - GAP - height },
+  ];
+  const chosen = options.find((o) => o.fits);
+  if (chosen) return chosen;
+  // Nothing fits (small canvas or huge block): overlap the block on the roomier horizontal side, kept on screen.
+  const rightRoom = box.width - (rect.x + rect.w), leftRoom = rect.x;
+  return { side: 'overlap', left: left(rightRoom >= leftRoom ? rect.x + rect.w + GAP : rect.x - GAP - CARD_WIDTH), top: top(rect.y - 8) };
+}
+
+function SettingsCard({ canvas, node, viewport, children }) {
+  const card = useRef(null);
+  const [placement, setPlacement] = useState(null);
+  const measure = useCallback(() => {
+    if (!canvas.current || !card.current) return;
+    const box = { width: canvas.current.clientWidth, height: canvas.current.clientHeight };
+    const rect = { x: node.position.x * viewport.zoom + viewport.x, y: node.position.y * viewport.zoom + viewport.y,
+      w: (node.measured?.width || 190) * viewport.zoom, h: (node.measured?.height || 120) * viewport.zoom };
+    const height = Math.min(card.current.offsetHeight, box.height - 2 * MARGIN);
+    const next = placeCard(box, rect, height);
+    const caret = next.side === 'right' || next.side === 'left' ? clamp(rect.y + rect.h / 2 - next.top - 6, 20, height - 28)
+      : next.side === 'below' || next.side === 'above' ? clamp(rect.x + rect.w / 2 - next.left - 6, 20, CARD_WIDTH - 28) : null;
+    setPlacement((previous) => previous && previous.left === next.left && previous.top === next.top && previous.side === next.side && previous.caret === caret ? previous : { ...next, caret });
+  }, [canvas, node.position.x, node.position.y, node.measured?.width, node.measured?.height, viewport.x, viewport.y, viewport.zoom]);
+  useLayoutEffect(measure, [measure]);
+  useEffect(() => { // content grows and shrinks (disclosures, results), and the window resizes
+    const watcher = new ResizeObserver(measure);
+    if (card.current) watcher.observe(card.current);
+    if (canvas.current) watcher.observe(canvas.current);
+    return () => watcher.disconnect();
+  }, [measure, canvas]);
+  const side = placement?.side;
+  const caretStyle = side === 'right' ? { top: placement.caret, left: -7, borderWidth: '0 0 1px 1px' } : side === 'left' ? { top: placement.caret, right: -7, borderWidth: '1px 1px 0 0' }
+    : side === 'below' ? { left: placement.caret, top: -7, borderWidth: '1px 0 0 1px' } : side === 'above' ? { left: placement.caret, bottom: -7, borderWidth: '0 1px 1px 0' } : null;
+  return <div ref={card} role="region" aria-label="Block settings" data-side={side}
+    className="absolute z-20 flex flex-col rounded-2xl border border-nv-edge bg-nv-panel/[0.97] shadow-2xl shadow-black/60"
+    style={{ width: CARD_WIDTH, maxHeight: canvas.current ? canvas.current.clientHeight - 2 * MARGIN : undefined, left: placement?.left ?? 0, top: placement?.top ?? 0, visibility: placement ? 'visible' : 'hidden' }}>
+    {caretStyle && <span aria-hidden="true" className="absolute h-3 w-3 rotate-45 border border-nv-edge bg-nv-panel" style={caretStyle} />}
+    <div className="overflow-y-auto p-4">{children}</div>
+  </div>;
 }
 
 function BlockEditor({ seed = null, onOpenSettings = null }) {
@@ -209,15 +262,6 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
   const chosen = nodes.find((n) => n.id === selected);
   const tone = !result ? null : result.status === 'succeeded' ? (result.feasible === false ? 'warn' : 'ok') : result.status === 'failed' ? 'err' : 'warn';
 
-  // The settings card sits beside the selected block, on the side with room.
-  const card = (() => {
-    if (!chosen || !canvas.current) return null;
-    const box = canvas.current.getBoundingClientRect(), width = 340, w = (chosen.measured?.width || 190) * viewport.zoom, h = (chosen.measured?.height || 120) * viewport.zoom;
-    const x = chosen.position.x * viewport.zoom + viewport.x, y = chosen.position.y * viewport.zoom + viewport.y;
-    const right = x + w + 16 + width < box.width;
-    return { left: Math.max(12, right ? x + w + 16 : x - width - 16), top: Math.max(12, Math.min(y - 8, box.height - 120)), width, right, caret: Math.max(18, Math.min(y + h / 2 - Math.max(12, Math.min(y - 8, box.height - 120)) - 6, 380)) };
-  })();
-
   return <IntegrationsContext.Provider value={{ list: integrations.filter((i) => i.adapter_id === 'openfast'), openSettings: onOpenSettings }}><div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
     onDoubleClick={(e) => { if (e.target.classList?.contains('react-flow__pane')) openPalette({ x: e.clientX, y: e.clientY }); }}>
     <ReactFlow nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) setResult(null); }}
@@ -267,12 +311,10 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
     {result && !progress && <button type="button" onClick={() => setPanel(panel === 'results' ? null : 'results')} className={`${OVERLAY} bottom-3.5 right-3.5 flex h-9 items-center gap-2 px-3 text-[12.5px] hover:bg-nv-hover`}>
       <StatusDot tone={tone} />{result.status}{result.feasible != null && <> · {result.feasible ? 'hard constraints met' : 'constraint violation'}</>}<Kbd>Details</Kbd></button>}
 
-    {card && !palette && <div className="absolute z-20 rounded-2xl border border-nv-edge bg-nv-panel/[0.97] shadow-2xl shadow-black/60" style={{ left: card.left, top: card.top, width: card.width }}>
-      <span aria-hidden="true" className="absolute h-3 w-3 rotate-45 border border-nv-edge bg-nv-panel" style={{ top: card.caret, [card.right ? 'left' : 'right']: -7, borderWidth: card.right ? '0 0 1px 1px' : '1px 1px 0 0' }} />
-      <div className="max-h-[min(560px,calc(100%-24px))] overflow-y-auto p-4">
-        <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog}
-          onChange={(config) => setConfig(chosen.id, config)} onRemove={() => removeBlock(chosen.id)} onDuplicate={() => duplicate(chosen.id)} onClose={() => setSelected(null)} />
-      </div></div>}
+    {chosen && !palette && <SettingsCard canvas={canvas} node={chosen} viewport={viewport}>
+      <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog}
+        onChange={(config) => setConfig(chosen.id, config)} onRemove={() => removeBlock(chosen.id)} onDuplicate={() => duplicate(chosen.id)} onClose={() => setSelected(null)} />
+    </SettingsCard>}
 
     {palette && catalog && <BlockSearch palette={palette} blocks={catalog.blocks} onChange={setPalette} onPick={(type) => addBlock(type, palette.flow)} onClose={() => setPalette(null)} bounds={canvas.current?.getBoundingClientRect()} />}
 
