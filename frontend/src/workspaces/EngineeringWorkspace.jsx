@@ -12,7 +12,7 @@ import { rememberProject } from '../lib/preferences.js';
 // Preserve the native editor shape while using multidisciplinary persistence.
 const request = async (path, payload) => {
   let target = path;
-  if (/^\/v1\/projects(?:$|\/import$|\/[^/]+\/(?:simulations|archive)$)/.test(path) || /^\/v1\/simulations(?:$|\/[^/]+\/(?:run|clone)$)/.test(path)) target = path.replace('/v1/', '/v2/');
+  if (/^\/v1\/projects(?:$|\/import$|\/[^/]+\/(?:simulations|archive)$)/.test(path) || /^\/v1\/simulations(?:$|\/[^/]+\/(?:run|clone|new-version)$)/.test(path)) target = path.replace('/v1/', '/v2/');
   if (path === '/v1/projects' && payload) payload = { name: payload.name, id: payload.id, expected_revision: payload.expected_revision };
   if (path === '/v1/simulations' && payload && !payload.kind) {
     const { name, id, expected_revision, project_id, ...configuration } = payload;
@@ -170,11 +170,15 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   }, [draftStamp, simulation, workflow]);
   const projectRunsForContext = history.filter((r) => r.project_id === project?.id);
   const simulationRuns = simulation ? projectRunsForContext.filter((r) => r.simulation_id === simulation.id && !r.study && !r.comparison && !r.optimization && !r.external_job).sort(newestFirst) : [];
+  // Any recorded run (studies included) freezes a version's geometry; conditions stay editable.
+  const simulationLocked = Boolean(simulation && (simulation.locked || projectRunsForContext.some((r) => r.simulation_id === simulation.id)));
+  const analysisConfig = (workflow?.nodes || []).find((n) => n.type === 'analysis')?.config || {};
+  const corrections = { tip_loss: analysisConfig.tip_loss || 'prandtl', hub_loss: analysisConfig.hub_loss || 'prandtl', post_stall: analysisConfig.post_stall || 'clip' };
   const lastRun = simulationRuns.find((r) => r.state === 'succeeded' && r.result) || null;
   const lastRunStale = Boolean(lastRun && workflow && runSignature(lastRun.inputs, lastRun.workflow, lastRun.conditions, lastRun.polar_asset_id) !== runStamp);
   const changedSinceRun = lastRunStale ? changedFields(lastRun, { inputs, workflow: currentGraph, conditions, polar_asset_id: assetId }) : [];
   useEffect(() => {
-    onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
+    onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationLocked, corrections, version: simulation?.version || '', simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
       models: rotor ? [{ single_streamtube: 'sst', double_streamtube: 'ds', multiple_streamtube: 'mst', double_multiple_streamtube: 'dmst' }[rotorSpec?.method] || rotorSpec?.method || 'bemt'] : external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error,
       geometry, selectedAsset: assets.find((a) => a.id === assetId) || null, conditions, projectRuns: projectRunsForContext, simulationRuns, lastRun, lastRunStale, changedSinceRun });
     // Derived strings track configuration values, not parent object identities.
@@ -304,7 +308,8 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   };
   useImperativeHandle(ref, () => ({ execute, openRun: (r) => act(() => openExecution(r)), openProjectById: (id, simulationId) => act(() => openProjectById(id, simulationId)),
     solverComparison: submitSolverComparison, projectId: () => project?.id || null,
-    importArchive: (file) => act(() => importArchive(file)), optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
+    importArchive: (file) => act(() => importArchive(file)), newVersion: () => act(newVersion),
+    setCorrection: (key, value) => setWorkflow((w) => w && { ...w, nodes: w.nodes.map((n) => n.type === 'analysis' ? { ...n, config: { ...n.config, [key]: value } } : n) }), optimize: executeOptimization, study: submitStudy, snapshot: body, refresh, save: () => act(saveAll), guard: protectDraft, cancel: () => request(`/v1/runs/${activeRun.id}/cancel`, {}),
     setModel: (value) => setWorkflow((w) => w && !w.template ? { ...w, nodes: w.nodes.map((n) => n.type === 'analysis' ? { ...n, config: { ...n.config, model: value } } : n) } : w),
     reset: () => {
     const epoch = ++activation.current;
@@ -475,6 +480,16 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     setSimulations(list); setGeometries(geometryList); setGeometry(matchingGeometry(geometryList, copied));
     setMessage('Independent simulation copy created');
   };
+  // Copies the saved version as its next patch (4.3.0 -> 4.3.1), editable again, and opens it.
+  const newVersion = async () => {
+    if (!simulation) throw new Error('Save the simulation before creating a new version');
+    if (!await protectDraft()) return;
+    const copy = await request(`/v1/simulations/${simulation.id}/new-version`, {});
+    const list = await request(`/v1/projects/${copy.project_id}/simulations`);
+    setSimulations(list);
+    await openSimulation(list.find((s) => s.id === copy.id) || copy);
+    setMessage(`Version ${copy.version} created from ${simulation.version || 'the previous version'}; its geometry can be edited`);
+  };
   const importFile = async (file) => {
     const content = await file.text();
     const document = { content, filename: file.name, airfoil: inputs.airfoil,
@@ -514,9 +529,9 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const portal = (name, content) => slots[name] ? createPortal(content, slots[name]) : null;
   const headerSelect = 'h-8 w-full min-w-0 max-w-[220px] cursor-pointer appearance-none truncate rounded-md bg-transparent px-2 text-[13px] hover:bg-nv-hover disabled:cursor-not-allowed disabled:opacity-50';
   const projectPicker = <ProjectPicker project={project} locked={locked} onOpen={(id, simulationId) => act(() => openProjectById(id, simulationId))} onBrowse={() => onBrowseProjects?.()} />;
-  const simulationPicker = <select aria-label="Open saved simulation" className={`${headerSelect} text-nv-ink`} disabled={locked || !project} value={simulation?.id || ''} onChange={(e) => {
+  const simulationPicker = <select aria-label="Open saved simulation" title="Version" className={`${headerSelect} text-nv-ink`} disabled={locked || !project} value={simulation?.id || ''} onChange={(e) => {
     const saved = simulations.find((s) => s.id === e.target.value); if (saved) act(() => openSimulation(saved));
-  }}><option value="" disabled={Boolean(simulation)} className="bg-nv-panel">Draft: {simulationName}</option>{simulations.map((s) => <option key={s.id} value={s.id} className="bg-nv-panel">{s.name} · r{s.revision}</option>)}</select>;
+  }}><option value="" disabled={Boolean(simulation)} className="bg-nv-panel">Draft: {simulationName}</option>{simulations.map((s) => <option key={s.id} value={s.id} className="bg-nv-panel">v{s.version || '—'} · {s.name}{s.locked ? ' · run' : ''}</option>)}</select>;
   const geometryEdited = geometry && stable(geometry.definition) !== stable(Object.fromEntries(geometryFields.map((key) => [key, inputs[key]])));
   const selectedAsset = assets.find((a) => a.id === assetId);
 
@@ -526,8 +541,9 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
     {portal('manage', <>
       <label className="flex flex-col gap-1.5 text-[13px] text-nv-muted">Simulation name
         <input aria-label="Simulation name" maxLength={120} className={field} value={simulationName} disabled={locked} onChange={(e) => setSimulationName(e.target.value)} /></label>
-      <p className="m-0 text-xs text-nv-muted">{simulation ? `Revision ${simulation.revision} · ${simulationDirty ? 'unsaved changes' : 'saved configuration'}` : 'New configuration · saved separately within the project'} · {(external ? [kind] : modelNames(currentGraph)).map((m) => m.toUpperCase()).join(' + ') || 'geometry only'}</p>
+      <p className="m-0 text-xs text-nv-muted">{simulation ? `Version ${simulation.version || '—'}${simulationLocked ? ' · run, geometry locked' : ''} · revision ${simulation.revision} · ${simulationDirty ? 'unsaved changes' : 'saved configuration'}` : 'New configuration · saved separately within the project'} · {(external ? [kind] : modelNames(currentGraph)).map((m) => m.toUpperCase()).join(' + ') || 'geometry only'}</p>
       <div className="grid grid-cols-2 gap-2">
+        <button className={button} disabled={locked || !simulation} title="Copy this version's geometry as the next patch version" onClick={() => act(newVersion)}>New version</button>
         <button className={button} disabled={locked} onClick={() => act(() => newSimulation())}>New simulation</button>
         <button className={button} disabled={locked} onClick={() => act(cloneSimulation)}>Duplicate simulation</button>
         <button className={button} disabled={locked} onClick={() => act(() => newSimulation('pywake'))}>New PyWake simulation</button>

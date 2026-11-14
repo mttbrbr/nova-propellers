@@ -59,11 +59,11 @@ function ProjectDetail({ row, current, onOpen, onCompare, onExport, onDelete }) 
       <Metric size="md" label="Runs" value={row.runs} sub={`${row.studies} studies`} />
       <Metric size="md" label="Solvers" value={row.models.map((m) => m.toUpperCase()).join(', ') || '—'} />
     </dl>
-    <Section title={`Simulations · ${row.simulations}`}>
+    <Section title={`Versions · ${row.simulations}`}>
       <table className="w-full border-collapse text-[13px]"><tbody>{simulations.map((item) => <tr key={item.id} className="border-t border-nv-line first:border-t-0">
-        <td className="py-2">{item.name}</td>
+        <td className="py-2"><span className="mr-2 font-mono text-nv-accent">v{item.version || '—'}</span>{item.name}</td>
         <td className="py-2 text-right font-mono text-nv-muted">{item.kind && item.kind !== 'propeller' ? item.kind : `${(item.workflow?.nodes || []).filter((n) => n.type === 'analysis').map((n) => (n.config?.model || 'bemt').toUpperCase()).join(' + ')} · ${formatValue(item.inputs?.rpm, 5)} rpm`}</td>
-      </tr>)}{!simulations.length && <tr><td className="py-2 text-nv-muted">{row.simulations ? 'Loading…' : 'No simulations'}</td></tr>}</tbody></table>
+      </tr>)}{!simulations.length && <tr><td className="py-2 text-nv-muted">{row.simulations ? 'Loading…' : 'No versions'}</td></tr>}</tbody></table>
     </Section>
     <div className="flex-1" />
     <section aria-labelledby="danger-title" className="flex flex-col gap-2 rounded-[10px] border border-nv-err/30 p-4">

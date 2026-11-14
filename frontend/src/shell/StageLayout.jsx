@@ -7,8 +7,8 @@ import { createPortal } from 'react-dom';
 // stage is the active view). Elsewhere a stage renders its own three-band grid.
 export const SheetContext = createContext(null);
 
-export function SheetStage({ stage, targets, active, children }) {
-  return <SheetContext.Provider value={{ stage, targets, active }}>{children}</SheetContext.Provider>;
+export function SheetStage({ stage, targets, active, lock = null, children }) {
+  return <SheetContext.Provider value={{ stage, targets, active, lock }}>{children}</SheetContext.Provider>;
 }
 
 // Inputs on the left, data in the flexible centre, square render with linked data
@@ -17,10 +17,12 @@ export function SheetStage({ stage, targets, active, children }) {
 export default function StageLayout({ inputsLabel, inputs, contentLabel, content, sideLabel, side, flush = false }) {
   const sheet = useContext(SheetContext);
   if (sheet) {
-    const { targets, active } = sheet;
+    const { targets, active, lock } = sheet;
+    // A run freezes the version's geometry: its inputs and editors become read-only
+    // (inert) and a banner offers the next version instead.
     return <>
-      {targets.inputs && createPortal(<div aria-label={inputsLabel} role="group" className="flex flex-col gap-5">{inputs}</div>, targets.inputs)}
-      {active && targets.content && createPortal(<div aria-label={contentLabel} role="region" className={`flex min-w-0 flex-1 flex-col ${flush ? '' : 'gap-9 px-6 py-6 lg:px-10'}`}>{content}</div>, targets.content)}
+      {targets.inputs && createPortal(<div aria-label={inputsLabel} role="group" className="flex flex-col gap-5">{lock}<div inert={lock ? true : undefined} className="flex flex-col gap-5">{inputs}</div></div>, targets.inputs)}
+      {active && targets.content && createPortal(<div aria-label={contentLabel} role="region" className={`flex min-w-0 flex-1 flex-col ${flush ? '' : 'gap-9 px-6 py-6 lg:px-10'}`}><div inert={lock ? true : undefined} className={`flex min-w-0 flex-1 flex-col ${flush ? '' : 'gap-9'} ${lock ? 'opacity-70' : ''}`}>{content}</div></div>, targets.content)}
       {active && side && targets.side && createPortal(<div aria-label={sideLabel} role="region" className="flex flex-col gap-7">{side}</div>, targets.side)}
     </>;
   }

@@ -8,12 +8,11 @@ import { RotorAnalysisStage, RotorGeometryStage, RotorResultsStage, RotorSizingS
 import DesignSheet, { useTargets } from './shell/DesignSheet.jsx';
 import RunCard from './shell/RunCard.jsx';
 import RunChooser from './shell/RunChooser.jsx';
-import ProjectTabs from './shell/ProjectTabs.jsx';
 import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import ComparisonsWorkspace from './workspaces/ComparisonsWorkspace.jsx';
 import RotorSweep from './stages/RotorSweep.jsx';
-import { Segmented } from './ui/controls.jsx';
+import { Button, Notice, Segmented } from './ui/controls.jsx';
 import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
 import AppHeader, { stages } from './shell/AppHeader.jsx';
@@ -24,7 +23,7 @@ import GeometryStage from './stages/GeometryStage.jsx';
 import AnalysisStage from './stages/AnalysisStage.jsx';
 import ResultsStage from './stages/ResultsStage.jsx';
 import LibraryWorkspace from './stages/LibraryWorkspace.jsx';
-import { forgetProject, openTabs, saveTabs } from './lib/preferences.js';
+import { forgetProject } from './lib/preferences.js';
 
 const initial = {
   project_name: 'New propeller', propeller_type: 'traditional', diameter_mode: 'manual',
@@ -60,7 +59,7 @@ async function post(endpoint, body) {
 }
 
 function App() {
-  const [phase, setPhase] = useState('sizing');
+  const [phase, setPhase] = useState('library');
   const [lastStage, setLastStage] = useState('sizing');
   const [inputs, setInputs] = useState(initial);
   const [bezier, setBezier] = useState(bezierDefaults(initial.diameter));
@@ -133,13 +132,10 @@ function App() {
   const [rotorSpecs, setRotorSpecs] = useState({});
   const [rotorRun, setRotorRun] = useState(null);
   // Design sheet: which sections are open; the active view is `phase`.
-  const [openSections, setOpenSections] = useState(['sizing']);
   const [sheetTargets, sheetRef] = useTargets();
   // Run always asks which models to execute; the choice is applied, then the run starts.
   const [runChooser, setRunChooser] = useState(false);
   const [pendingRun, setPendingRun] = useState(null);
-  // Projects open as tabs; the active tab follows the project in the workspace.
-  const [tabs, setTabs] = useState(openTabs);
   const [blockCatalog, setBlockCatalog] = useState(null);
   const [blockSeed, setBlockSeed] = useState(null);
   const slotCallbacks = useRef({});
@@ -436,48 +432,16 @@ function App() {
   const go = (target) => {
     let id = target === 'design' ? lastStage : target;
     if (!guidedCompatible && ['sizing', 'geometry', 'analysis'].includes(id)) id = 'workflow';
-    if (stageIds.includes(id)) { setLastStage(id); setOpenSections((list) => list.includes(id) ? list : [...list, id]); }
+    if (stageIds.includes(id)) setLastStage(id);
     setPhase(id);
   };
-  // First click on a section title makes it the active view; clicking the active one folds it.
-  const onSection = (id) => {
-    if (phase === id) setOpenSections((list) => list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
-    else go(id);
-  };
+  const onSection = (id) => go(id);
   const chooseModel = (value) => { setModel(value); workbench.current?.setModel(value); };
   const resetProject = async () => {
     if (!await workbench.current?.guard()) return;
     workbench.current?.reset();
     openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] });
     setModel('bemt'); setGuidedCompatible(true); setLastStage('sizing'); setPhase('sizing');
-  };
-
-  // Keep the active project's tab in sync with its name, simulation and rotor type.
-  const contextProject = workspaceContext?.project;
-  const contextSimulation = workspaceContext?.simulation;
-  useEffect(() => {
-    if (!activeProjectId || !contextProject || contextProject.id !== activeProjectId) return;
-    setTabs((current) => {
-      const entry = { id: activeProjectId, name: contextProject.name, simulationId: contextSimulation?.id || null,
-        simulationName: contextSimulation?.name || '', family: rotorFamily };
-      const index = current.findIndex((tab) => tab.id === activeProjectId);
-      const next = index < 0 ? [...current, entry] : current.map((tab, i) => i === index ? entry : tab);
-      if (JSON.stringify(next) === JSON.stringify(current)) return current;
-      saveTabs(next);
-      return next;
-    });
-  }, [activeProjectId, contextProject, contextSimulation, rotorFamily]);
-  const selectTab = (tab) => workbench.current?.openProjectById(tab.id, tab.simulationId);
-  const closeTab = async (tab) => {
-    const remaining = tabs.filter((item) => item.id !== tab.id);
-    if (tab.id === activeProjectId) {
-      if (!await workbench.current?.guard()) return;
-      const index = tabs.findIndex((item) => item.id === tab.id);
-      const neighbour = remaining[Math.min(index, remaining.length - 1)];
-      if (neighbour) workbench.current?.openProjectById(neighbour.id, neighbour.simulationId);
-      else { workbench.current?.reset(); openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] }); setModel('bemt'); setGuidedCompatible(true); }
-    }
-    setTabs(remaining); saveTabs(remaining);
   };
 
   useExecutionMonitor(studyExecution, setStudyExecution, setError);
@@ -529,7 +493,6 @@ function App() {
       await fetch(api(`/v2/projects/${id}`), { method: 'DELETE' });
       forgetProject(id);
     }
-    setTabs((current) => current.filter((tab) => !ids.includes(tab.id)));
     if (ids.includes(workbench.current?.projectId())) {
       workbench.current.reset();
       openDraft({ ...initial, geometry_parameters: bezierDefaults(initial.diameter), airfoil_assignments: [] });
@@ -595,7 +558,7 @@ function App() {
     }} />,
     analysis: <AnalysisStage a={{
       // Guided workflows have a single analysis node driven by the local model state.
-      inputs, set, model, chooseModel, methods: computationalMethods, context: workspaceContext, slotRef, station,
+      inputs, set, model, chooseModel, setCorrection: (key, value) => workbench.current?.setCorrection(key, value), methods: computationalMethods, context: workspaceContext, slotRef, station,
       preview: { canonical, mesh, busy: previewBusy }, openRun: (record) => workbench.current?.openRun(record), onRun: handleRun, runDisabled: runDisabled || runActive,
       onCompare: () => { setStudyRequest({ type: 'solver', nonce: Date.now() }); go('studies'); }, compareModels, setCompareModels,
     }} />,
@@ -631,13 +594,14 @@ function App() {
       ['sizing', 'Sizing', `Air propeller · Ø ${short(inputs.diameter)} m · T ${short(inputs.thrust_target)} N`, Number(inputs.diameter) > 0 ? 'ok' : 'warn'],
       ['geometry', 'Geometry', `${inputs.geometry_method === 'bezier' ? 'Bézier' : 'Laguerre'} · ${inputs.blades} blades · ${inputs.airfoil}${previewError ? ' · preview error' : ''}`,
         previewError ? 'err' : geometryCurrent ? 'ok' : 'muted'],
-      ['analysis', 'Analysis', `${[model, ...compareModels.filter((id) => id !== model)].map((id) => id.toUpperCase()).join(' + ')} · ${short(inputs.rpm, 4)} rpm · ${asset ? asset.filename : 'no polars selected'}`,
+      ['analysis', 'Analysis', `${[model, ...compareModels.filter((id) => id !== model)].map((id) => id.toUpperCase()).join(' + ')}${model === 'bemt' ? ` · ${Object.values(workspaceContext?.corrections || { a: 'prandtl', b: 'prandtl' }).filter((v) => v !== 'none').length} corrections` : ''} · ${short(inputs.rpm, 4)} rpm · ${asset ? asset.filename : 'no polars selected'}`,
         model === 'bemt' && !asset ? 'warn' : 'ok'],
       ['results', 'Results', lastPropellerRun ? `Run ${timeOf(lastPropellerRun)} · T ${short(propellerPerformance?.thrust_n)} N${workspaceContext?.lastRunStale ? ' · out of date' : ''}` : 'Not run yet',
         lastPropellerRun ? (workspaceContext?.lastRunStale ? 'warn' : 'ok') : 'muted'],
     ];
   }
-  sections = sections.map(([id, label, summary, tone], index) => ({ id, label, summary, tone, key: String(index + 1) }));
+  if (rotorMode) sections.push(['sweep', 'Sweep', 'Vary one input and read the response', 'muted']);
+  sections = sections.map(([id, label, summary, tone], index) => ({ id, label, summary, tone, key: String(index + 1), noInputs: id === 'sweep' }));
   const runCard = phase === 'results' ? null : rotorMode
     ? <RunCard when={rotorRun ? timeOf(rotorRun) : ''} stale={rotorStale} onOpen={rotorRun ? () => go('results') : null} onRun={handleRun} runDisabled={runDisabled || runActive}
       metrics={rotorResult ? (rotorFamily === 'hawt' || rotorFamily === 'vawt'
@@ -646,8 +610,6 @@ function App() {
     : <RunCard when={timeOf(lastPropellerRun)} stale={workspaceContext?.lastRunStale} staleDetail={workspaceContext?.changedSinceRun?.join(', ')}
       onOpen={lastPropellerRun ? () => go('results') : null} onRun={handleRun} runDisabled={runDisabled || runActive}
       metrics={propellerPerformance ? [['Thrust', short(propellerPerformance.thrust_n, 4), 'N'], ['Power', short(propellerPerformance.power_w, 4), 'W'], ['FoM', short(propellerPerformance.efficiency)]] : null} />;
-  const views = [['sizing', 'Sizing'], ['geometry', rotorMode ? 'Rotor' : 'Blade'], ['analysis', 'Analysis'], ['results', 'Results'], ...(rotorMode ? [['sweep', 'Sweep']] : [])]
-    .map(([id, label]) => ({ id, label }));
   const adoptSweep = (path, value) => {
     const [group, key] = path.split('.');
     setRotorSpec({ ...rotorSpec, [group]: { ...rotorSpec[group], [key]: value } });
@@ -658,14 +620,14 @@ function App() {
     ? <RotorSweep key={rotorFamily} family={rotorFamily} spec={rotorSpec} catalog={rotorCatalog} presets={blockCatalog?.constraint_presets}
       targets={{ content: sheetTargets.content, side: sheetTargets.side }} onAdopt={adoptSweep}
       onOpenWorkflow={(workflow) => { setBlockSeed({ workflow, nonce: Date.now() }); setWorkflowMode('blocks'); go('workflow'); }} /> : null;
-  const sheetStages = designViews.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id}
+  const lockNotice = <Notice role="status" action={<Button className="!h-7 !px-2.5" disabled={runDisabled || runActive} onClick={() => workbench.current?.newVersion()}>New version</Button>}>
+    Version {workspaceContext?.version || ''} has been run, so its geometry is locked. You can still run it with other speeds or models; a new version copies this geometry and unlocks editing.</Notice>;
+  const sheetStages = designViews.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id} lock={workspaceContext?.simulationLocked && (id === 'sizing' || id === 'geometry') ? lockNotice : null}
     targets={{ inputs: sheetTargets[`inputs:${id}`], content: sheetTargets.content, side: sheetTargets.side }}>{stageElements[id]}</SheetStage>) : null;
   let body;
   if (designViews.includes(phase)) body = !stageElements
     ? <div className="grid flex-1 place-items-center text-[13px] text-nv-muted">Loading rotor models…</div>
-    : <DesignSheet sections={sections} open={openSections} active={phase} onSection={onSection}
-      onExpandAll={() => setOpenSections([...stageIds])} onFoldAll={() => setOpenSections([])}
-      views={views} view={phase} onView={go} targetRef={sheetRef} runCard={runCard} />;
+    : <DesignSheet sections={sections} active={phase} onSection={onSection} targetRef={sheetRef} runCard={runCard} />;
   else if (phase === 'comparisons') body = <ComparisonsWorkspace onOpenRun={(record) => run(async () => {
     await workbench.current?.openProjectById(record.project_id, record.simulation_id);
     workbench.current?.openRun(record); go('results');
@@ -698,8 +660,7 @@ function App() {
   }} />;
 
   return <div className="flex min-h-screen flex-col bg-nv-canvas text-nv-ink xl:h-screen xl:overflow-hidden">
-    <AppHeader tabs={<ProjectTabs tabs={tabs} activeId={activeProjectId} dirty={Boolean(workspaceContext?.dirty)} disabled={busy || Boolean(workspaceContext?.busy)}
-      onSelect={selectTab} onClose={closeTab} onNew={resetProject} />} context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
+    <AppHeader context={workspaceContext} projectSlot={slotRef('projectSelector')} simulationSlot={slotRef('simulationSelector')} manageSlot={slotRef('manage')} menuSlot={slotRef('menu')}
       onSave={handleSave} saveDisabled={runDisabled} run={runActive ? nativeRun : null} onRun={handleRun} onCancel={handleCancel} runDisabled={runDisabled}
       onNewProject={resetProject} onCloseProject={resetProject} projectActionsDisabled={busy || Boolean(workspaceContext?.busy)} />
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">

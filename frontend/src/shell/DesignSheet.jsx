@@ -16,24 +16,18 @@ export function useTargets() {
   return [targets, ref];
 }
 
-// The design sheet: the process reads top to bottom as stacked sections. Several
-// can be open; closed ones keep a one-line summary and a status dot. Clicking a
-// section title makes it the active view (centre and right columns); clicking the
-// active one folds it.
-export default function DesignSheet({ sections, open, active, onSection, onExpandAll, onFoldAll, views, view, onView, targetRef, runCard }) {
+// The design sheet: the process reads top to bottom as stacked sections, an
+// accordion with exactly one open. The open section holds the inputs and drives
+// the centre and right columns; closed ones compact to a title, a one-line summary
+// and a status dot. There is no second row of tabs.
+export default function DesignSheet({ sections, active, onSection, targetRef, runCard }) {
   return <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_540px] xl:overflow-hidden wide:grid-cols-[360px_minmax(0,1fr)_640px]">
     <aside aria-label="Design sheet" className="flex min-w-0 flex-col gap-2 border-b border-nv-line px-4 py-5 md:row-span-2 md:border-b-0 md:border-r xl:row-span-1 xl:h-full xl:overflow-y-auto">
-      <div className="flex items-baseline justify-between px-2 pb-2">
-        <span className="text-[15px] font-semibold">Design</span>
-        <span className="flex gap-3 text-xs">
-          <button type="button" className="text-nv-muted hover:text-nv-ink" onClick={onExpandAll}>Expand all</button>
-          <button type="button" className="text-nv-muted hover:text-nv-ink" onClick={onFoldAll}>Fold all</button>
-        </span>
-      </div>
+      <div className="px-2 pb-2"><span className="text-[15px] font-semibold">Design</span></div>
       <nav aria-label="Design stages" className="flex flex-col gap-2">
         {sections.map((section) => {
-          const isOpen = open.includes(section.id);
-          const isActive = active === section.id;
+          const isOpen = active === section.id;
+          const isActive = isOpen;
           return <section key={section.id} aria-labelledby={`sheet-${section.id}`}
             className={`rounded-[10px] border ${isActive ? 'border-nv-accent/70 bg-nv-panel' : 'border-nv-line bg-nv-chrome'}`}>
             <div className="flex cursor-pointer items-start gap-3 px-3.5 py-3" onClick={() => onSection(section.id)}>
@@ -49,16 +43,12 @@ export default function DesignSheet({ sections, open, active, onSection, onExpan
               </div>
               {isOpen ? <ChevronDown size={15} className="mt-1 text-nv-muted" aria-hidden="true" /> : <ChevronRight size={15} className="mt-1 text-nv-muted" aria-hidden="true" />}
             </div>
-            {isOpen && <div ref={targetRef(`inputs:${section.id}`)} className="border-t border-nv-line px-3.5 pb-4 pt-3.5" />}
+            {isOpen && !section.noInputs && <div ref={targetRef(`inputs:${section.id}`)} className="border-t border-nv-line px-3.5 pb-4 pt-3.5" />}
           </section>;
         })}
       </nav>
     </aside>
     <main aria-label="Design view" className="flex min-w-0 flex-col xl:h-full xl:overflow-y-auto">
-      <div role="tablist" aria-label="Views" className="sticky top-0 z-10 flex shrink-0 flex-wrap gap-0.5 border-b border-nv-line bg-nv-canvas px-6">
-        {views.map((item) => <button key={item.id} type="button" role="tab" aria-selected={view === item.id} onClick={() => onView(item.id)}
-          className={`h-10 border-b-2 px-3.5 text-[13px] transition ${view === item.id ? 'border-nv-accent font-medium text-nv-ink-strong' : 'border-transparent text-nv-muted hover:text-nv-ink'}`}>{item.label}</button>)}
-      </div>
       <div ref={targetRef('content')} className="flex min-w-0 flex-1 flex-col" />
     </main>
     <section aria-label="Results and preview" className="flex min-w-0 flex-col gap-6 px-6 pb-6 md:col-start-2 xl:col-start-auto xl:h-full xl:overflow-y-auto xl:border-l xl:border-nv-line xl:py-6">

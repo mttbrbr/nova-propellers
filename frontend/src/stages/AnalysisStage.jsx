@@ -90,6 +90,17 @@ export default function AnalysisStage({ a }) {
           : 'Tick solvers to run them on the same inputs after the main run.'}</p>
         <button type="button" className="self-start text-[13px] text-nv-accent hover:text-nv-accent-soft" onClick={a.onCompare}>More comparisons in Studies →</button>
       </fieldset>
+      <Section title="Corrections">
+        {a.model === 'bemt' ? <>
+          <SelectField label="Tip loss" ariaLabel="Correction tip loss" value={context?.corrections?.tip_loss || 'prandtl'} onChange={(v) => a.setCorrection('tip_loss', v)}
+            options={[['prandtl', 'Prandtl'], ['none', 'None']]} />
+          <SelectField label="Hub loss" ariaLabel="Correction hub loss" value={context?.corrections?.hub_loss || 'prandtl'} onChange={(v) => a.setCorrection('hub_loss', v)}
+            options={[['prandtl', 'Prandtl'], ['none', 'None']]} />
+          <SelectField label="Beyond the polar" ariaLabel="Correction post stall" value={context?.corrections?.post_stall || 'clip'} onChange={(v) => a.setCorrection('post_stall', v)}
+            options={[['clip', 'Clip at last sample'], ['viterna', 'Viterna–Corrigan to ±90°']]} />
+          <p className="m-0 text-xs leading-relaxed text-nv-muted">Finite-blade losses applied to the momentum balance. Prandtl is the default; None gives the optimistic infinite-blade limit. Viterna extends imported polars beyond their sampled incidence instead of freezing the last value. Both are stored with the run.</p>
+        </> : <p className="m-0 text-xs leading-relaxed text-nv-muted">{(a.model || '').toUpperCase()} has no selectable corrections; choose BEMT to set tip and hub loss.</p>}
+      </Section>
       <Section title="Operating point">
         <Field label="Speed" ariaLabel="Rotation speed" unit="rpm" value={inputs.rpm} onChange={(v) => set('rpm', v)} />
       </Section>
