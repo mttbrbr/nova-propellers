@@ -18,6 +18,7 @@ import numpy as np
 
 from .corrections import (
     AxialCorrections,
+    du_selig_augmentation,
     hub_loss,
     prandtl_glauert,
     snel_augmentation,
@@ -64,11 +65,14 @@ class AxialRotor:
         return float(area / (math.pi * (self.tip_radius_m**2 - self.hub_radius_m**2)))
 
 
-def _coefficients(rotor, fluid, corrections, alpha_deg, r, chord, speed, slope, alpha0):
+def _coefficients(rotor, fluid, corrections, alpha_deg, r, chord, speed, slope, alpha0, tsr=math.inf):
     reynolds = fluid.density_kg_m3 * speed * chord / fluid.viscosity_pa_s
     cl, cd = rotor.section(alpha_deg, reynolds)
     if corrections.rotational_augmentation == 'snel':
         cl = snel_augmentation(cl, alpha_deg, chord, r, alpha0, slope, r / rotor.tip_radius_m)
+    elif corrections.rotational_augmentation == 'du_selig':
+        cd0 = rotor.section(np.full_like(np.asarray(alpha_deg, dtype=float), alpha0), reynolds)[1]
+        cl, cd = du_selig_augmentation(cl, cd, cd0, alpha_deg, chord, r, rotor.tip_radius_m, tsr, alpha0, slope)
     mach = speed / fluid.speed_of_sound_m_s
     if corrections.compressibility == 'prandtl_glauert':
         cl = prandtl_glauert(cl, mach)
@@ -87,7 +91,7 @@ def _state(phi, mode, rotor, fluid, corrections, r, chord, theta, V, omega, slop
     nominal = np.hypot(V, omega * r)
     if mode == 'turbine':
         alpha = np.degrees(phi - theta)
-        cl, cd, re, mach = _coefficients(rotor, fluid, corrections, alpha, r, chord, nominal, slope, alpha0)
+        cl, cd, re, mach = _coefficients(rotor, fluid, corrections, alpha, r, chord, nominal, slope, alpha0, tsr)
         cn, ct = cl * c + cd * s, cl * s - cd * c
         k = sigma * cn / (4 * F * s * s)
         kp = sigma * ct / (4 * F * s * c)
@@ -103,7 +107,7 @@ def _state(phi, mode, rotor, fluid, corrections, r, chord, theta, V, omega, slop
         residual = s * inverse - V / (omega * r) * c * (1 - kp)
         return dict(alpha=alpha, cl=cl, cd=cd, cn=cn, ct=ct, F=F, a=a, ap=ap, re=re, mach=mach, residual=residual)
     alpha = np.degrees(theta - phi)
-    cl, cd, re, mach = _coefficients(rotor, fluid, corrections, alpha, r, chord, nominal, slope, alpha0)
+    cl, cd, re, mach = _coefficients(rotor, fluid, corrections, alpha, r, chord, nominal, slope, alpha0, tsr)
     cn, ct = cl * c - cd * s, cl * s + cd * c
     k = sigma * cn / (4 * F * s * s)
     kp = sigma * ct / (4 * F * s * c)
@@ -151,8 +155,8 @@ def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, cor
     r, chord = rotor.radius_m[inner], rotor.chord_m[inner]
     theta = np.radians(rotor.twist_deg[inner] + rotor.pitch_deg)
     tsr = omega * R / V if V > 0 else math.inf
-    slope = rotor.section.lift_slope_per_rad() if corrections.rotational_augmentation == 'snel' else 2 * math.pi
-    alpha0 = rotor.section.zero_lift_angle_deg() if corrections.rotational_augmentation == 'snel' else 0.0
+    slope = rotor.section.lift_slope_per_rad() if corrections.rotational_augmentation != 'none' else 2 * math.pi
+    alpha0 = rotor.section.zero_lift_angle_deg() if corrections.rotational_augmentation != 'none' else 0.0
     args = (mode, rotor, fluid, corrections)
     station = (r, chord, theta, V, omega, slope, alpha0, tsr)
 

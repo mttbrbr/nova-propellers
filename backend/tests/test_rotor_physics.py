@@ -5,7 +5,8 @@ import numpy as np
 
 from nova.physics import rotors
 from nova.physics.axial import AxialRotor, solve_axial
-from nova.physics.corrections import AxialCorrections, VerticalCorrections, turbine_axial_induction
+from nova.physics import wake
+from nova.physics.corrections import AxialCorrections, VerticalCorrections, du_selig_augmentation, turbine_axial_induction
 from nova.physics.fluids import PRESETS, fluid_from
 from nova.physics.sections import GRID_DEG, SectionPolar
 from nova.physics.vawt import METHODS, VerticalRotor, _inverse_thrust, solve_vertical
@@ -157,6 +158,50 @@ class VerticalTests(unittest.TestCase):
             changed = rotors.analyze({**base, 'corrections': options})['coefficients']['CP']
             self.assertNotAlmostEqual(changed, reference, places=4, msg=options)
 
+    def test_upstream_wake_deficits_follow_the_models(self):
+        rotor_wake = {'kind': 'rotor', 'model': 'jensen', 'diameter_m': 10, 'coefficient': 0.75, 'distance_m': 50, 'decay': 0.05}
+        # Jensen: (1 - sqrt(1 - Ct)) (D / (D + 2 k x))^2 = 0.5 * (10 / 15)^2 over a fully covered disk.
+        full = wake.mean_deficit(rotor_wake, 10)
+        self.assertAlmostEqual(full['mean_deficit'], 0.5 * (10 / 15) ** 2, places=3)
+        self.assertAlmostEqual(full['covered_fraction'], 1.0, places=2)
+        # Moving the source sideways uncovers the disk and lowers the mean deficit.
+        shifted = wake.mean_deficit({**rotor_wake, 'offset_m': 12}, 10)
+        self.assertLess(shifted['mean_deficit'], full['mean_deficit'])
+        self.assertLess(shifted['covered_fraction'], 1.0)
+        far = wake.mean_deficit({**rotor_wake, 'distance_m': 400}, 10)
+        self.assertLess(far['mean_deficit'], full['mean_deficit'])
+        gaussian = wake.mean_deficit({**rotor_wake, 'model': 'gaussian'}, 10)
+        self.assertTrue(0 < gaussian['mean_deficit'] < gaussian['peak_deficit'] < 0.5)
+        self.assertEqual(wake.mean_deficit(None, 10)['mean_deficit'], 0.0)
+        for bad in ({'kind': 'rotor', 'diameter_m': -1, 'coefficient': 0.5, 'distance_m': 5}, {'kind': 'rotor'},
+                    {'kind': 'body', 'model': 'x', 'diameter_m': 1, 'coefficient': 1, 'distance_m': 5}):
+            with self.assertRaises(ValueError):
+                wake.validate(bad)
+
+    def test_upstream_wake_reduces_power_and_inflow_for_a_turbine(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        free = rotors.analyze(base)
+        behind = rotors.analyze({**base, 'upstream_wake': {'kind': 'body', 'model': 'gaussian', 'diameter_m': 4, 'coefficient': 1.0, 'distance_m': 20}})
+        self.assertGreater(behind['upstream_wake']['mean_deficit'], 0.0)
+        self.assertLess(behind['upstream_wake']['effective_velocity_m_s'], 8)
+        self.assertLess(behind['performance']['power_w'], free['performance']['power_w'])
+        self.assertNotIn('upstream_wake', free)
+
+    def test_du_selig_leaves_attached_flow_alone_and_delays_stall_near_the_hub(self):
+        alpha = np.array([4.0, 25.0])
+        slope, alpha0 = 2 * math.pi, 0.0
+        cl2d = np.array([slope * math.radians(4.0), 0.9])
+        cd2d = np.array([0.01, 0.2])
+        cl, cd = du_selig_augmentation(cl2d, cd2d, 0.01, alpha, np.full(2, 0.4), np.full(2, 1.0), 10.0, 7.0, alpha0, slope)
+        self.assertAlmostEqual(cl[0], cl2d[0], places=9)
+        self.assertGreater(cl[1], cl2d[1])
+        self.assertGreater(cd[1], cd2d[1])
+        outboard_cl, _ = du_selig_augmentation(cl2d, cd2d, 0.01, alpha, np.full(2, 0.4), np.full(2, 9.0), 10.0, 7.0, alpha0, slope)
+        self.assertLess(outboard_cl[1] - cl2d[1], cl[1] - cl2d[1])
+        stalled = rotors.analyze({'kind': 'hawt', 'operating': {'velocity_m_s': 5, 'tip_speed_ratio': 3}, 'corrections': {'rotational_augmentation': 'du_selig'}})
+        self.assertTrue(stalled['converged'])
+        self.assertEqual(stalled['corrections']['rotational_augmentation'], 'du_selig')
+
     def test_streamtube_inverse_thrust_is_monotonic(self):
         ct = np.linspace(0, 1.8, 200)
         for model in ('glauert', 'buhl', 'spera'):
@@ -181,7 +226,7 @@ class VerticalTests(unittest.TestCase):
         self.assertEqual(catalog['marine'], ['tip_loss', 'hub_loss'])
         self.assertNotIn('compressibility', catalog['hawt'])
         for kind, corrections in (('marine', {'compressibility': 'prandtl_glauert'}), ('marine', {'high_induction': 'buhl'}),
-                                  ('propeller', {'rotational_augmentation': 'snel'}), ('hawt', {'compressibility': 'prandtl_glauert'})):
+                                  ('marine', {'rotational_augmentation': 'du_selig'}), ('hawt', {'compressibility': 'prandtl_glauert'})):
             with self.assertRaisesRegex(ValueError, 'not applicable'):
                 rotors.analyze({'kind': kind, 'corrections': corrections})
 

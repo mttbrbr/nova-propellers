@@ -21,6 +21,7 @@ import numpy as np
 from .axial import AxialRotor, solve_axial
 from .corrections import corrections_from
 from .fluids import PRESETS, fluid_from
+from . import wake as upstream
 from .marine import b_series_rotor, hull_interaction, marine_assessment
 from .sections import SYNTHETIC_SECTIONS, section_from
 from .vawt import METHOD_LABELS, METHODS, VerticalRotor, solve_vertical
@@ -36,7 +37,7 @@ KINDS = ('hawt', 'vawt', 'propeller', 'marine')
 #   marine    – additionally no compressibility (water)
 APPLICABLE_CORRECTIONS = {
     'hawt': ('tip_loss', 'hub_loss', 'high_induction', 'rotational_augmentation'),
-    'propeller': ('tip_loss', 'hub_loss', 'compressibility'),
+    'propeller': ('tip_loss', 'hub_loss', 'compressibility', 'rotational_augmentation'),
     'marine': ('tip_loss', 'hub_loss'),
     'vawt': ('finite_aspect_ratio', 'flow_curvature', 'dynamic_stall', 'high_induction', 'strut_drag', 'shaft_wake'),
 }
@@ -98,12 +99,13 @@ def catalog():
         'vawt_methods': [{'id': m, 'label': METHOD_LABELS[m]} for m in METHODS],
         'axial_corrections': {
             'tip_loss': ['none', 'prandtl', 'shen'], 'hub_loss': ['none', 'prandtl'],
-            'high_induction': ['none', 'glauert', 'buhl', 'spera'], 'rotational_augmentation': ['none', 'snel'],
+            'high_induction': ['none', 'glauert', 'buhl', 'spera'], 'rotational_augmentation': ['none', 'snel', 'du_selig'],
             'compressibility': ['none', 'prandtl_glauert']},
         'vertical_corrections': {
             'finite_aspect_ratio': [False, True], 'flow_curvature': [False, True],
             'dynamic_stall': ['none', 'gormont_berg'], 'high_induction': ['none', 'glauert', 'buhl', 'spera'],
             'strut_drag': [False, True], 'shaft_wake': [False, True]},
+        'upstream_wake': {'kinds': list(upstream.KINDS), 'models': list(upstream.MODELS), 'default_decay': upstream.DEFAULT_DECAY},
         'fluids': ['air', 'fresh_water', 'sea_water'],
         'fluid_properties': {name: fluid.to_dict() for name, fluid in PRESETS.items()},
         'corrections_by_kind': {kind: list(names) for kind, names in APPLICABLE_CORRECTIONS.items()},
@@ -226,6 +228,9 @@ def analyze(spec):
     V, rpm = resolve_operating(spec, rotor)
     kind = spec['kind']
     corrections = checked_corrections(kind, spec.get('corrections'))
+    # An upstream rotor or body slows the inflow; the rotor speed (rpm) stays what was commanded.
+    wake = upstream.mean_deficit(spec.get('upstream_wake'), 2 * _tip_radius(rotor))
+    free_stream_V, V = V, V * (1 - wake['mean_deficit'])
     if kind == 'vawt':
         result = solve_vertical(rotor, method=spec.get('method', 'double_multiple_streamtube'), wind_speed_m_s=V,
                                 rpm=rpm, fluid=fluid, corrections=corrections,
@@ -252,6 +257,10 @@ def analyze(spec):
             result['marine'] = marine
             result['warnings'] += warnings
     result['kind'] = kind
+    if wake['kind'] != 'none':
+        result['upstream_wake'] = {**wake, 'free_stream_velocity_m_s': free_stream_V, 'effective_velocity_m_s': V}
+        result['warnings'] = [*result.get('warnings', []), f"Upstream {wake['kind']} wake ({wake['model']}) lowers the mean inflow by {100 * wake['mean_deficit']:.1f} %; "
+                              'coefficients are referred to the effective velocity and blade load is not resolved around the azimuth']
     result['fluid'] = fluid.to_dict()
     result['corrections'] = corrections.to_dict()
     result['section'] = {'name': rotor.section.name, 'synthetic': rotor.section.synthetic,

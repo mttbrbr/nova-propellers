@@ -6,7 +6,8 @@ effect of each model choice. Formulas follow the usual references:
 Axial rotors (propellers, wind/tidal turbines, marine propellers)
   * tip / hub loss: Prandtl (Glauert 1935); Shen et al. (2005) tip variant
   * high induction: Glauert empirical, Buhl (2005), Spera (1994)
-  * 3-D rotational augmentation: Snel et al. (1994)
+  * 3-D rotational augmentation: Snel et al. (1994); Du & Selig (1998), which
+    also corrects drag and depends on the local speed ratio
   * compressibility: Prandtl–Glauert (subsonic sections only)
 
 Vertical-axis rotors (Darrieus, H-rotor)
@@ -24,7 +25,7 @@ import numpy as np
 TIP_LOSS = ('none', 'prandtl', 'shen')
 HUB_LOSS = ('none', 'prandtl')
 HIGH_INDUCTION = ('none', 'glauert', 'buhl', 'spera')
-ROTATIONAL = ('none', 'snel')
+ROTATIONAL = ('none', 'snel', 'du_selig')
 COMPRESSIBILITY = ('none', 'prandtl_glauert')
 DYNAMIC_STALL = ('none', 'gormont_berg')
 
@@ -147,6 +148,23 @@ def snel_augmentation(cl, alpha_deg, chord, r, alpha0_deg, slope_per_rad, r_over
     delta = 3.0 * (chord / np.maximum(r, 1e-9)) ** 2 * (cl_inviscid - cl)
     weight = np.clip((0.8 - r_over_R) / 0.1, 0.0, 1.0)
     return cl + weight * np.maximum(delta, 0.0) * (cl_inviscid > cl)
+
+
+def du_selig_augmentation(cl, cd, cd0, alpha_deg, chord, r, tip_radius, speed_ratio, alpha0_deg, slope_per_rad):
+    """Du & Selig (1998) stall delay: Δcl = f_l (cl_inviscid − cl_2D), Δcd = f_d (cd_2D − cd_0).
+
+    f = 1/(2π) [1.6 (c/r)/0.1267 · (1 − (c/r)^(R/(Λr)·n)) / (1 + (c/r)^(R/(Λr)·n)) − 1] with n = 1 for lift and
+    1/2 for drag; Λ = ΩR / sqrt(V² + (ΩR)²). Lift is only ever increased and drag never lowered below 2-D.
+    """
+    c_over_r = np.clip(chord / np.maximum(r, 1e-9), 1e-6, 5.0)
+    lam = 1.0 if not math.isfinite(speed_ratio) else speed_ratio / math.sqrt(1.0 + speed_ratio**2)
+    def factor(n):
+        x = c_over_r ** (n * tip_radius / (lam * np.maximum(r, 1e-9)))
+        return np.clip((1.6 * c_over_r / 0.1267 * (1 - x) / (1 + x) - 1.0) / (2 * math.pi), 0.0, 1.0)
+    cl_inviscid = slope_per_rad * np.radians(alpha_deg - alpha0_deg)
+    new_cl = cl + factor(1.0) * np.maximum(cl_inviscid - cl, 0.0)
+    new_cd = cd + factor(0.5) * np.maximum(cd - cd0, 0.0)
+    return new_cl, new_cd
 
 
 def prandtl_glauert(cl, mach):
