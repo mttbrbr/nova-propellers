@@ -21,6 +21,7 @@ import numpy as np
 from .axial import AxialRotor, solve_axial
 from .corrections import corrections_from
 from .fluids import PRESETS, fluid_from
+from . import azimuthal
 from . import wake as upstream
 from .marine import b_series_rotor, hull_interaction, marine_assessment
 from .sections import SYNTHETIC_SECTIONS, section_from
@@ -36,8 +37,8 @@ KINDS = ('hawt', 'vawt', 'propeller', 'marine')
 #               turbine roots)
 #   marine    – additionally no compressibility (water)
 APPLICABLE_CORRECTIONS = {
-    'hawt': ('tip_loss', 'hub_loss', 'high_induction', 'rotational_augmentation'),
-    'propeller': ('tip_loss', 'hub_loss', 'compressibility', 'rotational_augmentation'),
+    'hawt': ('tip_loss', 'hub_loss', 'high_induction', 'rotational_augmentation', 'dynamic_stall'),
+    'propeller': ('tip_loss', 'hub_loss', 'compressibility', 'rotational_augmentation', 'dynamic_stall'),
     'marine': ('tip_loss', 'hub_loss'),
     'vawt': ('finite_aspect_ratio', 'flow_curvature', 'dynamic_stall', 'high_induction', 'strut_drag', 'shaft_wake'),
 }
@@ -100,11 +101,13 @@ def catalog():
         'axial_corrections': {
             'tip_loss': ['none', 'prandtl', 'shen'], 'hub_loss': ['none', 'prandtl'],
             'high_induction': ['none', 'glauert', 'buhl', 'spera'], 'rotational_augmentation': ['none', 'snel', 'du_selig'],
-            'compressibility': ['none', 'prandtl_glauert']},
+            'compressibility': ['none', 'prandtl_glauert'], 'dynamic_stall': ['none', 'oye']},
         'vertical_corrections': {
             'finite_aspect_ratio': [False, True], 'flow_curvature': [False, True],
             'dynamic_stall': ['none', 'gormont_berg'], 'high_induction': ['none', 'glauert', 'buhl', 'spera'],
             'strut_drag': [False, True], 'shaft_wake': [False, True]},
+        'inflow': {'defaults': {'resolved': False, 'yaw_deg': 0.0, 'shear_exponent': 0.0, 'hub_height_m': 0.0, 'azimuth_steps': 36,
+                                'tower': {'kind': 'none'}}, 'tower_kinds': ['none', 'upwind', 'downwind']},
         'upstream_wake': {'kinds': list(upstream.KINDS), 'models': list(upstream.MODELS), 'default_decay': upstream.DEFAULT_DECAY},
         'fluids': ['air', 'fresh_water', 'sea_water'],
         'fluid_properties': {name: fluid.to_dict() for name, fluid in PRESETS.items()},
@@ -229,7 +232,11 @@ def analyze(spec):
     kind = spec['kind']
     corrections = checked_corrections(kind, spec.get('corrections'))
     # An upstream rotor or body slows the inflow; the rotor speed (rpm) stays what was commanded.
-    wake = upstream.mean_deficit(spec.get('upstream_wake'), 2 * _tip_radius(rotor))
+    inflow = azimuthal.validate(spec.get('inflow'))
+    if inflow and kind == 'vawt':
+        raise ValueError('Resolved inflow applies to axial rotors; the vertical-axis models resolve azimuth themselves')
+    # Resolved inflow evaluates the wake point by point; otherwise its mean deficit lowers the inflow.
+    wake = {'kind': 'none', 'mean_deficit': 0.0} if inflow else upstream.mean_deficit(spec.get('upstream_wake'), 2 * _tip_radius(rotor))
     free_stream_V, V = V, V * (1 - wake['mean_deficit'])
     if kind == 'vawt':
         result = solve_vertical(rotor, method=spec.get('method', 'double_multiple_streamtube'), wind_speed_m_s=V,
@@ -241,7 +248,14 @@ def analyze(spec):
         if kind != 'hawt' and spec.get('method', 'bemt') != 'bemt':
             raise ValueError('Axial rotors use the BEMT method')
         mode = 'turbine' if kind == 'hawt' else 'propeller'
-        result = solve_axial(rotor, mode=mode, velocity_m_s=V, rpm=rpm, fluid=fluid, corrections=corrections)
+        if inflow:
+            result = azimuthal.solve_azimuthal(rotor, mode=mode, velocity_m_s=V, rpm=rpm, fluid=fluid, corrections=corrections,
+                                               inflow=inflow, wake_config=spec.get('upstream_wake'))
+        else:
+            result = solve_axial(rotor, mode=mode, velocity_m_s=V, rpm=rpm, fluid=fluid, corrections=corrections)
+            if corrections.dynamic_stall != 'none':
+                result['warnings'].append('Dynamic stall needs a changing incidence: enable resolved inflow (yaw, shear, tower or a partial wake); '
+                                          'in uniform axial flow the steady solution is unchanged')
         result['method'], result['method_label'] = 'bemt', 'Blade-element momentum (1-D residual)'
         result['blade'] = {'r_over_R': (rotor.radius_m / rotor.tip_radius_m).tolist(), 'chord_m': rotor.chord_m.tolist(),
                            'twist_deg': rotor.twist_deg.tolist(), 'blades': rotor.blades,

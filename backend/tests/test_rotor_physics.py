@@ -202,6 +202,79 @@ class VerticalTests(unittest.TestCase):
         self.assertTrue(stalled['converged'])
         self.assertEqual(stalled['corrections']['rotational_augmentation'], 'du_selig')
 
+    def test_resolved_inflow_reduces_to_the_axisymmetric_solution_when_uniform(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        reference = rotors.analyze(base)
+        resolved = rotors.analyze({**base, 'inflow': {'resolved': True}})
+        for key in ('thrust_n', 'torque_nm', 'power_w'):
+            self.assertAlmostEqual(resolved['performance'][key] / reference['performance'][key], 1.0, places=6)
+        self.assertAlmostEqual(resolved['performance']['blade_thrust_variation'], 0.0, places=9)
+        self.assertEqual(len(resolved['rotation']), 36)
+        propeller = {'kind': 'propeller', 'operating': {'rpm': 3000, 'advance_ratio': 0.5}}
+        self.assertAlmostEqual(rotors.analyze({**propeller, 'inflow': {'resolved': True}})['performance']['thrust_n'] /
+                               rotors.analyze(propeller)['performance']['thrust_n'], 1.0, places=6)
+
+    def test_yaw_loses_power_like_cos_cubed_and_loads_vary_around_the_azimuth(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        free = rotors.analyze(base)['performance']['power_w']
+        left = rotors.analyze({**base, 'inflow': {'resolved': True, 'yaw_deg': 20}})
+        right = rotors.analyze({**base, 'inflow': {'resolved': True, 'yaw_deg': -20}})
+        self.assertTrue(left['converged'])
+        self.assertTrue(0.7 < left['performance']['power_w'] / free < 0.9, left['performance']['power_w'] / free)
+        self.assertAlmostEqual(left['performance']['power_w'] / right['performance']['power_w'], 1.0, delta=0.02)
+        self.assertGreater(left['performance']['blade_thrust_variation'], 0.1)
+        # The blade that moves against the in-plane wind component carries a different load from the one moving with it.
+        thrust = [row['blade_thrust_n'] for row in left['rotation']]
+        self.assertNotAlmostEqual(thrust[9], thrust[27], delta=0.05 * abs(sum(thrust) / len(thrust)))
+
+    def test_shear_and_tower_shadow_act_where_they_should(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        uniform = rotors.analyze({**base, 'inflow': {'resolved': True}})
+        sheared = rotors.analyze({**base, 'inflow': {'resolved': True, 'shear_exponent': 0.2, 'hub_height_m': 30}})
+        self.assertAlmostEqual(sheared['performance']['thrust_n'] / uniform['performance']['thrust_n'], 1.0, delta=0.02)
+        thrust = [row['blade_thrust_n'] for row in sheared['rotation']]
+        self.assertGreater(thrust[0], thrust[18])  # blade up sees faster wind than blade down
+        shadow = rotors.analyze({**base, 'inflow': {'resolved': True, 'hub_height_m': 30, 'tower': {'kind': 'upwind', 'radius_m': 0.5, 'distance_m': 2.5}}})
+        loads = [row['blade_thrust_n'] for row in shadow['rotation']]
+        self.assertEqual(loads.index(min(loads)), 18)  # directly in front of the tower
+        self.assertLess(shadow['performance']['power_w'], uniform['performance']['power_w'])
+        downwind = rotors.analyze({**base, 'inflow': {'resolved': True, 'hub_height_m': 30, 'tower': {'kind': 'downwind', 'radius_m': 0.5, 'distance_m': 2.5}}})
+        self.assertLess(downwind['performance']['power_w'], uniform['performance']['power_w'])
+
+    def test_partial_upstream_wake_is_resolved_around_the_disk(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        wake_config = {'kind': 'rotor', 'model': 'gaussian', 'diameter_m': 10, 'coefficient': 0.75, 'distance_m': 40, 'offset_m': 6}
+        resolved = rotors.analyze({**base, 'upstream_wake': wake_config, 'inflow': {'resolved': True}})
+        self.assertGreater(resolved['performance']['blade_thrust_variation'], 0.3)
+        self.assertLess(resolved['inflow']['speed_ratio_min'], 0.8)
+        self.assertNotIn('upstream_wake', resolved)
+        rows = resolved['rotation']
+        # The wake lies on the +y side (ψ = 90°), so that blade position is the most loaded-down one.
+        self.assertLess(rows[9]['inflow_ratio'], rows[27]['inflow_ratio'])
+
+    def test_oye_dynamic_stall_changes_loads_only_when_incidence_varies(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}, 'corrections': {'dynamic_stall': 'oye'}}
+        steady = rotors.analyze(base)
+        self.assertTrue(any('Dynamic stall' in w for w in steady['warnings']))
+        self.assertAlmostEqual(steady['performance']['power_w'], rotors.analyze({**base, 'corrections': {}})['performance']['power_w'], places=6)
+        # Yaw at low tip-speed ratio drives inboard sections into stall with changing incidence.
+        low = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 4}, 'inflow': {'resolved': True, 'yaw_deg': 20}}
+        static = rotors.analyze(low)
+        dynamic = rotors.analyze({**low, 'corrections': {'dynamic_stall': 'oye'}})
+        self.assertEqual(dynamic['inflow']['dynamic_stall'], 'oye')
+        self.assertLessEqual(dynamic['inflow']['attached_fraction_min'], 1.0)
+        self.assertTrue(dynamic['converged'])
+        self.assertNotAlmostEqual(dynamic['performance']['torque_nm'], static['performance']['torque_nm'], places=3)
+
+    def test_invalid_resolved_inflow_is_rejected(self):
+        base = {'kind': 'hawt', 'operating': {'velocity_m_s': 8, 'tip_speed_ratio': 7}}
+        for inflow in ({'resolved': True, 'shear_exponent': 0.2}, {'resolved': True, 'yaw_deg': 80}, {'resolved': True, 'azimuth_steps': 7},
+                       {'resolved': True, 'colour': 1}, {'resolved': True, 'hub_height_m': 30, 'tower': {'kind': 'upwind', 'radius_m': 3, 'distance_m': 2}}):
+            with self.assertRaises(ValueError, msg=inflow):
+                rotors.analyze({**base, 'inflow': inflow})
+        with self.assertRaises(ValueError):
+            rotors.analyze({'kind': 'vawt', 'inflow': {'resolved': True}})
+
     def test_streamtube_inverse_thrust_is_monotonic(self):
         ct = np.linspace(0, 1.8, 200)
         for model in ('glauert', 'buhl', 'spera'):

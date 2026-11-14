@@ -79,7 +79,7 @@ def _coefficients(rotor, fluid, corrections, alpha_deg, r, chord, speed, slope, 
     return cl, cd, reynolds, mach
 
 
-def _state(phi, mode, rotor, fluid, corrections, r, chord, theta, V, omega, slope, alpha0, tsr):
+def _state(phi, mode, rotor, fluid, corrections, r, chord, theta, V, omega, slope, alpha0, tsr, skew=None):
     """All station quantities for a candidate inflow angle (arrays broadcast)."""
     B = rotor.blades
     sigma = B * chord / (2 * math.pi * r)
@@ -104,6 +104,13 @@ def _state(phi, mode, rotor, fluid, corrections, r, chord, theta, V, omega, slop
         windmill = np.where(k <= MOMENTUM_LIMIT[corrections.high_induction], 1 + k,
                             1 / np.where(np.abs(1 - a) < EPS, EPS, 1 - a))
         inverse = np.where(phi > 0, windmill, np.where(k > 1, 1 - k, 1.0))
+        if skew is not None:
+            # Glauert skewed-wake correction: the induction varies with azimuth in yawed flow. Only physical
+            # states (0 < a < 1) are scaled; the k < 0 branch keeps its pole-free 1 + k form.
+            active = (phi > 0) & (a > 0) & (a < 1)
+            scaled = np.minimum(a * np.clip(1 + skew, 0.2, 1.8), 0.95)
+            a = np.where(active, scaled, a)
+            inverse = np.where(active, 1 / (1 - scaled), inverse)
         residual = s * inverse - V / (omega * r) * c * (1 - kp)
         return dict(alpha=alpha, cl=cl, cd=cd, cn=cn, ct=ct, F=F, a=a, ap=ap, re=re, mach=mach, residual=residual)
     alpha = np.degrees(theta - phi)
@@ -139,27 +146,8 @@ def _bracket(residual_grid, phi_grid, windows):
     return low, high
 
 
-def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, corrections: AxialCorrections):
-    if mode not in ('turbine', 'propeller'):
-        raise ValueError('Mode must be turbine or propeller')
-    V = float(velocity_m_s)
-    omega = 2 * math.pi * float(rpm) / 60.0
-    if not math.isfinite(V) or not math.isfinite(omega) or omega <= 0:
-        raise ValueError('Rotational speed must be positive and velocity finite')
-    if mode == 'turbine' and V <= 0:
-        raise ValueError('A turbine needs a positive free-stream velocity')
-    if mode == 'propeller' and V < 0:
-        raise ValueError('Propeller advance velocity must be non-negative')
-    R = rotor.tip_radius_m
-    inner = (rotor.radius_m > rotor.hub_radius_m + 1e-9) & (rotor.radius_m < R - 1e-9) & (rotor.chord_m > 0)
-    r, chord = rotor.radius_m[inner], rotor.chord_m[inner]
-    theta = np.radians(rotor.twist_deg[inner] + rotor.pitch_deg)
-    tsr = omega * R / V if V > 0 else math.inf
-    slope = rotor.section.lift_slope_per_rad() if corrections.rotational_augmentation != 'none' else 2 * math.pi
-    alpha0 = rotor.section.zero_lift_angle_deg() if corrections.rotational_augmentation != 'none' else 0.0
-    args = (mode, rotor, fluid, corrections)
-    station = (r, chord, theta, V, omega, slope, alpha0, tsr)
-
+def _solve_points(mode, args, station):
+    """Bracketed 1-D residual solve for every point (arrays broadcast; V and omega may be per point)."""
     if mode == 'turbine':
         windows = [(EPS, math.pi / 2), (-math.pi / 4, -EPS), (math.pi / 2, math.pi - EPS)]
         grid = np.concatenate([np.linspace(EPS, math.pi / 2, SCAN), np.linspace(-math.pi / 4, -EPS, SCAN // 3),
@@ -185,18 +173,44 @@ def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, cor
         high = np.where(same, high, mid)
     phi = 0.5 * (low + high)
     st = _state(phi, *args, *station)
+    return phi, st, solved
 
+
+def _flow(mode, st, phi, V, omega, r):
+    """Axial and tangential velocities at the blade and the induction factors."""
     if mode == 'turbine':
-        axial = V * (1 - st['a'])
-        tangential = omega * r * (1 + st['ap'])
-        a, ap = st['a'], st['ap']
-    else:
-        sin_phi, cos_phi = np.sin(phi), np.cos(phi)
-        through = omega * r * sin_phi / (cos_phi * (1 + st['kp']))
-        axial = through
-        tangential = through * cos_phi / np.maximum(sin_phi, EPS)
-        a = (through - V) / V if V > 0 else np.full_like(r, np.nan)
-        ap = 1 - tangential / (omega * r)
+        return V * (1 - st['a']), omega * r * (1 + st['ap']), st['a'], st['ap']
+    sin_phi, cos_phi = np.sin(phi), np.cos(phi)
+    through = omega * r * sin_phi / (cos_phi * (1 + st['kp']))
+    tangential = through * cos_phi / np.maximum(sin_phi, EPS)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        a = np.where(np.asarray(V) > 0, (through - V) / V, np.nan)
+    return through, tangential, a, 1 - tangential / (omega * r)
+
+
+def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, corrections: AxialCorrections):
+    if mode not in ('turbine', 'propeller'):
+        raise ValueError('Mode must be turbine or propeller')
+    V = float(velocity_m_s)
+    omega = 2 * math.pi * float(rpm) / 60.0
+    if not math.isfinite(V) or not math.isfinite(omega) or omega <= 0:
+        raise ValueError('Rotational speed must be positive and velocity finite')
+    if mode == 'turbine' and V <= 0:
+        raise ValueError('A turbine needs a positive free-stream velocity')
+    if mode == 'propeller' and V < 0:
+        raise ValueError('Propeller advance velocity must be non-negative')
+    R = rotor.tip_radius_m
+    inner = (rotor.radius_m > rotor.hub_radius_m + 1e-9) & (rotor.radius_m < R - 1e-9) & (rotor.chord_m > 0)
+    r, chord = rotor.radius_m[inner], rotor.chord_m[inner]
+    theta = np.radians(rotor.twist_deg[inner] + rotor.pitch_deg)
+    tsr = omega * R / V if V > 0 else math.inf
+    slope = rotor.section.lift_slope_per_rad() if corrections.rotational_augmentation != 'none' else 2 * math.pi
+    alpha0 = rotor.section.zero_lift_angle_deg() if corrections.rotational_augmentation != 'none' else 0.0
+    args = (mode, rotor, fluid, corrections)
+    station = (r, chord, theta, V, omega, slope, alpha0, tsr)
+
+    phi, st, solved = _solve_points(mode, args, station)
+    axial, tangential, a, ap = _flow(mode, st, phi, V, omega, r)
     W = np.hypot(axial, tangential)
     q = 0.5 * fluid.density_kg_m3 * W**2
     dT = rotor.blades * q * chord * st['cn']

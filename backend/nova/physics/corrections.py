@@ -9,6 +9,8 @@ Axial rotors (propellers, wind/tidal turbines, marine propellers)
   * 3-D rotational augmentation: Snel et al. (1994); Du & Selig (1998), which
     also corrects drag and depends on the local speed ratio
   * compressibility: Prandtl–Glauert (subsonic sections only)
+  * dynamic stall: Øye (Hansen 2015); only acts in the azimuthally resolved solver,
+    where the incidence changes around the revolution
 
 Vertical-axis rotors (Darrieus, H-rotor)
   * finite aspect ratio (the VAWT "tip loss"): Lanchester–Prandtl lifting line
@@ -28,6 +30,7 @@ HIGH_INDUCTION = ('none', 'glauert', 'buhl', 'spera')
 ROTATIONAL = ('none', 'snel', 'du_selig')
 COMPRESSIBILITY = ('none', 'prandtl_glauert')
 DYNAMIC_STALL = ('none', 'gormont_berg')
+AXIAL_DYNAMIC_STALL = ('none', 'oye')
 
 
 def _choice(name, value, options):
@@ -43,8 +46,10 @@ class AxialCorrections:
     high_induction: str = 'buhl'
     rotational_augmentation: str = 'none'
     compressibility: str = 'none'
+    dynamic_stall: str = 'none'
 
     def __post_init__(self):
+        _choice('dynamic_stall', self.dynamic_stall, AXIAL_DYNAMIC_STALL)
         _choice('tip_loss', self.tip_loss, TIP_LOSS)
         _choice('hub_loss', self.hub_loss, HUB_LOSS)
         _choice('high_induction', self.high_induction, HIGH_INDUCTION)
@@ -93,8 +98,8 @@ def tip_loss(model, blades, r, tip_radius, phi, tip_speed_ratio=None):
     sin_phi = np.maximum(np.abs(np.sin(phi)), 1e-6)
     f = blades / 2.0 * (tip_radius - r) / (r * sin_phi)
     if model == 'shen':
-        tsr = 7.0 if tip_speed_ratio is None or not math.isfinite(tip_speed_ratio) else tip_speed_ratio
-        f = f * (math.exp(-0.125 * (blades * tsr - 21.0)) + 0.1)
+        tsr = 7.0 if tip_speed_ratio is None else np.where(np.isfinite(tip_speed_ratio), tip_speed_ratio, 7.0)
+        f = f * (np.exp(-0.125 * (blades * tsr - 21.0)) + 0.1)
     return np.maximum(prandtl_factor(f), 1e-4)
 
 
@@ -157,7 +162,8 @@ def du_selig_augmentation(cl, cd, cd0, alpha_deg, chord, r, tip_radius, speed_ra
     1/2 for drag; Λ = ΩR / sqrt(V² + (ΩR)²). Lift is only ever increased and drag never lowered below 2-D.
     """
     c_over_r = np.clip(chord / np.maximum(r, 1e-9), 1e-6, 5.0)
-    lam = 1.0 if not math.isfinite(speed_ratio) else speed_ratio / math.sqrt(1.0 + speed_ratio**2)
+    ratio = np.asarray(speed_ratio, dtype=float)
+    lam = np.where(np.isfinite(ratio), ratio / np.sqrt(1.0 + np.where(np.isfinite(ratio), ratio, 0.0) ** 2), 1.0)
     def factor(n):
         x = c_over_r ** (n * tip_radius / (lam * np.maximum(r, 1e-9)))
         return np.clip((1.6 * c_over_r / 0.1267 * (1 - x) / (1 + x) - 1.0) / (2 * math.pi), 0.0, 1.0)

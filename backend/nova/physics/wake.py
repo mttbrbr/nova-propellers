@@ -20,9 +20,10 @@ import numpy as np
 KINDS = ('none', 'rotor', 'body')
 MODELS = ('jensen', 'gaussian')
 LIMITS = {'diameter_m': (1e-3, 1e4), 'coefficient': (0.0, 1.5), 'distance_m': (1e-3, 1e5),
-          'offset_m': (-1e5, 1e5), 'decay': (0.0, 0.5)}
+          'offset_m': (-1e5, 1e5), 'offset_z_m': (-1e5, 1e5), 'decay': (0.0, 0.5)}
 DEFAULT_DECAY = {'rotor': 0.04, 'body': 0.06}
 GAUSSIAN_EPSILON = 0.2
+MAX_DEFICIT = 0.8
 
 
 def _number(config, key, default=None):
@@ -39,7 +40,7 @@ def validate(config):
     """Normalise an upstream-wake description; None means no wake."""
     if not config or config.get('kind', 'none') == 'none':
         return None
-    unknown = set(config) - {'kind', 'model', 'diameter_m', 'coefficient', 'distance_m', 'offset_m', 'decay'}
+    unknown = set(config) - {'kind', 'model', 'diameter_m', 'coefficient', 'distance_m', 'offset_m', 'offset_z_m', 'decay'}
     if unknown:
         raise ValueError(f'Unsupported upstream wake fields: {", ".join(sorted(unknown))}')
     kind, model = config['kind'], config.get('model', 'gaussian')
@@ -47,7 +48,7 @@ def validate(config):
         raise ValueError(f'Upstream wake kind must be one of {", ".join(KINDS)} and model one of {", ".join(MODELS)}')
     return {'kind': kind, 'model': model, 'diameter_m': _number(config, 'diameter_m'),
             'coefficient': _number(config, 'coefficient'), 'distance_m': _number(config, 'distance_m'),
-            'offset_m': _number(config, 'offset_m', 0.0), 'decay': _number(config, 'decay', DEFAULT_DECAY[kind])}
+            'offset_m': _number(config, 'offset_m', 0.0), 'offset_z_m': _number(config, 'offset_z_m', 0.0), 'decay': _number(config, 'decay', DEFAULT_DECAY[kind])}
 
 
 def local_deficit(wake, lateral_m):
@@ -57,7 +58,8 @@ def local_deficit(wake, lateral_m):
         radius = D0 / 2 + k * x
         return np.where(lateral_m <= radius, (1 - math.sqrt(1 - ct)) * (D0 / (2 * radius)) ** 2, 0.0)
     sigma = k * x + GAUSSIAN_EPSILON * D0
-    centre = 1 - math.sqrt(max(1 - ct * D0**2 / (8 * sigma**2), 0.0))
+    # The far-wake similarity form reaches a full deficit very close to the source; the near wake is capped.
+    centre = min(1 - math.sqrt(max(1 - ct * D0**2 / (8 * sigma**2), 0.0)), MAX_DEFICIT)
     return centre * np.exp(-lateral_m**2 / (2 * sigma**2))
 
 
@@ -69,7 +71,7 @@ def mean_deficit(config, rotor_diameter_m, radial=24, azimuthal=48):
     r = (np.arange(radial) + 0.5) / radial * rotor_diameter_m / 2
     theta = (np.arange(azimuthal) + 0.5) / azimuthal * 2 * math.pi
     rr, tt = np.meshgrid(r, theta, indexing='ij')
-    lateral = np.hypot(wake['offset_m'] + rr * np.cos(tt), rr * np.sin(tt))
+    lateral = np.hypot(wake['offset_m'] + rr * np.cos(tt), wake['offset_z_m'] + rr * np.sin(tt))
     deficit = local_deficit(wake, lateral)
     weight = np.broadcast_to(rr, rr.shape)
     mean = float(np.sum(deficit * weight) / np.sum(weight))

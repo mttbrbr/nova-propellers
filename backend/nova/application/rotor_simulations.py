@@ -8,9 +8,10 @@ import copy
 
 from nova.core.data import content_hash
 from nova.physics import rotors
+from nova.physics import azimuthal
 from nova.physics import wake as upstream
 
-SPEC_KEYS = {'kind', 'fluid', 'section', 'geometry', 'operating', 'method', 'corrections', 'marine', 'azimuth_tubes', 'curve', 'requirements', 'upstream_wake'}
+SPEC_KEYS = {'kind', 'fluid', 'section', 'geometry', 'operating', 'method', 'corrections', 'marine', 'azimuth_tubes', 'curve', 'requirements', 'upstream_wake', 'inflow'}
 
 
 def validate_configuration(configuration):
@@ -27,6 +28,8 @@ def validate_configuration(configuration):
     rotors.resolve_operating(built, rotor)
     rotors.checked_corrections(merged['kind'], merged.get('corrections'))
     upstream.validate(merged.get('upstream_wake'))
+    if azimuthal.validate(merged.get('inflow')) and merged['kind'] == 'vawt':
+        raise ValueError('Resolved inflow applies to axial rotors')
     requirements = merged.get('requirements') or {}
     if not isinstance(requirements, dict) or len(requirements) > 32 or any(
             not isinstance(k, str) or isinstance(v, bool) or not isinstance(v, (int, float)) for k, v in requirements.items()):
