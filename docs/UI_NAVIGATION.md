@@ -67,7 +67,7 @@ the run out of date when inputs change.
 | Workspace | Contents |
 | --- | --- |
 | Comparisons | Runs from any project overlaid (Cp–λ, CT–λ, KT–J, η–J, spanwise thrust and incidence), a table against a baseline with Δ power, the inputs that differ and a warning when a difference has more than one cause; saved comparisons; open any run in a tab |
-| Workflow | **Project graph** or **Block workflows** (general and rotor blocks with constraints). Full-height execution graph; selected block, airfoil data and project explorer in the left column; external case editors (PyWake, OpenFAST) in the centre |
+| Workflow | Block workflows on a full-space canvas. Double-click the canvas (or Ctrl K) to search and add a block; click a block for its settings card (closes when you drag); floating tools: run, validate, save, templates (built-in and saved), auto-layout, fit, search, shortcuts (?) |
 | Studies | Three study types with a shared history: **Solver comparison** (one saved simulation, 2–4 solvers, no extra simulations; saved-simulation comparisons remain available underneath), **Design comparison** (2–4 finished runs from this or any project, with a like-for-like check, overlaid chord/twist/loading and a to-scale planform) and **Parameter sweep** (one or two axes) |
 | Library | **Projects** (search, filters, sort, multi-select compare/export/delete, detail panel; deleting asks for the project name), airfoils and polars (import `.dat`, create, edit, delete), physical models with maturity and warnings, legacy snapshot archive with its report |
 | Integrations | External software configuration, OpenFAST import and saved external runs |

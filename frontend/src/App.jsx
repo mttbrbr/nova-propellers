@@ -12,12 +12,12 @@ import { formatValue } from './lib/blade.js';
 import BlockWorkflows from './workspaces/BlockWorkflows.jsx';
 import ComparisonsWorkspace from './workspaces/ComparisonsWorkspace.jsx';
 import RotorSweep from './stages/RotorSweep.jsx';
-import { Button, Notice, Segmented } from './ui/controls.jsx';
+import { Button, Notice } from './ui/controls.jsx';
 import { request as backendRequest } from './backend.js';
 import useExecutionMonitor from './useExecutionMonitor.js';
 import AppHeader, { stages } from './shell/AppHeader.jsx';
 import WorkspaceRail from './shell/WorkspaceRail.jsx';
-import StageLayout, { SheetStage, StageTitle } from './shell/StageLayout.jsx';
+import { SheetStage } from './shell/StageLayout.jsx';
 import SizingStage from './stages/SizingStage.jsx';
 import GeometryStage from './stages/GeometryStage.jsx';
 import AnalysisStage from './stages/AnalysisStage.jsx';
@@ -123,7 +123,6 @@ function App() {
   const [integrationDraft, setIntegrationDraft] = useState({});
   const [workspaceContext, setWorkspaceContext] = useState(null);
   const [slots, setSlots] = useState({});
-  const [workflowMode, setWorkflowMode] = useState('project');
   // Rotor family of the open simulation. The air propeller uses the native
   // propeller pipeline; the other families use rotor-engine simulations whose
   // specification is edited in the same four Design stages.
@@ -619,7 +618,7 @@ function App() {
   const sweepLens = phase === 'sweep' && rotorMode && rotorSpec && rotorCatalog
     ? <RotorSweep key={rotorFamily} family={rotorFamily} spec={rotorSpec} catalog={rotorCatalog} presets={blockCatalog?.constraint_presets}
       targets={{ content: sheetTargets.content, side: sheetTargets.side }} onAdopt={adoptSweep}
-      onOpenWorkflow={(workflow) => { setBlockSeed({ workflow, nonce: Date.now() }); setWorkflowMode('blocks'); go('workflow'); }} /> : null;
+      onOpenWorkflow={(workflow) => { setBlockSeed({ workflow, nonce: Date.now() }); go('workflow'); }} /> : null;
   const lockNotice = <Notice role="status" action={<Button className="!h-7 !px-2.5" disabled={runDisabled || runActive} onClick={() => workbench.current?.newVersion()}>New version</Button>}>
     Version {workspaceContext?.version || ''} has been run, so its geometry is locked. You can still run it with other speeds or models; a new version copies this geometry and unlocks editing.</Notice>;
   const sheetStages = designViews.includes(phase) && stageElements ? stageIds.map((id) => <SheetStage key={`${rotorFamily}-${id}`} stage={id} active={phase === id} lock={workspaceContext?.simulationLocked && (id === 'sizing' || id === 'geometry') ? lockNotice : null}
@@ -632,15 +631,7 @@ function App() {
     await workbench.current?.openProjectById(record.project_id, record.simulation_id);
     workbench.current?.openRun(record); go('results');
   })} />;
-  else if (phase === 'workflow' && workflowMode === 'blocks') body = <BlockWorkflows seed={blockSeed} />;
-  else if (phase === 'workflow') body = <StageLayout inputsLabel="Workflow inputs" contentLabel="Workflow" flush
-    inputs={<>
-      <StageTitle title="Workflow" detail="Inspect, customize and execute the project graph." />
-      <div ref={slotRef('graphSide')} className="flex flex-col gap-2.5" />
-      <section aria-label="Airfoil and air data" className="flex flex-col gap-2.5"><div ref={slotRef('data')} className="flex flex-col gap-2.5" /></section>
-      <div ref={slotRef('explorer')} />
-    </>}
-    content={<section ref={slotRef('graph')} aria-label="Workflow editor" className="min-h-[600px] min-w-0 flex-1 xl:h-full xl:min-h-0" />} />;
+  else if (phase === 'workflow') body = <BlockWorkflows seed={blockSeed} />;
   else if (phase === 'studies') body = <StudiesWorkspace projectId={activeProjectId} projectControls={workbench} methods={computationalMethods} studyRequest={studyRequest}
     onOpenSource={(record) => { workbench.current?.openProjectById(record.project_id, record.simulation_id); go('analysis'); }}
     configurationBusy={busy || workspaceContext?.busy || !workspaceContext?.ready} selectedRun={selectedStudyRun} activeStudy={studyExecution} onExecutionChange={trackStudyExecution}
@@ -666,10 +657,6 @@ function App() {
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <WorkspaceRail workspace={workspace} onSelect={go} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {workspace === 'workflow' && <div className="flex items-center gap-3 border-b border-nv-line px-6 py-2"><span className="text-xs text-nv-muted">Workflow type</span>
-          <div className="w-[300px]"><Segmented label="Workflow type" size="sm" value={workflowMode} onChange={setWorkflowMode}
-            options={[['project', 'Project graph'], ['blocks', 'Block workflows']]} /></div></div>}
-        {!guidedCompatible && workspace === 'workflow' && workflowMode === 'project' && <p className="m-0 border-b border-nv-line px-6 py-2 text-xs text-nv-muted">Customized graph: the guided stages are not available for this project. Continue here in Workflow.</p>}
         {phase === 'results' && analyses.length > 0 && resultStamp && executionStamp && resultStamp !== executionStamp && !resultStamp.startsWith('study:') &&
           <p className="m-0 border-b border-nv-warn/30 bg-nv-warn/10 px-6 py-2 text-xs text-nv-warn-ink">These results belong to an earlier configuration; the current inputs have changed since this run.</p>}
         {body}

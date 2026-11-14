@@ -108,13 +108,14 @@ try {
   await family('Air');
   await page.getByRole('img', { name: /Ideal actuator disk/ }).waitFor();
 
-  // Block workflows: load the marine template, run, tighten a limit and stop downstream.
+  // Block workflows: canvas first. Load the marine template, run, tighten a limit and stop downstream.
   await rail.getByRole('button', { name: 'Workflow', exact: true }).click();
-  await page.getByRole('group', { name: 'Workflow type' }).getByRole('button', { name: 'Block workflows' }).click();
-  await page.getByRole('combobox', { name: 'Load template' }).selectOption('marine_cavitation');
+  assert.equal(await page.getByRole('group', { name: 'Workflow type' }).count(), 0);
+  await page.getByRole('button', { name: 'Templates', exact: true }).click();
+  await page.getByRole('button', { name: /marine/i }).first().click();
   await page.getByRole('button', { name: 'Run workflow', exact: true }).click();
-  await page.getByText('all hard constraints satisfied').waitFor({ timeout: 60000 });
-  assert.match(await page.getByRole('region', { name: 'Block inspector' }).innerText(), /Constraints · cavitation/);
+  await page.getByText('hard constraints met').waitFor({ timeout: 60000 });
+  assert.match(await page.getByRole('region', { name: 'Run summary' }).innerText(), /Constraints · cavitation/);
   await shot('blocks-marine');
 
   await page.locator('.react-flow__node', { hasText: 'cavitation' }).click();
@@ -122,17 +123,28 @@ try {
   await page.getByRole('textbox', { name: 'Block configuration JSON' }).fill(JSON.stringify({
     checks: [{ preset: 'burrill', value: 0.1 }], on_violation: 'stop' }));
   await page.getByRole('button', { name: 'Run workflow', exact: true }).click();
-  await page.getByText('constraint violation').waitFor({ timeout: 60000 });
+  await page.getByText('constraint violation').first().waitFor({ timeout: 60000 });
+  await page.locator('.react-flow__node', { hasText: 'cavitation' }).click();
   assert.match(await page.getByRole('region', { name: 'Block result' }).innerText(), /violated/);
+  // Dragging the canvas closes the settings card.
+  const pane = await page.locator('.react-flow__pane').boundingBox();
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height - 120); await page.mouse.down(); await page.mouse.move(pane.x + pane.width / 2 + 80, pane.y + pane.height - 150, { steps: 4 }); await page.mouse.up();
+  assert.equal(await page.getByRole('button', { name: 'Close settings' }).count(), 0);
 
-  // Save the workflow, then add a general block from the palette.
+  // Save the workflow, then add a general block with the double-click search.
   await page.getByRole('textbox', { name: 'Workflow name' }).fill('Browser block workflow');
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click();
   await page.getByText('Saved revision 1').waitFor();
-  await page.getByRole('button', { name: '+ Expression' }).click();
+  await page.mouse.dblclick(pane.x + pane.width / 2, pane.y + pane.height - 120);
+  await page.getByRole('textbox', { name: 'Search blocks' }).fill('expression');
+  await page.keyboard.press('Enter');
   assert.ok(await page.locator('.react-flow__node', { hasText: 'expression_1' }).isVisible());
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Validate' }).click();
   await page.getByRole('alert').filter({ hasText: 'Unconnected required input: expression_1.values' }).waitFor();
+  // Templates: the saved workflow is offered as a template.
+  await page.getByRole('button', { name: 'Templates', exact: true }).click();
+  await page.getByRole('button', { name: /Browser block workflow/ }).waitFor();
   assert.deepEqual(errors, []);
   console.log('Rotors and block workflow journey passed');
 } finally {

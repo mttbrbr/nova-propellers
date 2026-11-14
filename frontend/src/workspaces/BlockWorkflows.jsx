@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Background, Controls, Handle, Position, ReactFlow, addEdge, useEdgesState, useNodesState } from '@xyflow/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, X } from 'lucide-react';
+import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState, useReactFlow, useViewport } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { request } from '../backend.js';
-import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import LineChart from '../ui/LineChart.jsx';
-import { Button, Disclosure, KeyValue, Notice, Section, SelectField, StatusDot } from '../ui/controls.jsx';
+import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
 const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C' };
@@ -65,7 +65,28 @@ const fromFlow = (nodes, edges, name) => ({
   edges: edges.map((e) => ({ source: e.source, source_port: e.sourceHandle, target: e.target, target_port: e.targetHandle })),
 });
 
-export default function BlockWorkflows({ seed = null }) {
+export default function BlockWorkflows(props) {
+  return <ReactFlowProvider><BlockEditor {...props} /></ReactFlowProvider>;
+}
+
+const typing = (el) => el?.matches?.('input, select, textarea, [contenteditable="true"]');
+const OVERLAY = 'absolute z-10 rounded-xl border border-nv-edge bg-nv-panel/95 backdrop-blur';
+const shortcuts = [['Add a block here', 'Double-click'], ['Search blocks', 'Ctrl K'], ['Run workflow', 'Ctrl Enter'], ['Save', 'Ctrl S'], ['Duplicate block', 'Ctrl D'],
+  ['Remove block', 'Del'], ['Auto-layout', 'L'], ['Fit view', 'F'], ['Pan', 'Drag'], ['Close any card', 'Esc'], ['Show shortcuts', '?']];
+const Kbd = ({ children }) => <kbd className="rounded border border-b-2 border-nv-edge bg-nv-chrome px-1.5 font-mono text-[11px] text-nv-muted">{children}</kbd>;
+
+// Layered auto-layout: column = longest path from a source, rows stacked per column.
+function layered(nodes, edges) {
+  const depth = Object.fromEntries(nodes.map((n) => [n.id, 0]));
+  for (let pass = 0; pass < nodes.length; pass += 1) edges.forEach((e) => { if (depth[e.source] + 1 > depth[e.target]) depth[e.target] = Math.min(depth[e.source] + 1, nodes.length); });
+  const rows = {};
+  return nodes.map((n) => { const col = depth[n.id], row = rows[col] = (rows[col] ?? -1) + 1; return { ...n, position: { x: col * 260, y: row * 200 } }; });
+}
+
+function BlockEditor({ seed = null }) {
+  const flow = useReactFlow();
+  const viewport = useViewport();
+  const canvas = useRef(null);
   const [catalog, setCatalog] = useState(null);
   const [rotorCatalog, setRotorCatalog] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -76,16 +97,19 @@ export default function BlockWorkflows({ seed = null }) {
   const [record, setRecord] = useState(null);
   const [selected, setSelected] = useState(null);
   const [result, setResult] = useState(null);
+  const [panel, setPanel] = useState(null); // 'results' | 'keys' | null
+  const [palette, setPalette] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const specs = useMemo(() => Object.fromEntries((catalog?.blocks || []).map((b) => [b.type, b])), [catalog]);
 
   const load = useCallback((workflow, savedRecord = null) => {
-    const flow = toFlow(workflow, specs);
-    setNodes(flow.nodes); setEdges(flow.edges); setName(savedRecord?.name || workflow.name || 'Block workflow');
-    setRecord(savedRecord); setResult(null); setSelected(null);
-  }, [specs, setNodes, setEdges]);
+    const loaded = toFlow(workflow, specs);
+    setNodes(loaded.nodes); setEdges(loaded.edges); setName(savedRecord?.name || workflow.name || 'Block workflow');
+    setRecord(savedRecord); setResult(null); setSelected(null); setPanel(null); setPalette(null);
+    setTimeout(() => flow.fitView({ padding: 0.2, duration: 200 }), 30);
+  }, [specs, setNodes, setEdges, flow]);
   useEffect(() => {
     Promise.all([request('/v1/blocks/catalog'), request('/v1/rotors/catalog'), request('/v1/blocks/templates'), request('/v1/blocks/workflows')])
       .then(([c, r, t, s]) => { setCatalog(c); setRotorCatalog(r); setTemplates(t); setSaved(s); }).catch((e) => setError(e.message));
@@ -96,16 +120,27 @@ export default function BlockWorkflows({ seed = null }) {
     if (seed?.workflow) { load(seed.workflow); return; }
     if (!nodes.length) request(`/v1/blocks/templates/${templates[0].id}`).then((w) => load(w)).catch((e) => setError(e.message));
   }, [catalog, templates, seed?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!message) return undefined; const t = setTimeout(() => setMessage(''), 3500); return () => clearTimeout(t); }, [message]);
 
   const workflow = () => fromFlow(nodes, edges, name);
   const act = async (task) => { setBusy(true); setError(''); try { await task(); } catch (e) { setError(e.message); } finally { setBusy(false); } };
-  const addBlock = (type) => {
+  const addBlock = (type, position) => {
     let index = 1;
     while (nodes.some((n) => n.id === `${type}_${index}`)) index += 1;
     const id = `${type}_${index}`;
-    setNodes((list) => [...list, { id, type: 'block', position: { x: 80 + (list.length % 4) * 60, y: 60 + (list.length % 6) * 50 },
+    const at = position || flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    setNodes((list) => [...list, { id, type: 'block', position: { x: Math.round(at.x), y: Math.round(at.y) },
       data: { id, type, config: structuredClone(specs[type].defaults), spec: specs[type] } }]);
-    setSelected(id); setResult(null);
+    setSelected(id); setResult(null); setPalette(null);
+  };
+  const duplicate = (id) => {
+    const source = nodes.find((n) => n.id === id);
+    if (!source) return;
+    let index = 1;
+    while (nodes.some((n) => n.id === `${source.data.type}_${index}`)) index += 1;
+    const copy = `${source.data.type}_${index}`;
+    setNodes((list) => [...list, { ...source, id: copy, selected: false, position: { x: source.position.x + 40, y: source.position.y + 60 }, data: { ...source.data, id: copy, config: structuredClone(source.data.config) } }]);
+    setSelected(copy); setResult(null);
   };
   const portType = (nodeId, handle, direction) => {
     const node = nodes.find((n) => n.id === nodeId);
@@ -116,73 +151,146 @@ export default function BlockWorkflows({ seed = null }) {
   const onConnect = (c) => { setEdges((list) => addEdge({ ...c, id: `${c.source}.${c.sourceHandle}-${c.target}.${c.targetHandle}`, style: { stroke: typeColor[portType(c.source, c.sourceHandle, 'outputs')], strokeWidth: 1.6 } }, list)); setResult(null); };
   const setConfig = (id, config) => { setNodes((list) => list.map((n) => n.id === id ? { ...n, data: { ...n.data, config } } : n)); setResult(null); };
   const removeBlock = (id) => { setNodes((list) => list.filter((n) => n.id !== id)); setEdges((list) => list.filter((e) => e.source !== id && e.target !== id)); setSelected(null); setResult(null); };
-  const run = () => act(async () => { setResult(await request('/v1/blocks/run', { workflow: workflow() })); });
-  const save = () => act(async () => {
-    const stored = await request('/v1/blocks/workflows', { name, workflow: workflow(), id: record?.id, expected_revision: record?.revision });
-    setRecord(stored); setSaved(await request('/v1/blocks/workflows')); setMessage(`Saved revision ${stored.revision}`);
+  const run = () => act(async () => { const r = await request('/v1/blocks/run', { workflow: workflow() }); setResult(r); setSelected(null); setPanel('results'); });
+  const validate = () => act(async () => { const v = await request('/v1/blocks/validate', { workflow: workflow() }); setMessage(`Valid · execution order ${v.order.join(' → ')}`); });
+  const save = (copy = false) => act(async () => {
+    const stored = await request('/v1/blocks/workflows', { name, workflow: workflow(), id: copy ? undefined : record?.id, expected_revision: copy ? undefined : record?.revision });
+    setRecord(stored); setSaved(await request('/v1/blocks/workflows')); setMessage(copy ? `Saved “${stored.name}” as a template` : `Saved revision ${stored.revision}`);
   });
+  const fresh = () => { setNodes([]); setEdges([]); setRecord(null); setResult(null); setSelected(null); setPanel(null); setName('Untitled block workflow'); };
+  const layout = () => { setNodes((list) => layered(list, edges)); setTimeout(() => flow.fitView({ padding: 0.2, duration: 250 }), 30); };
+  const openPalette = (screen) => {
+    const box = canvas.current.getBoundingClientRect();
+    const at = screen || { x: box.left + box.width / 2 - 190, y: box.top + box.height / 3 };
+    setSelected(null); setPanel(null);
+    setPalette({ x: at.x - box.left, y: at.y - box.top, flow: flow.screenToFlowPosition(at), q: '', f: 'all', on: 0 });
+  };
+
+  const keys = useRef();
+  keys.current = { run, save, duplicate, layout, openPalette, selected, palette, nodes, busy };
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = keys.current, mod = e.ctrlKey || e.metaKey;
+      if (e.key === 'Escape') { setPalette(null); setSelected(null); setPanel(null); return; }
+      if (mod && e.key === 'Enter') { e.preventDefault(); if (!k.busy && k.nodes.length) k.run(); return; }
+      if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); if (!k.busy && k.nodes.length) k.save(); return; }
+      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); k.openPalette(); return; }
+      if (typing(e.target) || mod && e.key.toLowerCase() !== 'd') return;
+      if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (k.selected) k.duplicate(k.selected); return; }
+      if (e.key === '/') { e.preventDefault(); k.openPalette(); }
+      else if (e.key === '?') setPanel((p) => p === 'keys' ? null : 'keys');
+      else if (e.key.toLowerCase() === 'l') k.layout();
+      else if (e.key.toLowerCase() === 'f') flow.fitView({ padding: 0.2, duration: 250 });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flow]);
 
   const display = nodes.map((n) => ({ ...n, data: { ...n.data, status: result?.blocks?.[n.id]?.status, selected: n.id === selected } }));
   const chosen = nodes.find((n) => n.id === selected);
-  const groups = useMemo(() => {
-    const out = { general: {}, specific: {} };
-    (catalog?.blocks || []).forEach((b) => { (out[b.family][b.category] ||= []).push(b); });
-    return out;
-  }, [catalog]);
+  const tone = !result ? null : result.status === 'succeeded' ? (result.feasible === false ? 'warn' : 'ok') : result.status === 'failed' ? 'err' : 'warn';
 
-  const inputs = <>
-    <StageTitle title="Block workflows" detail="Compose general and rotor-specific blocks, bind parameters and enforce real limits." />
-    <Section title="Workflow">
-      <input aria-label="Workflow name" className={fieldClass} value={name} onChange={(e) => setName(e.target.value)} />
-      <SelectField label="Template" ariaLabel="Load template" value="" options={[['', 'Load a template…'], ...templates.map((t) => [t.id, t.name])]}
-        onChange={(id) => id && act(async () => load(await request(`/v1/blocks/templates/${id}`)))} />
-      {saved.length > 0 && <SelectField label="Saved" ariaLabel="Open saved workflow" value={record?.id || ''} options={[['', 'Open saved…'], ...saved.map((s) => [s.id, `${s.name} · r${s.revision}`])]}
-        onChange={(id) => { const item = saved.find((s) => s.id === id); if (item) load(item.workflow, item); }} />}
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="primary" disabled={busy || !nodes.length} onClick={run}>{busy ? 'Running…' : 'Run workflow'}</Button>
-        <Button disabled={busy || !nodes.length} onClick={save}>Save workflow</Button>
-        <Button disabled={busy} onClick={() => { setNodes([]); setEdges([]); setRecord(null); setResult(null); setName('Untitled block workflow'); }}>New</Button>
-      <Button disabled={busy || !nodes.length} onClick={() => act(async () => { const v = await request('/v1/blocks/validate', { workflow: workflow() }); setMessage(`Valid · execution order ${v.order.join(' → ')}`); })}>Validate</Button>
-      </div>
-    </Section>
-    {['general', 'specific'].map((family) => <Section key={family} title={family === 'general' ? 'General blocks' : 'Specific blocks'}
-      aside={<span className="text-xs text-nv-muted">{family === 'general' ? 'any domain' : 'rotor engineering'}</span>}>
-      {Object.entries(groups[family]).map(([category, blocks]) => <div key={category} className="flex flex-col gap-1">
-        <span className="text-[11.5px] uppercase tracking-wide text-nv-muted">{category}</span>
-        <div className="flex flex-wrap gap-1.5">{blocks.map((b) => <button key={b.type} type="button" title={b.description} onClick={() => addBlock(b.type)}
-          className="rounded-md border border-nv-edge px-2 py-1 text-[12px] text-nv-ink hover:border-nv-accent hover:bg-nv-hover">+ {b.label}</button>)}</div>
-      </div>)}
-    </Section>)}
-    <Section title="Port types">
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-nv-muted">{Object.entries(typeColor).map(([type, color]) =>
-        <span key={type} className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: color }} />{type.replace('_', ' ')}</span>)}</div>
-      <p className="m-0 text-xs text-nv-muted">Only matching types connect. Dashed ports are optional.</p>
-    </Section>
-  </>;
+  // The settings card sits beside the selected block, on the side with room.
+  const card = (() => {
+    if (!chosen || !canvas.current) return null;
+    const box = canvas.current.getBoundingClientRect(), width = 340, w = (chosen.measured?.width || 190) * viewport.zoom, h = (chosen.measured?.height || 120) * viewport.zoom;
+    const x = chosen.position.x * viewport.zoom + viewport.x, y = chosen.position.y * viewport.zoom + viewport.y;
+    const right = x + w + 16 + width < box.width;
+    return { left: Math.max(12, right ? x + w + 16 : x - width - 16), top: Math.max(12, Math.min(y - 8, box.height - 120)), width, right, caret: Math.max(18, Math.min(y + h / 2 - Math.max(12, Math.min(y - 8, box.height - 120)) - 6, 380)) };
+  })();
 
-  const content = <div className="flex h-full min-h-[600px] min-w-0 flex-col">
-    <div className="flex flex-wrap items-center gap-3 border-b border-nv-line px-6 py-3">
-      <h2 className="m-0 text-[15px] font-semibold">{name}</h2>
-      {result && <span className="flex items-center gap-2 text-[13px]"><StatusDot tone={result.status === 'succeeded' ? 'ok' : result.status === 'failed' ? 'err' : 'warn'} />
-        {result.status}{result.feasible != null && <> · {result.feasible ? 'all hard constraints satisfied' : 'constraint violation'}</>}</span>}
-      {message && <span role="status" className="text-xs text-nv-ok-ink">{message}</span>}
+  return <div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
+    onDoubleClick={(e) => { if (e.target.classList?.contains('react-flow__pane')) openPalette({ x: e.clientX, y: e.clientY }); }}>
+    <ReactFlow nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) setResult(null); }}
+      onConnect={onConnect} isValidConnection={isValidConnection} onNodeClick={(_, n) => { setSelected(n.id); setPalette(null); setPanel(null); }}
+      onPaneClick={() => { setSelected(null); setPalette(null); setPanel((p) => p === 'keys' ? null : p); }}
+      onNodeDragStart={() => setSelected(null)} onMoveStart={(event) => { if (event) { setSelected(null); setPalette(null); } }}
+      onNodesDelete={(deleted) => { if (deleted.some((n) => n.id === selected)) setSelected(null); setResult(null); }}
+      zoomOnDoubleClick={false} fitView fitViewOptions={{ padding: 0.2 }} colorMode="dark" minZoom={0.15} maxZoom={2} deleteKeyCode={['Delete', 'Backspace']} proOptions={{ hideAttribution: true }}>
+      <Background color="#1C2027" /><Controls position="bottom-left" showInteractive={false} />
+    </ReactFlow>
+
+    <div className={`${OVERLAY} left-3.5 top-3.5 flex h-10 items-center gap-2 px-2`}>
+      <input aria-label="Workflow name" className="h-8 w-[220px] rounded-md bg-transparent px-2 text-[13px] font-medium hover:bg-nv-hover focus:bg-nv-chrome focus:outline-none" value={name} onChange={(e) => setName(e.target.value)} />
+      <span className="pr-1 text-xs text-nv-muted">{record ? `r${record.revision}` : 'Not saved'}</span>
     </div>
-    {error && <div className="px-6 pt-3"><Notice tone="err" role="alert" action={<button type="button" className="text-nv-muted" onClick={() => setError('')}>×</button>}>{error}</Notice></div>}
-    <div aria-label="Block canvas" className="min-h-[480px] flex-1 bg-nv-canvas">
-      <ReactFlow nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) setResult(null); }}
-        onConnect={onConnect} isValidConnection={isValidConnection} onNodeClick={(_, n) => setSelected(n.id)} onPaneClick={() => setSelected(null)}
-        onNodesDelete={(deleted) => { if (deleted.some((n) => n.id === selected)) setSelected(null); setResult(null); }}
-        fitView colorMode="dark" minZoom={0.15} maxZoom={2} deleteKeyCode={['Delete', 'Backspace']}>
-        <Background color="#1C2027" /><Controls />
-      </ReactFlow>
+
+    <div role="toolbar" aria-label="Workflow tools" aria-orientation="vertical" className={`${OVERLAY} right-3.5 top-3.5 flex flex-col gap-0.5 p-1`}>
+      <IconButton label="Run workflow" shortcut="Ctrl Enter" tooltipSide="left" icon={Play} disabled={busy || !nodes.length} onClick={run} className="!bg-nv-accent !text-[#1A0F06] hover:!bg-[#FF9A57] disabled:!bg-transparent disabled:!text-nv-muted" />
+      <IconButton label="Validate" tooltipSide="left" icon={CheckCircle2} disabled={busy || !nodes.length} onClick={validate} />
+      <IconButton label="Save workflow" shortcut="Ctrl S" tooltipSide="left" icon={Save} disabled={busy || !nodes.length} onClick={() => save()} />
+      <div className="mx-1 my-0.5 h-px bg-nv-line" />
+      <Popover label="Templates" align="right" width="w-72" trigger={({ ref, open, toggle }) => <IconButton ref={ref} label="Templates" tooltipSide="left" icon={LayoutTemplate} active={open} aria-expanded={open} onClick={toggle} />}>
+        {(close) => <div className="flex flex-col gap-0.5 p-1.5">
+          <span className="px-2.5 pb-0.5 pt-1.5 text-[11.5px] uppercase tracking-wide text-nv-muted">Built-in templates</span>
+          {templates.map((t) => <MenuItem key={t.id} onClick={() => { close(); act(async () => load(await request(`/v1/blocks/templates/${t.id}`))); }}>{t.name}</MenuItem>)}
+          {saved.length > 0 && <span className="px-2.5 pb-0.5 pt-2 text-[11.5px] uppercase tracking-wide text-nv-muted">My templates</span>}
+          {saved.map((s) => <MenuItem key={s.id} hint={`r${s.revision}`} onClick={() => { close(); load(s.workflow, s); }}>{s.name}</MenuItem>)}
+          <div className="my-1 h-px bg-nv-line" />
+          <MenuItem disabled={busy || !nodes.length} onClick={() => { close(); save(true); }}>Save as new template</MenuItem>
+          <MenuItem onClick={() => { close(); fresh(); }}>Blank workflow</MenuItem>
+        </div>}
+      </Popover>
+      <IconButton label="Auto-layout" shortcut="L" tooltipSide="left" icon={Network} disabled={!nodes.length} onClick={layout} />
+      <IconButton label="Fit view" shortcut="F" tooltipSide="left" icon={Maximize} onClick={() => flow.fitView({ padding: 0.2, duration: 250 })} />
+      <IconButton label="Search blocks" shortcut="Ctrl K" tooltipSide="left" icon={Search} disabled={!catalog} onClick={() => openPalette()} />
+      <IconButton label="Shortcuts" shortcut="?" tooltipSide="left" icon={Keyboard} active={panel === 'keys'} onClick={() => setPanel(panel === 'keys' ? null : 'keys')} />
     </div>
+
+    {!selected && !palette && !panel && catalog && <div className={`${OVERLAY} pointer-events-none bottom-3.5 left-1/2 flex h-8 -translate-x-1/2 items-center gap-2 rounded-full px-3.5 text-[12.5px] text-nv-muted`}>
+      Double-click to add a block <Kbd>Ctrl K</Kbd> to search</div>}
+    {(error || message) && <div className="absolute left-1/2 top-3.5 z-20 w-[min(560px,60%)] -translate-x-1/2">
+      {error ? <Notice tone="err" role="alert" action={<button type="button" aria-label="Dismiss" className="text-nv-muted" onClick={() => setError('')}>×</button>}>{error}</Notice>
+        : <Notice tone="ok"><span role="status">{message}</span></Notice>}</div>}
+    {result && <button type="button" onClick={() => setPanel(panel === 'results' ? null : 'results')} className={`${OVERLAY} bottom-3.5 right-3.5 flex h-9 items-center gap-2 px-3 text-[12.5px] hover:bg-nv-hover`}>
+      <StatusDot tone={tone} />{result.status}{result.feasible != null && <> · {result.feasible ? 'hard constraints met' : 'constraint violation'}</>}<Kbd>Details</Kbd></button>}
+
+    {card && !palette && <div className="absolute z-20 rounded-2xl border border-nv-edge bg-nv-panel/[0.97] shadow-2xl shadow-black/60" style={{ left: card.left, top: card.top, width: card.width }}>
+      <span aria-hidden="true" className="absolute h-3 w-3 rotate-45 border border-nv-edge bg-nv-panel" style={{ top: card.caret, [card.right ? 'left' : 'right']: -7, borderWidth: card.right ? '0 0 1px 1px' : '1px 1px 0 0' }} />
+      <div className="max-h-[min(560px,calc(100%-24px))] overflow-y-auto p-4">
+        <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog}
+          onChange={(config) => setConfig(chosen.id, config)} onRemove={() => removeBlock(chosen.id)} onDuplicate={() => duplicate(chosen.id)} onClose={() => setSelected(null)} />
+      </div></div>}
+
+    {palette && catalog && <BlockSearch palette={palette} blocks={catalog.blocks} onChange={setPalette} onPick={(type) => addBlock(type, palette.flow)} onClose={() => setPalette(null)} bounds={canvas.current?.getBoundingClientRect()} />}
+
+    {panel === 'results' && result && <div role="region" aria-label="Run summary" className="absolute bottom-16 right-3.5 z-20 max-h-[70%] w-[380px] overflow-y-auto rounded-2xl border border-nv-edge bg-nv-panel/[0.97] p-4 shadow-2xl shadow-black/60"><RunSummary result={result} /></div>}
+    {panel === 'keys' && <div role="dialog" aria-label="Keyboard shortcuts" className="absolute left-1/2 top-1/2 z-30 w-[min(560px,90%)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-nv-edge bg-nv-panel/[0.97] p-5 shadow-2xl shadow-black/60">
+      <div className="mb-3 flex items-center"><h2 className="m-0 text-[15px] font-semibold">Shortcuts</h2><button type="button" aria-label="Close" className="ml-auto text-nv-muted hover:text-nv-ink" onClick={() => setPanel(null)}><X size={16} /></button></div>
+      <div className="grid grid-cols-1 gap-x-9 sm:grid-cols-2">{shortcuts.map(([label, combo]) => <div key={label} className="flex items-center justify-between border-b border-nv-line py-1.5 text-[12.5px] text-nv-reference">
+        <span>{label}</span><span className="flex gap-1">{combo.split(' ').map((c) => <Kbd key={c}>{c}</Kbd>)}</span></div>)}</div></div>}
   </div>;
+}
 
-  const side = chosen
-    ? <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog}
-        onChange={(config) => setConfig(chosen.id, config)} onRemove={() => removeBlock(chosen.id)} />
-    : <RunSummary result={result} />;
-  return <StageLayout inputsLabel="Block palette" contentLabel="Block workflow canvas" sideLabel="Block inspector" flush inputs={inputs} content={content} side={side} />;
+function BlockSearch({ palette, blocks, onChange, onPick, onClose, bounds }) {
+  const input = useRef(null);
+  useEffect(() => { input.current?.focus(); }, []);
+  const q = palette.q.trim().toLowerCase();
+  const list = blocks.filter((b) => (palette.f === 'all' || (palette.f === 'general') === (b.family === 'general')) && (!q || `${b.label} ${b.type} ${b.description} ${b.category}`.toLowerCase().includes(q)));
+  const on = Math.min(palette.on, Math.max(list.length - 1, 0));
+  const left = Math.min(Math.max(palette.x - 24, 12), Math.max((bounds?.width || 1000) - 392, 12)), top = Math.min(Math.max(palette.y - 20, 12), Math.max((bounds?.height || 700) - 440, 12));
+  const key = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); onChange({ ...palette, on: (on + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % Math.max(list.length, 1) }); }
+    else if (e.key === 'Enter' && list[on]) { e.preventDefault(); onPick(list[on].type); }
+    else if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+  };
+  return <div role="dialog" aria-label="Add a block" className="absolute z-30 w-[380px] rounded-2xl border border-nv-edge bg-nv-panel/[0.97] shadow-2xl shadow-black/60" style={{ left, top }}>
+    <div className="flex items-center gap-2.5 border-b border-nv-line px-3.5 py-2.5"><Search size={16} className="text-nv-muted" aria-hidden="true" />
+      <input ref={input} aria-label="Search blocks" placeholder="Add a block…" autoComplete="off" className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none" value={palette.q}
+        onChange={(e) => onChange({ ...palette, q: e.target.value, on: 0 })} onKeyDown={key} /><Kbd>Esc</Kbd></div>
+    <div className="flex gap-1 px-3 pb-1 pt-2">{[['all', 'All'], ['general', 'General'], ['specific', 'Rotor']].map(([id, label]) => <button key={id} type="button" aria-pressed={palette.f === id}
+      className={`h-6 rounded-md px-2.5 text-xs ${palette.f === id ? 'bg-nv-active text-nv-ink' : 'text-nv-muted hover:text-nv-ink'}`} onClick={() => { onChange({ ...palette, f: id, on: 0 }); input.current?.focus(); }}>{label}</button>)}</div>
+    <ul role="listbox" aria-label="Blocks" className="m-0 max-h-[290px] list-none overflow-y-auto p-1.5">
+      {list.map((b, i) => <li key={b.type} role="option" aria-selected={i === on} onMouseEnter={() => onChange({ ...palette, on: i })} onClick={() => onPick(b.type)}
+        className={`flex cursor-pointer flex-col rounded-lg px-2.5 py-1.5 ${i === on ? 'bg-nv-active' : ''}`}>
+        <span className="flex items-center gap-2 text-[13px]"><span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: typeColor[b.outputs[0]?.type] || '#8A93A0' }} />{b.label}
+          <span className={`ml-auto rounded px-1.5 text-[10.5px] uppercase tracking-wide ${b.family === 'general' ? 'bg-nv-active text-nv-reference' : 'bg-nv-accent/15 text-nv-accent'}`}>{b.family === 'general' ? 'general' : 'rotor'}</span></span>
+        <span className="text-[11.5px] text-nv-muted">{b.inputs.length ? b.inputs.map((p) => p.name).join(', ') : 'no input'} → {b.outputs.map((p) => p.name).join(', ')} · {b.description}</span></li>)}
+      {!list.length && <li className="px-2.5 py-2 text-[13px] text-nv-muted">No block matches.</li>}
+    </ul>
+    <div className="flex items-center gap-3 border-t border-nv-line px-3.5 py-2 text-[11.5px] text-nv-muted"><span><Kbd>↑↓</Kbd> move</span><span><Kbd>Enter</Kbd> add here</span>
+      <span className="ml-auto flex gap-2">{Object.entries(typeColor).map(([type, color]) => <span key={type} title={type} className="inline-flex items-center gap-1"><i className="h-[7px] w-[7px] rounded-full" style={{ background: color }} />{type.replace('rotor_', '').replace('_', ' ')}</span>)}</span></div>
+  </div>;
 }
 
 function RunSummary({ result }) {
@@ -213,16 +321,17 @@ function ConstraintTable({ report, title }) {
   </section>;
 }
 
-function BlockInspector({ node, result, catalog, rotors, onChange, onRemove }) {
+function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onDuplicate, onClose }) {
   const spec = node.data.spec;
   const [raw, setRaw] = useState(false);
   const [text, setText] = useState(JSON.stringify(node.data.config, null, 2));
   const [textError, setTextError] = useState('');
   useEffect(() => { if (!raw) setText(JSON.stringify(node.data.config, null, 2)); }, [node.data.config, raw]);
   return <div className="flex flex-col gap-4">
-    <div className="flex items-start justify-between gap-3"><div><h2 className="m-0 text-[15px] font-semibold">{node.id}</h2>
-      <p className="m-0 mt-1 text-xs text-nv-muted">{spec.label} · {spec.family === 'general' ? 'general' : 'specific'} block</p></div>
-      <Button variant="danger" onClick={onRemove}>Remove</Button></div>
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="m-0 truncate text-[15px] font-semibold">{node.id}</h2>
+      <p className="m-0 mt-0.5 text-xs text-nv-muted">{spec.label} · {spec.family === 'general' ? 'general' : 'rotor'} block</p></div>
+      <button type="button" aria-label="Close settings" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-nv-muted hover:bg-nv-hover hover:text-nv-ink" onClick={onClose}><X size={15} aria-hidden="true" /></button></div>
+    <div className="flex gap-2"><Button onClick={onDuplicate}>Duplicate</Button><Button variant="danger" onClick={onRemove}>Remove</Button></div>
     <p className="m-0 text-[13px] text-nv-reference">{spec.description}</p>
     <div className="flex gap-2 text-xs">{spec.inputs.map((p) => <span key={p.name} className="rounded border border-nv-edge px-1.5 py-0.5 text-nv-muted">in {p.name}: {p.type}</span>)}
       {spec.outputs.map((p) => <span key={p.name} className="rounded border border-nv-edge px-1.5 py-0.5 text-nv-muted">out {p.name}: {p.type}</span>)}</div>

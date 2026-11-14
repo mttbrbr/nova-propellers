@@ -6,6 +6,11 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Workflow screen is canvas-first: the Project graph and the mode bar are gone;
+  blocks are added with a double-click or Ctrl K search, settings open in a
+  rounded card beside the block (closed when dragging), and run, validate,
+  save, templates, auto-layout, fit and shortcuts float over the canvas.
+  Saved workflows can be reused as templates.
 - Design sheet replaces the stage bar: Sizing, Geometry, Analysis and Results
   are stacked sections of an accordion (one open at a time; the others compact
   to a title, summary and status dot) with an always-visible latest-run card.
