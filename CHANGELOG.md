@@ -7,9 +7,23 @@ All notable changes to Nova are documented in this file.
 ### Added
 
 - Design sheet replaces the stage bar: Sizing, Geometry, Analysis and Results
-  are stacked sections (several open at once, summaries and status dots when
-  closed), with view tabs in the centre and an always-visible latest-run card.
-- Open projects as tabs in the header.
+  are stacked sections of an accordion (one open at a time; the others compact
+  to a title, summary and status dot) with an always-visible latest-run card.
+- Nova opens on Library. The header keeps one Project and one Version selector.
+- Versions: every simulation has an ID `major.minor.patch`. After a run its
+  geometry is locked (speeds, models and conditions stay editable); New version
+  copies it as the next patch, editable again
+  (`POST /api/v2/simulations/{id}/new-version`, `version` and `locked` fields).
+- Air propeller corrections in Analysis: tip and hub loss (Prandtl or none),
+  Viterna–Corrigan extension of imported polars beyond their sampled incidence,
+  forward speed (advance ratio, propulsive efficiency) and an upstream wake.
+- Rotor corrections: Du–Selig stall delay, Øye dynamic stall, and an upstream
+  rotor or body wake (Jensen or Gaussian) averaged over the disk.
+- Resolved inflow for axial rotors (`inflow` in the rotor specification): the
+  BEMT is solved at every blade azimuth with yaw/inclination and Glauert skewed
+  wake, wind shear, tower shadow, a partial upstream wake and Øye dynamic stall;
+  results add blade and rotor load against azimuth. Uniform inflow reproduces the
+  axisymmetric solver exactly.
 - Run opens a model chooser every time (several models for the air propeller,
   one streamtube model for VAWT, BEMT for HAWT and marine).
 - Comparisons workspace: runs from any project overlaid, baseline deltas,
@@ -17,7 +31,7 @@ All notable changes to Nova are documented in this file.
 - Sweep lens for rotor-engine designs with limits, VAWT refinement with a more
   complete model, adopt-into-design and open-as-block-workflow;
   `POST /api/v1/rotors/sweep`.
-- New NOVA logo and app icon (dashed-O wordmark), orange primary colour.
+- New NOVA logo and app icon (dashed-O wordmark), orange throughout.
 
 - Rotor type chosen at the start of the Design flow (air propeller, marine
   propeller, HAWT, VAWT). Sizing, Geometry, Analysis and Results adapt to it:
