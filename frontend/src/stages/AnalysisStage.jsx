@@ -4,6 +4,7 @@ import { formatValue } from '../lib/blade.js';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import { Button, Field, Metric, Notice, Section, SelectField, StatusDot } from '../ui/controls.jsx';
 import LineChart from '../ui/LineChart.jsx';
+import UpstreamWake from './UpstreamWake.jsx';
 
 const fidelityTone = (fidelity) => fidelity === 'experimental' ? 'text-nv-warn-ink' : fidelity === 'preliminary' ? 'text-nv-accent-soft' : 'text-nv-reference';
 
@@ -103,6 +104,14 @@ export default function AnalysisStage({ a }) {
       </Section>
       <Section title="Operating point">
         <Field label="Speed" ariaLabel="Rotation speed" unit="rpm" value={inputs.rpm} onChange={(v) => set('rpm', v)} />
+        {a.model === 'bemt' && <>
+          <Field label="Forward speed" ariaLabel="Forward speed" unit="m/s" value={context?.analysisConfig?.forward_speed_m_s ?? 0}
+            onChange={(v) => { a.setCorrection('forward_speed_m_s', v); if (!(Number(v) > 0)) a.setCorrection('upstream_wake', { kind: 'none' }); }} />
+          <p className="m-0 text-xs leading-relaxed text-nv-muted">0 is static (hover). A forward speed gives the propeller an advance ratio and a propulsive efficiency.</p>
+          {Number(context?.analysisConfig?.forward_speed_m_s) > 0 && <UpstreamWake wake={context?.analysisConfig?.upstream_wake} radius={(Number(inputs.diameter) || 0.25) / 2}
+            onChange={(wake) => a.setCorrection('upstream_wake', wake)}
+            note="The mean deficit over the disk lowers the forward speed that reaches the propeller (fuselage, nacelle or another rotor ahead). Load around the revolution is not resolved here." />}
+        </>}
       </Section>
       <Section title="Airfoil and air data"><div ref={a.slotRef('data')} className="flex flex-col gap-2.5" /></Section>
     </>}

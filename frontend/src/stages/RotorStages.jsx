@@ -4,6 +4,7 @@ import { request } from '../backend.js';
 import { formatValue, niceTicks } from '../lib/blade.js';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import LineChart from '../ui/LineChart.jsx';
+import UpstreamWake from './UpstreamWake.jsx';
 import { Button, Disclosure, Field, KeyValue, Metric, Notice, Section, Segmented, SelectField } from '../ui/controls.jsx';
 
 // The rotor family is chosen once, at the start of the Design flow; every stage
@@ -239,11 +240,11 @@ const correctionText = {
   compressibility: ['Compressibility', 'Prandtl–Glauert lift correction for section Mach numbers up to 0.7.'],
   finite_aspect_ratio: ['Finite aspect ratio (tip)', 'Lanchester–Prandtl lifting line: lower lift slope and induced drag of a finite blade.'],
   flow_curvature: ['Flow curvature', 'A blade on a circular path sees a virtual camber and incidence (Migliore).'],
-  dynamic_stall: ['Dynamic stall', 'Fast incidence changes delay stall (Gormont with Berg blending); important at low λ.'],
+  dynamic_stall: ['Dynamic stall', 'Fast incidence changes delay stall. Vertical-axis rotors use Gormont with Berg blending; axial rotors use Øye and need resolved inflow (yaw, shear, tower or a partial wake).'],
   strut_drag: ['Strut drag', 'Parasitic torque of the radial struts.'],
   shaft_wake: ['Shaft wake (hub)', 'Velocity deficit behind the central shaft for downwind passages.'],
 };
-const optionNames = { snel: 'Snel', du_selig: 'Du–Selig', gormont_berg: 'Gormont–Berg', prandtl_glauert: 'Prandtl–Glauert', prandtl: 'Prandtl', shen: 'Shen' };
+const optionNames = { oye: 'Øye', snel: 'Snel', du_selig: 'Du–Selig', gormont_berg: 'Gormont–Berg', prandtl_glauert: 'Prandtl–Glauert', prandtl: 'Prandtl', shen: 'Shen' };
 const optionLabel = (value) => typeof value === 'boolean' ? (value ? 'On' : 'Off') : optionNames[value] || String(value).replaceAll('_', ' ');
 
 // Fidelity levels for this rotor, stated honestly: what runs today and what is planned.
@@ -265,32 +266,6 @@ function ModelLadder({ family, method, catalog }) {
   </section>;
 }
 
-// Wake of a rotor or body upstream (tandem rotors, fuselage, nacelle, tower): its mean velocity
-// deficit over this disk lowers the inflow. The solver stays axisymmetric; see the notice.
-function UpstreamWake({ family, spec, setSpec, catalog }) {
-  const wake = spec.upstream_wake || { kind: 'none' };
-  const R = (spec.geometry.radius_m ?? (spec.geometry.diameter_m ? spec.geometry.diameter_m / 2 : 1));
-  const defaults = { rotor: { diameter_m: 2 * R, coefficient: 0.75, distance_m: 6 * R, offset_m: 0, decay: catalog.upstream_wake.default_decay.rotor },
-    body: { diameter_m: R, coefficient: 1, distance_m: 4 * R, offset_m: 0, decay: catalog.upstream_wake.default_decay.body } };
-  const set = (patch) => setSpec({ ...spec, upstream_wake: { ...wake, ...patch } });
-  const choose = (kind) => setSpec({ ...spec, upstream_wake: kind === 'none' ? { kind } : { model: 'gaussian', ...defaults[kind], ...(wake.kind === kind ? wake : {}), kind } });
-  const summary = wake.kind === 'none' ? 'None' : `${wake.kind} · ${wake.model} · ${wake.distance_m} m behind`;
-  return <Disclosure title="Upstream wake" summary={summary}>
-    <SelectField label="Source" ariaLabel="Upstream wake source" value={wake.kind} onChange={choose}
-      options={[['none', 'None'], ['rotor', 'Rotor ahead (tandem)'], ['body', 'Body ahead (fuselage, nacelle, tower)']]} />
-    {wake.kind !== 'none' && <>
-      <SelectField label="Wake model" ariaLabel="Upstream wake model" value={wake.model} onChange={(v) => set({ model: v })}
-        options={catalog.upstream_wake.models.map((m) => [m, m === 'jensen' ? 'Jensen (top-hat)' : 'Gaussian'])} />
-      <Field label={wake.kind === 'rotor' ? 'Rotor diameter' : 'Body diameter'} unit="m" value={wake.diameter_m ?? ''} onChange={(v) => set({ diameter_m: v })} />
-      <Field label={wake.kind === 'rotor' ? 'Thrust coefficient Ct' : 'Drag coefficient Cd'} value={wake.coefficient ?? ''} onChange={(v) => set({ coefficient: v })} />
-      <Field label="Distance upstream" unit="m" value={wake.distance_m ?? ''} onChange={(v) => set({ distance_m: v })} />
-      <Field label="Lateral offset" unit="m" value={wake.offset_m ?? 0} onChange={(v) => set({ offset_m: v })} />
-      <Field label="Wake growth k" value={wake.decay ?? ''} onChange={(v) => set({ decay: v })} />
-      <p className="m-0 text-xs leading-relaxed text-nv-muted">The mean deficit over this {family === 'vawt' ? 'swept area' : 'disk'} lowers the inflow velocity; rpm stays as commanded. Load around the azimuth is not resolved in this model.</p>
-    </>}
-  </Disclosure>;
-}
-
 export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runDisabled }) {
   const operating = spec.operating || {};
   const options = family === 'vawt' ? catalog.vertical_corrections : catalog.axial_corrections;
@@ -298,6 +273,10 @@ export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runD
   const excluded = Object.keys(options).filter((key) => !applicable.includes(key));
   const range = spec.curve || (turbine(family) ? { start: 1, stop: family === 'vawt' ? 7 : 13, points: 25 } : { start: 0.05, stop: family === 'marine' ? 1.1 : 0.9, points: 25 });
   const setOperating = (key, value) => setSpec({ ...spec, operating: { ...operating, [key]: value } });
+  const inflow = spec.inflow || { resolved: false };
+  const tower = inflow.tower || { kind: 'none' };
+  const R = spec.geometry.radius_m ?? (spec.geometry.diameter_m ? spec.geometry.diameter_m / 2 : 1);
+  const setInflow = (patch) => setSpec({ ...spec, inflow: { ...inflow, ...patch } });
   return <StageLayout inputsLabel="Stage inputs" contentLabel="Models and corrections" sideLabel="Run"
     inputs={<>
       <StageTitle title="Analysis" detail="Operating point, method and the corrections that apply to this rotor." />
@@ -322,7 +301,25 @@ export function RotorAnalysisStage({ family, spec, setSpec, catalog, onRun, runD
           options={options[key].map((o) => [String(o), optionLabel(o)])}
           onChange={(v) => setSpec({ ...spec, corrections: { ...spec.corrections, [key]: typeof options[key][0] === 'boolean' ? v === 'true' : v } })} />)}
       </Section>
-      <UpstreamWake family={family} spec={spec} setSpec={setSpec} catalog={catalog} />
+      {family !== 'vawt' && <Disclosure title="Inflow around the disk" summary={inflow.resolved ? `resolved · yaw ${inflow.yaw_deg ?? 0}° · ${inflow.azimuth_steps ?? 36} azimuths` : 'uniform axial'}>
+        <SelectField label="Inflow" ariaLabel="Resolved inflow" value={inflow.resolved ? 'resolved' : 'uniform'} onChange={(v) => setInflow({ resolved: v === 'resolved' })}
+          options={[['uniform', 'Uniform axial (fast)'], ['resolved', 'Resolved around the azimuth']]} />
+        {inflow.resolved && <>
+          <Field label="Yaw / inclination" unit="°" value={inflow.yaw_deg ?? 0} onChange={(v) => setInflow({ yaw_deg: v })} />
+          <Field label="Shear exponent" value={inflow.shear_exponent ?? 0} onChange={(v) => setInflow({ shear_exponent: v })} />
+          <Field label="Hub height" unit="m" value={inflow.hub_height_m ?? 0} onChange={(v) => setInflow({ hub_height_m: v })} />
+          <SelectField label="Tower" ariaLabel="Tower shadow" value={tower.kind || 'none'} onChange={(v) => setInflow({ tower: v === 'none' ? { kind: 'none' } : { radius_m: R / 20, distance_m: R / 8, ...tower, kind: v } })}
+            options={[['none', 'None'], ['upwind', 'Upwind rotor (blade passes in front)'], ['downwind', 'Downwind rotor (blade passes behind)']]} />
+          {tower.kind && tower.kind !== 'none' && <>
+            <Field label="Tower radius" unit="m" value={tower.radius_m ?? ''} onChange={(v) => setInflow({ tower: { ...tower, radius_m: v } })} />
+            <Field label="Tower axis to rotor plane" unit="m" value={tower.distance_m ?? ''} onChange={(v) => setInflow({ tower: { ...tower, distance_m: v } })} />
+          </>}
+          <Field label="Azimuth steps" step={1} value={inflow.azimuth_steps ?? 36} onChange={(v) => setInflow({ azimuth_steps: v })} />
+          <p className="m-0 text-xs leading-relaxed text-nv-muted">Each radius is solved at every blade position. Annuli stay independent apart from the skewed-wake correction, and the upstream wake below is evaluated point by point.</p>
+        </>}
+      </Disclosure>}
+      <UpstreamWake wake={spec.upstream_wake} onChange={(upstream_wake) => setSpec({ ...spec, upstream_wake })} radius={spec.geometry.radius_m ?? (spec.geometry.diameter_m ? spec.geometry.diameter_m / 2 : 1)}
+        note={inflow.resolved && family !== 'vawt' ? 'Resolved around the azimuth: the blade load changes as it crosses the wake.' : `The mean deficit over this ${family === 'vawt' ? 'swept area' : 'disk'} lowers the inflow velocity; rpm stays as commanded. Switch the inflow to resolved to see the load vary around the azimuth.`} />
       {family === 'marine' && <Disclosure title="Hull & immersion" summary={`w ${spec.marine.wake_fraction} · t ${spec.marine.thrust_deduction}`}>
         {[['shaft_depth_m', 'Shaft depth', 'm'], ['wake_fraction', 'Wake w', ''], ['thrust_deduction', 'Thrust ded. t', ''], ['relative_rotative_efficiency', 'ηR', ''], ['keller_k', 'Keller K', '']]
           .map(([key, label, unit]) => <Field key={key} label={label} unit={unit} value={spec.marine[key] ?? ''} onChange={(v) => setSpec({ ...spec, marine: { ...spec.marine, [key]: v } })} />)}
@@ -451,6 +448,8 @@ function OperatingPoint({ family, result }) {
     {result.warnings.map((w) => <Notice key={w} tone="warn">{w}</Notice>)}
     {result.marine && <MarinePanel marine={result.marine} />}
     {result.azimuth ? <AzimuthCharts points={result.azimuth} /> : <RadialCharts stations={result.stations} />}
+    {result.rotation && <RotationCharts rows={result.rotation} inflow={result.inflow} />}
+    {result.upstream_wake && <p className="m-0 text-[13px] text-nv-muted">Upstream {result.upstream_wake.kind}: mean deficit {fmt(100 * result.upstream_wake.mean_deficit, 3)} % over {fmt(100 * result.upstream_wake.covered_fraction, 3)} % of the disk · inflow {fmt(result.upstream_wake.effective_velocity_m_s, 4)} of {fmt(result.upstream_wake.free_stream_velocity_m_s, 4)} m/s</p>}
   </>;
 }
 
@@ -469,6 +468,17 @@ function RadialCharts({ stations }) {
   const series = (field, color) => [{ id: field, color, points: stations.map((s) => ({ x: s.r_over_R, y: s[field] })) }];
   return <>{[['alpha_deg', 'Angle of attack', 'deg', '#FF8533'], ['a', 'Axial induction a', '', '#4CC9F0'], ['loss_factor', 'Tip × hub loss F', '', '#B49CFB'], ['cl', 'Lift coefficient', '', '#46D19A']]
     .map(([field, title, unit, color]) => <LineChart key={field} title={title} unit={unit} height={150} series={series(field, color)} xLabel="r/R" />)}</>;
+}
+
+function RotationCharts({ rows, inflow }) {
+  const series = (field, color) => [{ id: field, color, points: rows.map((p) => ({ x: p.azimuth_deg, y: p[field] })) }];
+  const common = { xDomain: [0, 360], xTicks: [0, 90, 180, 270, 360], xLabel: 'blade azimuth °', height: 150 };
+  return <>
+    <h2 className="m-0 text-[15px] font-semibold">Load around the revolution</h2>
+    <p className="m-0 text-xs text-nv-muted">Azimuth 0° is the blade pointing up. Local inflow {fmt(inflow.speed_ratio_min, 3)}–{fmt(inflow.speed_ratio_max, 3)} of the free stream{inflow.dynamic_stall === 'oye' ? ` · Øye dynamic stall, attached fraction ≥ ${fmt(inflow.attached_fraction_min, 3)}` : ''}.</p>
+    {[['blade_thrust_n', 'Blade thrust', 'N', '#FF8533'], ['blade_torque_nm', 'Blade torque', 'N·m', '#46D19A'], ['alpha_deg', 'Angle of attack at 0.7 R', 'deg', '#B49CFB'], ['inflow_ratio', 'Local inflow V/V∞ at 0.7 R', '', '#4CC9F0'], ['rotor_thrust_n', 'Whole-rotor thrust', 'N', '#FF8533']]
+      .map(([field, title, unit, color]) => <LineChart key={field} title={title} unit={unit} series={series(field, color)} {...common} />)}
+  </>;
 }
 
 function AzimuthCharts({ points }) {

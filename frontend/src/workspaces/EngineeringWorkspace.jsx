@@ -178,7 +178,7 @@ const EngineeringWorkspace = forwardRef(function EngineeringWorkspace({ inputs, 
   const lastRunStale = Boolean(lastRun && workflow && runSignature(lastRun.inputs, lastRun.workflow, lastRun.conditions, lastRun.polar_asset_id) !== runStamp);
   const changedSinceRun = lastRunStale ? changedFields(lastRun, { inputs, workflow: currentGraph, conditions, polar_asset_id: assetId }) : [];
   useEffect(() => {
-    onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationLocked, corrections, version: simulation?.version || '', simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
+    onContextChange?.({ kind, project, projectNameModified: Boolean(project && inputs.project_name !== project.name), simulation, simulationLocked, corrections, analysisConfig, version: simulation?.version || '', simulationName, simulationStatus: simulation ? (simulationDirty ? 'modified' : 'saved') : 'unsaved',
       models: rotor ? [{ single_streamtube: 'sst', double_streamtube: 'ds', multiple_streamtube: 'mst', double_multiple_streamtube: 'dmst' }[rotorSpec?.method] || rotorSpec?.method || 'bemt'] : external ? [kind] : modelNames(currentGraph), activeRun, dirty: simulationDirty || draftDirty, ready: Boolean(workflow), busy: busy || uiBusy || savingConfiguration || running(activeRun), error,
       geometry, selectedAsset: assets.find((a) => a.id === assetId) || null, conditions, projectRuns: projectRunsForContext, simulationRuns, lastRun, lastRunStale, changedSinceRun });
     // Derived strings track configuration values, not parent object identities.
