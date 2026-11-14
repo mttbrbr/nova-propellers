@@ -129,7 +129,7 @@ class SectionPolar:
             raise ValueError('Imported polar needs at least three samples per Reynolds number')
         return cls(name, np.asarray(reynolds), np.asarray(cls_), np.asarray(cds_), float(thickness), False)
 
-    def __call__(self, alpha_deg, reynolds):
+    def __call__(self, alpha_deg, reynolds, r=None):  # r: span position, ignored by a single polar
         alpha = (np.asarray(alpha_deg, dtype=float) + 180.0) % 360.0 - 180.0
         re = np.broadcast_to(np.asarray(reynolds, dtype=float), alpha.shape)
         if len(self.reynolds) == 1:
@@ -175,3 +175,94 @@ def section_from(config, aspect_ratio=10.0):
         return SectionPolar.from_points(config.get('name', 'Imported polar'), config['points'],
                                         config.get('thickness', 0.12), aspect_ratio)
     return SectionPolar.synthetic_section(config.get('name', 'NACA 0018'), aspect_ratio)
+
+
+class SpanSection:
+    """Several section polars along the blade span, blended linearly in r between neighbours.
+
+    Each polar is evaluated at the local Reynolds number and the coefficients are interpolated
+    with the span position (the usual practice of BEM codes); outside the first and last station
+    the end polar applies. Needs the radius of every point, passed as the third argument.
+    """
+
+    def __init__(self, stations, tip_radius_m):
+        if len(stations) < 2:
+            raise ValueError('A span of sections needs at least two stations')
+        self.positions = np.array([float(x) for x, _ in stations])
+        self.polars = [p for _, p in stations]
+        self.tip_radius_m = float(tip_radius_m)
+        if np.any(np.diff(self.positions) <= 0) or self.positions[0] < 0 or self.positions[-1] > 1.0 + 1e-9:
+            raise ValueError('Section stations must increase strictly within r/R 0–1')
+
+    @property
+    def name(self):
+        return ' → '.join(dict.fromkeys(p.name for p in self.polars))
+
+    @property
+    def synthetic(self):
+        return any(p.synthetic for p in self.polars)
+
+    @property
+    def thickness(self):
+        return float(np.mean([p.thickness for p in self.polars]))
+
+    @property
+    def clipped(self):
+        return sum(p.clipped for p in self.polars)
+
+    def _weights(self, r):
+        x = np.clip(np.asarray(r, dtype=float) / self.tip_radius_m, self.positions[0], self.positions[-1])
+        upper = np.clip(np.searchsorted(self.positions, x, side='right'), 1, len(self.positions) - 1)
+        lower = upper - 1
+        width = self.positions[upper] - self.positions[lower]
+        return lower, upper, np.clip((x - self.positions[lower]) / width, 0.0, 1.0)
+
+    def __call__(self, alpha_deg, reynolds, r=None):
+        if r is None:
+            raise ValueError('A span of sections needs the radius of each point')
+        alpha = np.asarray(alpha_deg, dtype=float)
+        shape = np.broadcast(alpha, np.asarray(reynolds), np.asarray(r)).shape
+        alpha, re, r = (np.broadcast_to(np.asarray(v, dtype=float), shape) for v in (alpha, reynolds, r))
+        lower, upper, w = self._weights(r)
+        cl, cd = np.zeros(shape), np.zeros(shape)
+        for k, polar in enumerate(self.polars):
+            use_low, use_up = lower == k, upper == k
+            if not (use_low | use_up).any():
+                continue
+            pcl, pcd = polar(alpha, re)
+            cl += np.where(use_low, (1 - w) * pcl, 0.0) + np.where(use_up, w * pcl, 0.0)
+            cd += np.where(use_low, (1 - w) * pcd, 0.0) + np.where(use_up, w * pcd, 0.0)
+        return cl, cd
+
+    def blended(self, values, r):
+        lower, upper, w = self._weights(r)
+        values = np.asarray(values, dtype=float)
+        return values[lower] * (1 - w) + values[upper] * w
+
+    def lift_slopes(self):
+        return [p.lift_slope_per_rad() for p in self.polars]
+
+    def zero_lift_angles(self):
+        return [p.zero_lift_angle_deg() for p in self.polars]
+
+
+def lift_slope(section, r):
+    """Section lift slope (1/rad): a number for one polar, an array over r for a span of sections."""
+    return section.blended(section.lift_slopes(), r) if isinstance(section, SpanSection) else section.lift_slope_per_rad()
+
+
+def zero_lift_angle(section, r):
+    return section.blended(section.zero_lift_angles(), r) if isinstance(section, SpanSection) else section.zero_lift_angle_deg()
+
+
+def span_from(entries, tip_radius_m, aspect_ratio=10.0):
+    """Build a span of sections from [{'r_over_R': x, 'section': {...}}, ...]."""
+    if not isinstance(entries, list) or not 2 <= len(entries) <= 20:
+        raise ValueError('sections must be a list of 2–20 stations')
+    stations = []
+    for entry in entries:
+        if not isinstance(entry, dict) or 'r_over_R' not in entry or isinstance(entry['r_over_R'], bool) \
+                or not isinstance(entry['r_over_R'], (int, float)) or not np.isfinite(entry['r_over_R']):
+            raise ValueError('Each span section needs a numeric r_over_R and a section')
+        stations.append((float(entry['r_over_R']), section_from(entry.get('section'), aspect_ratio)))
+    return SpanSection(stations, tip_radius_m)

@@ -24,7 +24,7 @@ from .fluids import PRESETS, fluid_from
 from . import azimuthal
 from . import wake as upstream
 from .marine import b_series_rotor, hull_interaction, marine_assessment
-from .sections import SYNTHETIC_SECTIONS, section_from
+from .sections import SYNTHETIC_SECTIONS, SpanSection, section_from, span_from
 from .vawt import METHOD_LABELS, METHODS, VerticalRotor, solve_vertical
 
 KINDS = ('hawt', 'vawt', 'propeller', 'marine')
@@ -184,6 +184,8 @@ def build(spec):
     spec = merged(spec)
     kind, geometry = spec['kind'], spec['geometry']
     fluid = fluid_from(spec['fluid'])
+    if spec.get('sections') and kind not in ('hawt', 'propeller'):
+        raise ValueError('Sections along the span apply to wind turbines and propellers')
     if kind == 'vawt':
         known = set(VerticalRotor.__dataclass_fields__) - {'section'}
         unknown = set(geometry) - known
@@ -193,7 +195,12 @@ def build(spec):
         section = section_from(spec['section'], aspect)
         rotor = VerticalRotor(section=section, **geometry)
     else:
-        section = section_from(spec['section'])
+        span = spec.get('sections')
+        if span and kind not in ('hawt', 'propeller'):
+            raise ValueError('Sections along the span apply to wind turbines and propellers')
+        # The optimum-chord design of a rotor without explicit stations uses the section nearest 70 % span.
+        design = min(span, key=lambda e: abs(float(e.get('r_over_R', 0)) - 0.7))['section'] if span else spec['section']
+        section = section_from(design)
         if kind == 'hawt':
             rotor = _hawt_rotor(geometry, section)
         elif kind == 'marine':
@@ -203,6 +210,8 @@ def build(spec):
                                    pitch_deg=float(geometry.get('pitch_deg', 0)))
         else:
             rotor = _propeller_rotor(geometry, section)
+        if span:
+            rotor.section = span_from(span, rotor.tip_radius_m)
     return spec, rotor, fluid
 
 
@@ -279,6 +288,8 @@ def analyze(spec):
     result['corrections'] = corrections.to_dict()
     result['section'] = {'name': rotor.section.name, 'synthetic': rotor.section.synthetic,
                          'thickness': rotor.section.thickness}
+    if isinstance(rotor.section, SpanSection):
+        result['section']['span'] = [{'r_over_R': float(x), 'name': p.name} for x, p in zip(rotor.section.positions, rotor.section.polars)]
     return result
 
 

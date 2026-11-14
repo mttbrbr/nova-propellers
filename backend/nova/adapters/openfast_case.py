@@ -15,11 +15,17 @@ from pathlib import Path
 
 import numpy as np
 
-from nova.physics import rotors
+from nova.adapters import openfast_structure
+from nova.physics import beam_modes, rotors
 from nova.physics.sections import GRID_DEG
 
 ROOT = 'rigid'
 OUTPUT = f'{ROOT}.outb'
+FLEX = 'flex'
+ED_NODES = 20
+ED_BLADE = 'flex_ElastoDyn_blade.dat'
+ED_TOWER = 'flex_ElastoDyn_tower.dat'
+DOF_SETTINGS = {'flap_dof': True, 'edge_dof': True, 'tower_fa_dof': True, 'tower_ss_dof': True}
 SETTINGS = {'duration_s': 10.0, 'dt_s': 0.01, 'hub_height_m': None, 'overhang_m': None, 'shaft_tilt_deg': 0.0, 'precone_deg': 0.0}
 LIMITS = {'duration_s': (0.1, 600.0), 'dt_s': (1e-4, 0.5), 'hub_height_m': (0.1, 1000.0), 'overhang_m': (-100.0, 100.0),
           'shaft_tilt_deg': (-30.0, 30.0), 'precone_deg': (-30.0, 30.0)}
@@ -32,12 +38,15 @@ class CaseError(ValueError):
 
 
 def _settings(given):
-    unknown = set(given or {}) - set(SETTINGS)
+    unknown = set(given or {}) - set(SETTINGS) - set(DOF_SETTINGS)
     if unknown:
         raise CaseError(f'Unsupported OpenFAST case settings: {", ".join(sorted(unknown))}')
-    merged = {**SETTINGS, **{k: v for k, v in (given or {}).items() if v is not None}}
+    merged = {**SETTINGS, **DOF_SETTINGS, **{k: v for k, v in (given or {}).items() if v is not None}}
+    for key in DOF_SETTINGS:
+        if not isinstance(merged[key], bool):
+            raise CaseError(f'{key} must be true or false')
     for key, value in merged.items():
-        if value is None:
+        if value is None or key in DOF_SETTINGS:
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise CaseError(f'{key} must be a finite number')
@@ -56,8 +65,10 @@ def _num(value):
 
 
 def _fst(settings):
-    return f"""------- OpenFAST INPUT FILE (written by Nova: rigid-rotor aerodynamics) ----------------------
-Nova rigid rotor: Simplified ElastoDyn with prescribed speed and pitch, AeroDyn BEMT, steady wind.
+    title = ('Nova flexible rotor: ElastoDyn with prescribed rotor speed, AeroDyn BEMT, steady wind.' if settings['_elast'] == 1
+             else 'Nova rigid rotor: Simplified ElastoDyn with prescribed speed and pitch, AeroDyn BEMT, steady wind.')
+    return f"""------- OpenFAST INPUT FILE (written by Nova) ----------------------
+{title}
 ---------------------- SIMULATION CONTROL --------------------------------------
 False          Echo            - Echo input data to <RootName>.ech (flag)
 "FATAL"        AbortLevel      - Error level when simulation should abort (string) {{"WARNING", "SEVERE", "FATAL"}}
@@ -73,7 +84,7 @@ False          Echo            - Echo input data to <RootName>.ech (flag)
     1000000   UJacSclFact     - Scaling factor used in Jacobians (-)
 ---------------------- FEATURE SWITCHES AND FLAGS ------------------------------
           1   NRotors         - Number of rotors in turbine (-)
-          3   CompElast       - Compute structural dynamics (switch) {{1=ElastoDyn; 2=ElastoDyn + BeamDyn for blades; 3=Simplified ElastoDyn}}
+{settings['_elast']}   CompElast       - Compute structural dynamics (switch) {{1=ElastoDyn; 2=ElastoDyn + BeamDyn for blades; 3=Simplified ElastoDyn}}
           1   CompInflow      - Compute inflow wind velocities (switch) {{0=still air; 1=InflowWind; 2=external from ExtInflow}}
           2   CompAero        - Compute aerodynamic loads (switch) {{0=None; 1=AeroDisk; 2=AeroDyn; 3=ExtLoads}}
           0   CompServo       - Compute control and electrical-drive dynamics (switch) {{0=None; 1=ServoDyn}}
@@ -96,12 +107,12 @@ False          Echo            - Echo input data to <RootName>.ech (flag)
           0   WtrDpth         - Water depth (m)
           0   MSL2SWL         - Offset between still-water level and mean sea level (m) [positive upward]
 ---------------------- INPUT FILES ---------------------------------------------
-"{ROOT}_SED.dat"    EDFile          - Name of file containing ElastoDyn/Simplified-ElastoDyn input parameters (quoted string)
+"{settings['_edfile']}"    EDFile          - Name of file containing ElastoDyn/Simplified-ElastoDyn input parameters (quoted string)
 "unused"      BDBldFile(1)    - Name of file containing BeamDyn input parameters for blade 1 (quoted string)
 "unused"      BDBldFile(2)    - Name of file containing BeamDyn input parameters for blade 2 (quoted string)
 "unused"      BDBldFile(3)    - Name of file containing BeamDyn input parameters for blade 3 (quoted string)
-"{ROOT}_InflowWind.dat"    InflowFile      - Name of file containing inflow wind input parameters (quoted string)
-"{ROOT}_AeroDyn.dat"     AeroFile        - Name of file containing aerodynamic input parameters (quoted string)
+"{settings['_root']}_InflowWind.dat"    InflowFile      - Name of file containing inflow wind input parameters (quoted string)
+"{settings['_root']}_AeroDyn.dat"     AeroFile        - Name of file containing aerodynamic input parameters (quoted string)
 "unused"      ServoFile       - Name of file containing control and electrical-drive input parameters (quoted string)
 "unused"      SeaStFile       - Name of file containing sea state input parameters (quoted string)
 "unused"      HydroFile       - Name of file containing hydrodynamic input parameters (quoted string)
@@ -390,9 +401,294 @@ False         InclUAdata        ! Is unsteady aerodynamics data included in this
 """
 
 
+ED_OUTPUTS = ('Azimuth', 'RotSpeed', 'TipDxb1', 'TipDyb1', 'RootMEdg1', 'RootMFlp1', 'RootFxb1', 'RootFyb1',
+              'TwrBsMxt', 'TwrBsMyt', 'TwrBsFxt', 'YawBrTDxp', 'YawBrTDyp')
+STABILITY = 0.07  # time step limit as a fraction of the shortest enabled modal period
+
+
+def _flag(value):
+    return 'True' if value else 'False'
+
+
+def _elastodyn(blades, tip, hub, rpm, pitch, hub_record, nacelle, tower, blade, settings):
+    outputs = ''.join(f'"{name}"\n' for name in ED_OUTPUTS)
+    hub_cm, tilt = hub_record['cm_downwind_m'], nacelle['shaft_tilt_deg']
+    tower_top = tower['base_height_m'] + tower['height_m']
+    row = lambda value, key, text: f'{value}   {key}  - {text}'  # noqa: E731
+    return f"""------- ELASTODYN for OpenFAST INPUT FILE -------------------------------------------
+Nova flexible rotor: prescribed rotor speed, blade and tower modes from the supplied distributions.
+---------------------- SIMULATION CONTROL --------------------------------------
+False         Echo        - Echo input data to "<RootName>.ech" (flag)
+          3   Method      - Integration method: {{1: RK4, 2: AB4, or 3: ABM4}} (-)
+{_num(settings['_dt'])}   DT          - Integration time step (s)
+---------------------- DEGREES OF FREEDOM --------------------------------------
+{_flag(settings['flap_dof'])}         FlapDOF1    - First flapwise blade mode DOF (flag)
+{_flag(settings['flap_dof'])}         FlapDOF2    - Second flapwise blade mode DOF (flag)
+{_flag(settings['edge_dof'])}         EdgeDOF     - First edgewise blade mode DOF (flag)
+False         PitchDOF    - Blade pitch DOF (flag)
+False         TeetDOF     - Rotor-teeter DOF (flag) [unused for 3 blades]
+False         DrTrDOF     - Drivetrain rotational-flexibility DOF (flag)
+False         GenDOF      - Generator DOF (flag)
+False         YawDOF      - Yaw DOF (flag)
+{_flag(settings['tower_fa_dof'])}         TwFADOF1    - First fore-aft tower bending-mode DOF (flag)
+{_flag(settings['tower_fa_dof'])}         TwFADOF2    - Second fore-aft tower bending-mode DOF (flag)
+{_flag(settings['tower_ss_dof'])}         TwSSDOF1    - First side-to-side tower bending-mode DOF (flag)
+{_flag(settings['tower_ss_dof'])}         TwSSDOF2    - Second side-to-side tower bending-mode DOF (flag)
+False         PtfmSgDOF   - Platform horizontal surge translation DOF (flag)
+False         PtfmSwDOF   - Platform horizontal sway translation DOF (flag)
+False         PtfmHvDOF   - Platform vertical heave translation DOF (flag)
+False         PtfmRDOF    - Platform roll tilt rotation DOF (flag)
+False         PtfmPDOF    - Platform pitch tilt rotation DOF (flag)
+False         PtfmYDOF    - Platform yaw rotation DOF (flag)
+---------------------- INITIAL CONDITIONS --------------------------------------
+          0   OoPDefl     - Initial out-of-plane blade-tip displacement (meters)
+          0   IPDefl      - Initial in-plane blade-tip deflection (meters)
+{_num(pitch)}   BlPitch(1)  - Blade 1 initial pitch (degrees)
+{_num(pitch)}   BlPitch(2)  - Blade 2 initial pitch (degrees)
+{_num(pitch)}   BlPitch(3)  - Blade 3 initial pitch (degrees) [unused for 2 blades]
+          0   TeetDefl    - Initial or fixed teeter angle (degrees) [unused for 3 blades]
+          0   Azimuth     - Initial azimuth angle for blade 1 (degrees)
+{_num(rpm)}   RotSpeed    - Initial or fixed rotor speed (rpm)
+          0   NacYaw      - Initial or fixed nacelle-yaw angle (degrees)
+          0   TTDspFA     - Initial fore-aft tower-top displacement (meters)
+          0   TTDspSS     - Initial side-to-side tower-top displacement (meters)
+          0   PtfmSurge   - Initial or fixed horizontal surge translational displacement of platform (meters)
+          0   PtfmSway    - Initial or fixed horizontal sway translational displacement of platform (meters)
+          0   PtfmHeave   - Initial or fixed vertical heave translational displacement of platform (meters)
+          0   PtfmRoll    - Initial or fixed roll tilt rotational displacement of platform (degrees)
+          0   PtfmPitch   - Initial or fixed pitch tilt rotational displacement of platform (degrees)
+          0   PtfmYaw     - Initial or fixed yaw rotational displacement of platform (degrees)
+---------------------- TURBINE CONFIGURATION -----------------------------------
+{int(blades)}   NumBl       - Number of blades (-)
+{_num(tip)}   TipRad      - The distance from the rotor apex to the blade tip (meters)
+{_num(hub)}   HubRad      - The distance from the rotor apex to the blade root (meters)
+{_num(hub_record['precone_deg'])}   PreCone(1)  - Blade 1 cone angle (degrees)
+{_num(hub_record['precone_deg'])}   PreCone(2)  - Blade 2 cone angle (degrees)
+{_num(hub_record['precone_deg'])}   PreCone(3)  - Blade 3 cone angle (degrees) [unused for 2 blades]
+{_num(hub_cm)}   HubCM       - Distance from rotor apex to hub mass [positive downwind] (meters)
+          0   UndSling    - Undersling length [distance from teeter pin to the rotor apex] (meters) [unused for 3 blades]
+          0   Delta3      - Delta-3 angle for teetering rotors (degrees) [unused for 3 blades]
+          0   AzimB1Up    - Azimuth value to use for I/O when blade 1 points up (degrees)
+{_num(nacelle['overhang_m'])}   OverHang    - Distance from yaw axis to rotor apex [3 blades] or teeter pin [2 blades] (meters)
+          0   ShftGagL    - Distance from rotor apex [3 blades] or teeter pin [2 blades] to shaft strain gages [positive for upwind rotors] (meters)
+{_num(tilt)}   ShftTilt    - Rotor shaft tilt angle (degrees)
+{_num(nacelle['cm_downwind_m'])}   NacCMxn     - Downwind distance from the tower-top to the nacelle CM (meters)
+{_num(nacelle['cm_lateral_m'])}   NacCMyn     - Lateral  distance from the tower-top to the nacelle CM (meters)
+{_num(nacelle['cm_up_m'])}   NacCMzn     - Vertical distance from the tower-top to the nacelle CM (meters)
+          0   NcIMUxn     - Downwind distance from the tower-top to the nacelle IMU (meters)
+          0   NcIMUyn     - Lateral  distance from the tower-top to the nacelle IMU (meters)
+          0   NcIMUzn     - Vertical distance from the tower-top to the nacelle IMU (meters)
+{_num(nacelle['tower_top_to_shaft_m'])}   Twr2Shft    - Vertical distance from the tower-top to the rotor shaft (meters)
+{_num(tower_top)}   TowerHt     - Height of tower relative to ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] (meters)
+{_num(tower['base_height_m'])}   TowerBsHt   - Height of tower base relative to ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] (meters)
+          0   PtfmCMxt    - Downwind distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform CM (meters)
+          0   PtfmCMyt    - Lateral distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform CM (meters)
+          0   PtfmCMzt    - Vertical distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform CM (meters)
+          0   PtfmRefxt   - Downwind distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform reference point (meters)
+          0   PtfmRefyt   - Lateral distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform reference point (meters)
+          0   PtfmRefzt   - Vertical distance from the ground level [onshore], MSL [offshore wind or floating platform], or seabed [fixed-bottom offshore] to the platform reference point (meters)
+---------------------- MASS AND INERTIA ----------------------------------------
+{_num(blade['tip_mass_kg'])}   TipMass(1)  - Tip-brake mass, blade 1 (kg)
+{_num(blade['tip_mass_kg'])}   TipMass(2)  - Tip-brake mass, blade 2 (kg)
+{_num(blade['tip_mass_kg'])}   TipMass(3)  - Tip-brake mass, blade 3 (kg) [unused for 2 blades]
+          0   PBrIner(1)  - Pitch bearing inertia, blade 1 (kg m^2)
+          0   PBrIner(2)  - Pitch bearing inertia, blade 2 (kg m^2)
+          0   PBrIner(3)  - Pitch bearing inertia, blade 3 (kg m^2) [unused for 2 blades]
+          0   BlPIner(1)  - Blade pitch inertia, blade 1 (kg m^2)
+          0   BlPIner(2)  - Blade pitch inertia, blade 2 (kg m^2)
+          0   BlPIner(3)  - Blade pitch inertia, blade 3 (kg m^2) [unused for 2 blades]
+{_num(hub_record['mass_kg'])}   HubMass     - Hub mass (kg)
+{_num(hub_record['inertia_kg_m2'])}   HubIner     - Hub inertia about rotor axis (2 or 3-blades) (kg m^2)
+          0   HubIner_Teeter - Hub inertia about teeter axis (2-blades) (kg m^2)
+          1   GenIner     - Generator inertia about HSS (kg m^2) (unused: rotor speed is prescribed)
+{_num(nacelle['mass_kg'])}   NacMass     - Nacelle mass (kg)
+{_num(nacelle['yaw_inertia_kg_m2'])}   NacYIner    - Nacelle inertia about yaw axis (kg m^2)
+          0   YawBrMass   - Yaw bearing mass (kg)
+          0   PtfmMass    - Platform mass (kg)
+          0   PtfmRIner   - Platform inertia for roll tilt rotation about the platform CM (kg m^2)
+          0   PtfmPIner   - Platform inertia for pitch tilt rotation about the platform CM (kg m^2)
+          0   PtfmYIner   - Platform inertia for yaw rotation about the platform CM (kg m^2)
+          0   PtfmXYIner  - Platform xy moment of inertia about the platform CM (=-int(xydm)) (kg m^2)
+          0   PtfmYZIner  - Platform yz moment of inertia about the platform CM (=-int(yzdm)) (kg m^2)
+          0   PtfmXZIner  - Platform xz moment of inertia about the platform CM (=-int(xzdm)) (kg m^2)
+---------------------- BLADE ---------------------------------------------------
+{ED_NODES}   BldNodes    - Number of blade nodes (per blade) used for analysis (-)
+"{ED_BLADE}"    BldFile(1)  - Name of file containing properties for blade 1 (quoted string)
+"{ED_BLADE}"    BldFile(2)  - Name of file containing properties for blade 2 (quoted string)
+"{ED_BLADE}"    BldFile(3)  - Name of file containing properties for blade 3 (quoted string) [unused for 2 blades]
+---------------------- ROTOR-TEETER --------------------------------------------
+          0   TeetMod     - Rotor-teeter spring/damper model {{0: none, 1: standard, 2: user-defined from routine UserTeet}} (switch) [unused for 3 blades]
+          0   TeetDmpP    - Rotor-teeter damper position (degrees) [used only for 2 blades and when TeetMod=1]
+          0   TeetDmp     - Rotor-teeter damping constant (N-m/(rad/s)) [used only for 2 blades and when TeetMod=1]
+          0   TeetCDmp    - Rotor-teeter rate-independent Coulomb-damping moment (N-m) [used only for 2 blades and when TeetMod=1]
+          0   TeetSStP    - Rotor-teeter soft-stop position (degrees) [used only for 2 blades and when TeetMod=1]
+          0   TeetHStP    - Rotor-teeter hard-stop position (degrees) [used only for 2 blades and when TeetMod=1]
+          0   TeetSSSp    - Rotor-teeter soft-stop linear-spring constant (N-m/rad) [used only for 2 blades and when TeetMod=1]
+          0   TeetHSSp    - Rotor-teeter hard-stop linear-spring constant (N-m/rad) [used only for 2 blades and when TeetMod=1]
+---------------------- YAW-FRICTION --------------------------------------------
+          0   YawFrctMod  - Yaw-friction model {{0: none, 1: friction independent of yaw-bearing force and bending moment, 2: friction with Coulomb damping dependent on yaw-bearing force and bending moment}} (switch)
+          0   M_CSmax     - Maximum static Coulomb friction torque (N-m)
+          0   M_FCSmax    - Maximum static Coulomb friction torque proportional to yaw bearing shear force (N-m/N)
+          0   M_MCSmax    - Maximum static Coulomb friction torque proportional to yaw bearing bending moment (N-m/N-m)
+          0   M_CD        - Dynamic Coulomb friction moment (N-m)
+          0   M_FCD       - Dynamic Coulomb friction moment proportional to yaw bearing shear force (N-m/N)
+          0   M_MCD       - Dynamic Coulomb friction moment proportional to yaw bearing bending moment (N-m/N-m)
+          0   sig_v       - Linear viscous friction coefficient (N-m/(rad/s))
+          0   sig_v2      - Quadratic viscous friction coefficient (N-m/(rad/s)^2)
+          0   OmgCut      - Yaw angular velocity cutoff below which viscous friction is linearized (rad/s)
+---------------------- DRIVETRAIN ----------------------------------------------
+        100   GBoxEff     - Gearbox efficiency (%)
+          1   GBRatio     - Gearbox ratio (-)
+    1.0E+08   DTTorSpr    - Drivetrain torsional spring (N-m/rad) (unused: DrTrDOF is off)
+    1.0E+05   DTTorDmp    - Drivetrain torsional damper (N-m/(rad/s)) (unused: DrTrDOF is off)
+---------------------- FURLING -------------------------------------------------
+False         Furling     - Read in additional model properties for furling turbine (flag) [must currently be FALSE)
+"unused"      FurlFile    - Name of file containing furling properties (quoted string) [unused when Furling=False]
+---------------------- TOWER ---------------------------------------------------
+{ED_NODES}   TwrNodes    - Number of tower nodes used for analysis (-)
+"{ED_TOWER}"    TwrFile     - Name of file containing tower properties (quoted string)
+---------------------- OUTPUT --------------------------------------------------
+False         SumPrint    - Print summary data to "<RootName>.sum" (flag)
+          1   OutFile     - Switch to determine where output will be placed: {{1: in module output file only; 2: in glue code output file only; 3: both}} (currently unused)
+True          TabDelim    - Use tab delimiters in text tabular output file? (flag) (currently unused)
+"ES10.3E2"    OutFmt      - Format used for text tabular output (except time).  Resulting field should be 10 characters. (quoted string) (currently unused)
+          0   TStart      - Time to begin tabular output (s) (currently unused)
+          1   DecFact     - Decimation factor for tabular output {{1: output every time step}} (-) (currently unused)
+          0   NTwGages    - Number of tower nodes that have strain gages for output [0 to 9] (-)
+          0   TwrGagNd    - List of tower nodes that have strain gages [1 to TwrNodes] (-) [unused if NTwGages=0]
+          0   NBlGages    - Number of blade nodes that have strain gages for output [0 to 9] (-)
+          1   BldGagNd    - List of blade nodes that have strain gages [1 to BldNodes] (-) [unused if NBlGages=0]
+              OutList     - The next line(s) contains a list of output parameters.  See OutListParameters.xlsx for a listing of available output channels, (-)
+{outputs}END of OutList section (the word "END" must appear in the first 3 columns of the last OutList line)
+====== Outputs for all blade stations (same ending as above for Spn1.... =========================== [optional section]
+          0   BldNd_BladesOut     - Number of blades to output all node information at.  Up to number of blades on turbine. (-)
+"All"         BldNd_BlOutNd       - Future feature will allow selecting a portion of the nodes to output.  Not implemented yet. (-)
+              OutList             - The next line(s) contains a list of output parameters.  See OutListParameters.xlsx for a listing of available output channels, (-)
+END (the word "END" must appear in the first 3 columns of this last OutList line in the optional nodal output section)
+----------------------------------------------------------------
+"""
+
+
+def _shape_rows(prefix, label, coefficients):
+    return ''.join(f'{c:.10g}   {prefix}({k})  - {label}, coeff of x^{k}\n' for c, k in zip(coefficients, (2, 3, 4, 5, 6)))
+
+
+def _ed_blade(blade, twist_at, modes):
+    rows = '\n'.join(f'{x:.10g}  {twist_at(x):.10g}  {m:.10g}  {fl:.10g}  {ed:.10g}' for x, m, fl, ed in blade['stations'])
+    return f"""------- ELASTODYN V1.00.* INDIVIDUAL BLADE INPUT FILE --------------------------
+Nova blade structure; mode shapes computed by Nova from the distributions below (non-rotating Euler-Bernoulli cantilever).
+---------------------- BLADE PARAMETERS ----------------------------------------
+{len(blade['stations'])}   NBlInpSt    - Number of blade input stations (-)
+{blade['flap_damping_pct']:.10g}   BldFlDmp(1) - Blade flap mode #1 structural damping in percent of critical (%)
+{blade['flap_damping_pct']:.10g}   BldFlDmp(2) - Blade flap mode #2 structural damping in percent of critical (%)
+{blade['edge_damping_pct']:.10g}   BldEdDmp(1) - Blade edge mode #1 structural damping in percent of critical (%)
+---------------------- BLADE ADJUSTMENT FACTORS --------------------------------
+          1   FlStTunr(1) - Blade flapwise modal stiffness tuner, 1st mode (-)
+          1   FlStTunr(2) - Blade flapwise modal stiffness tuner, 2nd mode (-)
+          1   AdjBlMs     - Factor to adjust blade mass density (-)
+          1   AdjFlSt     - Factor to adjust blade flap stiffness (-)
+          1   AdjEdSt     - Factor to adjust blade edge stiffness (-)
+---------------------- DISTRIBUTED BLADE PROPERTIES ----------------------------
+        BlFract               StrcTwst               BMassDen               FlpStff                 EdgStff
+          (-)                   (deg)                 (kg/m)                 (Nm^2)                  (Nm^2)
+{rows}
+---------------------- BLADE MODE SHAPES ---------------------------------------
+{_shape_rows('BldFl1Sh', 'Flap mode 1', modes['flap1'])}{_shape_rows('BldFl2Sh', 'Flap mode 2', modes['flap2'])}{_shape_rows('BldEdgSh', 'Edge mode 1', modes['edge1'])}"""
+
+
+def _ed_tower(tower, modes):
+    rows = '\n'.join(f'{x:.10g}  {m:.10g}  {fa:.10g}  {ss:.10g}' for x, m, fa, ss in tower['stations'])
+    d = tower['damping_pct']
+    return f"""------- ELASTODYN V1.00.* TOWER INPUT FILE -------------------------------------
+Nova tower structure; mode shapes computed by Nova with the rotor and nacelle mass lumped at the tower top.
+---------------------- TOWER PARAMETERS ----------------------------------------
+{len(tower['stations'])}   NTwInpSt    - Number of input stations to specify tower geometry
+{d:.10g}   TwrFADmp(1) - Tower 1st fore-aft mode structural damping ratio (%)
+{d:.10g}   TwrFADmp(2) - Tower 2nd fore-aft mode structural damping ratio (%)
+{d:.10g}   TwrSSDmp(1) - Tower 1st side-to-side mode structural damping ratio (%)
+{d:.10g}   TwrSSDmp(2) - Tower 2nd side-to-side mode structural damping ratio (%)
+---------------------- TOWER ADJUSTMUNT FACTORS --------------------------------
+          1   FAStTunr(1) - Tower fore-aft modal stiffness tuner, 1st mode (-)
+          1   FAStTunr(2) - Tower fore-aft modal stiffness tuner, 2nd mode (-)
+          1   SSStTunr(1) - Tower side-to-side stiffness tuner, 1st mode (-)
+          1   SSStTunr(2) - Tower side-to-side stiffness tuner, 2nd mode (-)
+          1   AdjTwMa     - Factor to adjust tower mass density (-)
+          1   AdjFASt     - Factor to adjust tower fore-aft stiffness (-)
+          1   AdjSSSt     - Factor to adjust tower side-to-side stiffness (-)
+---------------------- DISTRIBUTED TOWER PROPERTIES ----------------------------
+  HtFract       TMassDen         TwFAStif       TwSSStif
+   (-)           (kg/m)           (Nm^2)         (Nm^2)
+{rows}
+---------------------- TOWER FORE-AFT MODE SHAPES ------------------------------
+{_shape_rows('TwFAM1Sh', 'Mode 1', modes['fa1'])}{_shape_rows('TwFAM2Sh', 'Mode 2', modes['fa2'])}---------------------- TOWER SIDE-TO-SIDE MODE SHAPES --------------------------
+{_shape_rows('TwSSM1Sh', 'Mode 1', modes['ss1'])}{_shape_rows('TwSSM2Sh', 'Mode 2', modes['ss2'])}"""
+
+
+def _structural_modes(structure, rotor_length, rotor_mass, settings):
+    blade, tower, nacelle = structure['blade'], structure['tower'], structure['nacelle']
+    fraction, mass, flap, edge = (np.array(c) for c in zip(*blade['stations']))
+    found, assumptions = {}, []
+    top_mass = nacelle['mass_kg'] + rotor_mass
+
+    def one(name, x, m, k, length, tip, count):
+        f, nodes, shapes = beam_modes.cantilever_modes(x, m, k, length, tip, modes=count)
+        out = []
+        for i in range(count):
+            c, rms, worst = beam_modes.polynomial_shape(nodes, shapes[i])
+            if rms > 0.03:
+                raise CaseError(f'The {name} mode {i + 1} cannot be represented by the ElastoDyn polynomial '
+                                f'(rms error {rms:.3f}); smooth the stiffness and mass distributions')
+            out.append((c, float(f[i]), rms))
+        return out
+
+    flap_modes = one('blade flap', fraction, mass, flap, rotor_length, blade['tip_mass_kg'], 2)
+    edge_modes = one('blade edge', fraction, mass, edge, rotor_length, blade['tip_mass_kg'], 1)
+    tx, tm, tfa, tss = (np.array(c) for c in zip(*tower['stations']))
+    fa_modes = one('tower fore-aft', tx, tm, tfa, tower['height_m'], top_mass, 2)
+    ss_modes = one('tower side-to-side', tx, tm, tss, tower['height_m'], top_mass, 2)
+    found['coefficients'] = {'flap1': flap_modes[0][0], 'flap2': flap_modes[1][0], 'edge1': edge_modes[0][0],
+                             'fa1': fa_modes[0][0], 'fa2': fa_modes[1][0], 'ss1': ss_modes[0][0], 'ss2': ss_modes[1][0]}
+    found['frequencies_hz'] = {'blade_flap1': flap_modes[0][1], 'blade_flap2': flap_modes[1][1], 'blade_edge1': edge_modes[0][1],
+                               'tower_fa1': fa_modes[0][1], 'tower_fa2': fa_modes[1][1], 'tower_ss1': ss_modes[0][1], 'tower_ss2': ss_modes[1][1]}
+    found['fit_rms'] = {k: float(max(m[2] for m in v)) for k, v in
+                        {'blade_flap': flap_modes, 'blade_edge': edge_modes, 'tower_fa': fa_modes, 'tower_ss': ss_modes}.items()}
+    enabled = []
+    if settings['flap_dof']:
+        enabled += [flap_modes[1][1]]
+    if settings['edge_dof']:
+        enabled += [edge_modes[0][1]]
+    if settings['tower_fa_dof']:
+        enabled += [fa_modes[1][1]]
+    if settings['tower_ss_dof']:
+        enabled += [ss_modes[1][1]]
+    found['highest_enabled_hz'] = max(enabled) if enabled else 0.0
+    assumptions.append('Mode shapes: non-rotating Euler-Bernoulli cantilever finite elements, fitted with the ElastoDyn x^2…x^6 polynomial; '
+                       'tower modes include the nacelle and rotor mass lumped at the tower top, without rotary inertia')
+    assumptions.append(f'Structural damping: blade {blade["flap_damping_pct"]:g} % flap / {blade["edge_damping_pct"]:g} % edge, '
+                       f'tower {tower["damping_pct"]:g} % of critical (from the blocks)')
+    assumptions.append('Blade principal axes follow the aerodynamic twist (structural twist = aerodynamic twist)')
+    return found, assumptions
+
+
 def write_rigid_case(spec, directory, settings=None):
-    """Write the case into `directory`; return its description (paths, operating point, case hash)."""
+    """Rigid rotor: Simplified ElastoDyn, no structure."""
+    return write_case(spec, directory, settings, None)
+
+
+def write_case(spec, directory, settings=None, structure=None):
+    """Write the case into `directory`; return its description (paths, operating point, modes, case hash).
+
+    Without `structure` the rotor is rigid (Simplified ElastoDyn). With the hub, nacelle, tower and blade
+    records of `openfast_structure` the case is a full ElastoDyn model at prescribed rotor speed.
+    """
     settings = _settings(settings)
+    structure = {k: v for k, v in (structure or {}).items() if v is not None}
+    flexible = bool(structure)
+    if flexible:
+        lacking = openfast_structure.missing(structure)
+        if lacking:
+            raise CaseError('A flexible OpenFAST model also needs: ' + ', '.join(lacking))
+    root = FLEX if flexible else ROOT
     built, rotor, fluid = rotors.build(spec)
     if built['kind'] != 'hawt':
         raise CaseError('OpenFAST cases are generated for horizontal-axis wind turbines only')
@@ -410,27 +706,57 @@ def write_rigid_case(spec, directory, settings=None):
     omega = rpm * 2 * math.pi / 60
     relative_speed = np.hypot(speed, omega * r)
     reynolds = fluid.density_kg_m3 * relative_speed * np.maximum(chord, 1e-6) / fluid.viscosity_pa_s
-    overhang = settings['overhang_m'] if settings['overhang_m'] is not None else -0.05 * tip
-    hub_height = settings['hub_height_m'] if settings['hub_height_m'] is not None else max(1.5 * tip, tip + 1.0)
-    twr2shft = 0.05 * tip
-    resolved = {**settings, 'overhang_m': overhang, 'hub_height_m': hub_height, '_twr2shft': twr2shft, '_tower_ht': hub_height - twr2shft,
-                '_rho': _num(fluid.density_kg_m3), '_nu': _num(fluid.viscosity_pa_s / fluid.density_kg_m3),
-                '_a': _num(fluid.speed_of_sound_m_s), '_p': _num(fluid.ambient_pressure_pa)}
-    if resolved['_tower_ht'] <= 0:
-        raise CaseError('hub_height_m must exceed the tower-top offset')
+    pitch = float(built['geometry'].get('pitch_deg', 0.0))
+    fluid_values = {'_rho': _num(fluid.density_kg_m3), '_nu': _num(fluid.viscosity_pa_s / fluid.density_kg_m3),
+                    '_a': _num(fluid.speed_of_sound_m_s), '_p': _num(fluid.ambient_pressure_pa), '_root': root}
+    extra, assumptions, modes = {}, [], None
+    if flexible:
+        hub_r, nac, tower, blade = structure['hub'], structure['nacelle'], structure['tower'], structure['blade']
+        length = tip - hub
+        fraction, mass = np.array([row[0] for row in blade['stations']]), np.array([row[1] for row in blade['stations']])
+        blade_mass = float(np.trapezoid(mass, fraction) * length)
+        rotor_mass = hub_r['mass_kg'] + rotor.blades * (blade_mass + blade['tip_mass_kg'])
+        modes, assumptions = _structural_modes(structure, length, rotor_mass, settings)
+        dt = settings['dt_s']
+        if modes['highest_enabled_hz'] > 0:
+            limit = STABILITY / modes['highest_enabled_hz']
+            if dt > limit:
+                assumptions.append(f'Time step reduced from {dt:g} s to {limit:.4g} s: {STABILITY:g} of the shortest enabled modal period '
+                                   f'({modes["highest_enabled_hz"]:.3g} Hz)')
+                dt = limit
+        if settings['duration_s'] / dt > 2_000_000:
+            raise CaseError('The run would need more than two million time steps')
+        hub_height = tower['base_height_m'] + tower['height_m'] + nac['tower_top_to_shaft_m']
+        resolved = {**settings, 'dt_s': dt, '_dt': dt, 'hub_height_m': hub_height, '_elast': 1, '_edfile': f'{root}_ElastoDyn.dat', **fluid_values}
+        twist_at = lambda x: float(np.interp(x, (r - hub) / length, twist))  # noqa: E731
+        extra = {f'{root}_ElastoDyn.dat': _elastodyn(rotor.blades, tip, hub, rpm, pitch, hub_r, nac, tower, blade, resolved),
+                 ED_BLADE: _ed_blade(blade, twist_at, modes['coefficients']), ED_TOWER: _ed_tower(tower, modes['coefficients'])}
+        if rotor.blades != 3:
+            assumptions.append(f'{int(rotor.blades)} blades with a rigid hub (no teeter degree of freedom)')
+        assumptions.append('Rotor speed is prescribed (no generator, drivetrain or controller dynamics)')
+    else:
+        overhang = settings['overhang_m'] if settings['overhang_m'] is not None else -0.05 * tip
+        hub_height = settings['hub_height_m'] if settings['hub_height_m'] is not None else max(1.5 * tip, tip + 1.0)
+        twr2shft = 0.05 * tip
+        resolved = {**settings, 'overhang_m': overhang, 'hub_height_m': hub_height, '_twr2shft': twr2shft, '_tower_ht': hub_height - twr2shft,
+                    '_dt': settings['dt_s'], '_elast': 3, '_edfile': f'{root}_SED.dat', **fluid_values}
+        if resolved['_tower_ht'] <= 0:
+            raise CaseError('hub_height_m must exceed the tower-top offset')
+        extra = {f'{root}_SED.dat': _sed(rotor.blades, tip, hub, rpm, pitch, resolved)}
     directory = Path(directory)
     (directory / 'airfoils').mkdir(parents=True, exist_ok=True)
-    pitch = float(built['geometry'].get('pitch_deg', 0.0))
-    files = {f'{ROOT}.fst': _fst(resolved), f'{ROOT}_SED.dat': _sed(rotor.blades, tip, hub, rpm, pitch, resolved),
-             f'{ROOT}_InflowWind.dat': _inflow(speed, hub_height), f'{ROOT}_AeroDyn.dat': _aerodyn(len(r), built['corrections']),
-             'blade.dat': _blade(r - hub, twist, chord)}
+    files = {f'{root}.fst': _fst(resolved), f'{root}_InflowWind.dat': _inflow(speed, hub_height),
+             f'{root}_AeroDyn.dat': _aerodyn(len(r), built['corrections']), 'blade.dat': _blade(r - hub, twist, chord), **extra}
     for i in range(len(r)):
-        cl, cd = rotor.section(GRID_DEG, np.full_like(GRID_DEG, reynolds[i]))
+        cl, cd = rotor.section(GRID_DEG, np.full_like(GRID_DEG, reynolds[i]), np.full_like(GRID_DEG, r[i]))
         files[f'airfoils/station_{i + 1:02d}.dat'] = _airfoil(f'Station {i + 1} (r = {r[i]:.4g} m)', reynolds[i], cl, cd)
+    manifest = {'model': 'flexible' if flexible else 'rigid', 'assumptions': assumptions,
+                'frequencies_hz': modes['frequencies_hz'] if modes else None, 'mode_fit_rms': modes['fit_rms'] if modes else None}
     for name, text in files.items():
         (directory / name).write_text(text)
     digest = hashlib.sha256(json.dumps({k: files[k] for k in sorted(files)}, sort_keys=True).encode()).hexdigest()
-    return {'case_directory': str(directory.resolve()), 'input_file': f'{ROOT}.fst', 'output_file': OUTPUT, 'files': sorted(files),
+    return {'case_directory': str(directory.resolve()), 'input_file': f'{root}.fst', 'output_file': f'{root}.outb', 'files': sorted(files),
+            'model': manifest['model'], 'assumptions': assumptions, 'frequencies_hz': manifest['frequencies_hz'],
             'operating': {'wind_speed_m_s': speed, 'rpm': rpm, 'tip_speed_ratio': omega * tip / speed, 'pitch_deg': pitch},
             'rotor': {'blades': int(rotor.blades), 'radius_m': tip, 'hub_radius_m': hub, 'stations': len(r)},
-            'settings': {k: resolved[k] for k in SETTINGS}, 'case_hash': digest}
+            'settings': {k: resolved[k] for k in (*SETTINGS, *DOF_SETTINGS)}, 'case_hash': digest}

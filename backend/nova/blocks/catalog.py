@@ -18,7 +18,7 @@ import copy
 
 from nova.physics.rotors import DEFAULTS
 
-TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case')
+TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade')
 
 
 def port(name, kind, optional=False, label=None):
@@ -27,7 +27,10 @@ def port(name, kind, optional=False, label=None):
 
 def _rotor_defaults(kind):
     d = copy.deepcopy(DEFAULTS[kind])
-    return {'geometry': d['geometry'], 'section': d['section'], 'method': d['method'], 'bindings': {}}
+    config = {'geometry': d['geometry'], 'section': d['section'], 'method': d['method'], 'bindings': {}}
+    if kind in ('hawt', 'propeller'):
+        config['sections'] = []  # different sections along the span; empty = the single section above
+    return config
 
 
 BLOCKS = {
@@ -149,14 +152,39 @@ BLOCKS = {
         description='Self-contained OpenFAST input folder (absolute path), its .fst file and the expected output. Inspected, never edited.',
         inputs=[], outputs=[port('case', 'openfast_case')],
         defaults={'case_directory': '', 'input_file': 'model.fst', 'output_file': 'model.outb', 'timeout_seconds': 600.0}),
+    'hub': dict(
+        family='specific', category='OpenFAST structure', label='Hub',
+        description='Hub mass, inertia about the rotor axis, centre of mass and blade precone. Required values start empty: nothing is assumed.',
+        inputs=[], outputs=[port('hub', 'hub')],
+        defaults={'mass_kg': None, 'inertia_kg_m2': None, 'cm_downwind_m': 0.0, 'precone_deg': 0.0}),
+    'nacelle': dict(
+        family='specific', category='OpenFAST structure', label='Nacelle & shaft',
+        description='Nacelle mass and yaw inertia, centre of mass from the tower top, rotor overhang, shaft tilt and tower-top-to-shaft height.',
+        inputs=[], outputs=[port('nacelle', 'nacelle')],
+        defaults={'mass_kg': None, 'yaw_inertia_kg_m2': None, 'overhang_m': None, 'shaft_tilt_deg': 0.0, 'tower_top_to_shaft_m': None,
+                  'cm_downwind_m': 0.0, 'cm_lateral_m': 0.0, 'cm_up_m': 0.0}),
+    'tower': dict(
+        family='specific', category='OpenFAST structure', label='Tower',
+        description='Tubular steel tower from diameters and wall (mass and stiffness follow from the material), or a table of mass and bending stiffness over the height.',
+        inputs=[], outputs=[port('tower', 'tower')],
+        defaults={'shape': 'tubular', 'height_m': None, 'base_height_m': 0.0, 'base_diameter_m': None, 'top_diameter_m': None,
+                  'wall_thickness_m': None, 'youngs_modulus_pa': 2.1e11, 'density_kg_m3': 7850.0, 'damping_pct': 1.0, 'stations': []}),
+    'blade_structure': dict(
+        family='specific', category='OpenFAST structure', label='Blade structure',
+        description='Mass per length and flap/edge bending stiffness along the span (0 = root, 1 = tip), tip mass and damping. Mode shapes are computed from these.',
+        inputs=[], outputs=[port('blade', 'blade')],
+        defaults={'stations': [], 'tip_mass_kg': 0.0, 'flap_damping_pct': 1.0, 'edge_damping_pct': 1.0}),
     'openfast_rotor_case': dict(
         family='specific', category='OpenFAST', label='OpenFAST case from rotor',
-        description='Writes a rigid-rotor OpenFAST case (Simplified ElastoDyn, AeroDyn BEMT, steady wind) from the connected '
-                    'horizontal-axis rotor and its operating point. Airfoil tables are Nova\'s own polars. No structure or '
-                    'controller is modelled. Also emits Nova\'s own BEMT result for the same rotor as a reference.',
-        inputs=[port('spec', 'rotor_spec')], outputs=[port('case', 'openfast_case'), port('reference', 'record')],
+        description='Writes an OpenFAST case from the connected horizontal-axis rotor and its operating point. With only the rotor it is rigid '
+                    '(Simplified ElastoDyn); connect hub, nacelle, tower and blade structure for a flexible ElastoDyn model at prescribed rotor speed. '
+                    'Airfoil tables are Nova\'s own polars. Also emits Nova\'s BEMT result (and the computed modal frequencies) as a reference.',
+        inputs=[port('spec', 'rotor_spec'), port('hub', 'hub', True), port('nacelle', 'nacelle', True), port('tower', 'tower', True),
+                port('blade', 'blade', True)],
+        outputs=[port('case', 'openfast_case'), port('reference', 'record')],
         defaults={'duration_s': 10.0, 'dt_s': 0.02, 'hub_height_m': None, 'overhang_m': None, 'shaft_tilt_deg': 0.0,
-                  'precone_deg': 0.0, 'timeout_seconds': 600.0}),
+                  'precone_deg': 0.0, 'flap_dof': True, 'edge_dof': True, 'tower_fa_dof': True, 'tower_ss_dof': True,
+                  'timeout_seconds': 600.0}),
     'openfast_run': dict(
         family='specific', category='OpenFAST', label='OpenFAST run',
         description='Runs the case with the OpenFAST executable configured in Settings → Integrations, then reduces every channel to '

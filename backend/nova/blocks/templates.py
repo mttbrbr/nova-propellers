@@ -10,6 +10,13 @@ def _node(id, type, config=None, x=0, y=0):
     return {'id': id, 'type': type, 'config': config or {}, 'position': {'x': x, 'y': y}}
 
 
+_AOC_FRACTION = [i / 10 for i in range(11)]
+_AOC_BLADE = [(8244850, 7643160, 49.75), (5729700, 10364760, 33.57), (2690000, 10999800, 21.68), (1923350, 12632760, 22.89),
+              (1398800, 11158560, 18.99), (887700, 5896800, 16.80), (498995, 3832920, 15.59), (250170, 2336040, 12.37),
+              (82314, 1174824, 11.24), (55818, 907200, 10.11), (29456, 641844, 8.98)]
+_AOC_TOWER = [(151.1, 2.35e9), (141.7, 2.12e9), (135.6, 1.88e9), (132.2, 1.65e9), (130.7, 1.42e9), (130.3, 1.19e9),
+              (130.3, 9.57e8), (129.8, 7.26e8), (128.2, 4.94e8), (124.6, 2.62e8), (118.4, 3.0e7)]
+
 TEMPLATES = {
     'hawt_rated_design': {
         'name': 'HAWT rated design with limits',
@@ -165,6 +172,40 @@ TEMPLATES = {
                   _edge('both', 'values', 'difference', 'values'), _edge('run', 'table', 'report', 'b'),
                   _edge('difference', 'values', 'report', 'a')],
     },
+    'openfast_flexible_example': {
+        'name': 'OpenFAST flexible rotor (AOC 15/50 example structure)',
+        'description': 'Flexible ElastoDyn model: hub, nacelle, tower and blade structure feed the case block. The structural numbers are the NREL '
+                       'AOC 15/50 test data (r-test, Apache-2.0) on a 7.49 m rotor: an example to replace with your own data, not a validated design.',
+        'nodes': [
+            _node('rotor', 'rotor_hawt', {'geometry': {'blades': 3, 'radius_m': 7.49, 'hub_radius_m': 0.28, 'design_tsr': 5.0, 'stations': 24}}, 0, 0),
+            _node('operating', 'operating_point', {'fluid': {'preset': 'air'}, 'operating': {'velocity_m_s': 10.0, 'rpm': 60.0}}, 280, 0),
+            _node('hub', 'hub', {'mass_kg': 247.3, 'inertia_kg_m2': 9.0, 'cm_downwind_m': 0.0, 'precone_deg': 6.0}, 280, 220),
+            _node('nacelle', 'nacelle', {'mass_kg': 1747.0, 'yaw_inertia_kg_m2': 976.3, 'overhang_m': 1.341, 'shaft_tilt_deg': 0.0,
+                                         'tower_top_to_shaft_m': 0.6, 'cm_downwind_m': 0.0, 'cm_lateral_m': 0.0, 'cm_up_m': 0.6}, 280, 440),
+            _node('tower', 'tower', {'shape': 'table', 'height_m': 24.4, 'base_height_m': 0.0, 'damping_pct': 3.0, 'stations': [
+                {'height_fraction': x, 'mass_per_length_kg_m': m, 'fore_aft_stiffness_nm2': k, 'side_side_stiffness_nm2': k}
+                for x, (m, k) in zip(_AOC_FRACTION, _AOC_TOWER)]}, 280, 660),
+            _node('blade', 'blade_structure', {'tip_mass_kg': 5.9, 'flap_damping_pct': 4.0, 'edge_damping_pct': 4.0, 'stations': [
+                {'span_fraction': x, 'mass_per_length_kg_m': m, 'flap_stiffness_nm2': fl, 'edge_stiffness_nm2': ed}
+                for x, (fl, ed, m) in zip(_AOC_FRACTION, _AOC_BLADE)]}, 280, 880),
+            _node('case', 'openfast_rotor_case', {'duration_s': 30.0, 'dt_s': 0.01, 'timeout_seconds': 900.0}, 560, 0),
+            _node('run', 'openfast_run', {'integration_id': '', 'start_time_s': 20.0, 'statistics': [
+                {'channel': 'RtAeroPwr', 'stat': 'mean', 'name': 'power_w', 'unit': 'W'},
+                {'channel': 'RtAeroFxh', 'stat': 'mean', 'name': 'thrust_n', 'unit': 'N'},
+                {'channel': 'TipDxb1', 'stat': 'max', 'name': 'tip_flap_m_max', 'unit': 'm'},
+                {'channel': 'RootMFlp1', 'stat': 'max', 'name': 'root_flap_knm_max', 'unit': 'kN·m'},
+                {'channel': 'TwrBsMyt', 'stat': 'max', 'name': 'tower_base_knm_max', 'unit': 'kN·m'}]}, 840, 0),
+            _node('limits', 'constraint', {'checks': [
+                {'quantity': 'tip_flap_m_max', 'operator': '<=', 'value': 0.75, 'severity': 'soft', 'label': 'Tip flap deflection (10 % of radius)', 'unit': 'm'}],
+                'on_violation': 'report'}, 1120, 0),
+            _node('report', 'report', {'title': 'Flexible OpenFAST run'}, 1400, 0),
+        ],
+        'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'case', 'spec'),
+                  _edge('hub', 'hub', 'case', 'hub'), _edge('nacelle', 'nacelle', 'case', 'nacelle'),
+                  _edge('tower', 'tower', 'case', 'tower'), _edge('blade', 'blade', 'case', 'blade'),
+                  _edge('case', 'case', 'run', 'case'), _edge('run', 'values', 'limits', 'values'),
+                  _edge('run', 'table', 'report', 'b'), _edge('limits', 'report', 'report', 'c')],
+    },
 }
 
 
@@ -178,19 +219,31 @@ def layout(nodes, edges, columns=4):
     for _ in nodes:
         for e in edges:
             depth[e['target']] = max(depth[e['target']], depth[e['source']] + 1)
-    bands = {}
+    counts = {}
     for node in nodes:
         level = depth[node['id']]
         slot = (level // columns, level % columns)
-        row = bands.setdefault(slot, 0)
-        bands[slot] = row + 1
-        node['position'] = {'x': slot[1] * 270, 'y': slot[0] * 330 + row * 150}
+        counts[slot] = counts.get(slot, 0) + 1
+    offsets, top = {}, 0  # a band starts below the tallest column of the band above it
+    for band in sorted({b for b, _ in counts}):
+        offsets[band] = top
+        top += max(n for (b, _), n in counts.items() if b == band) * 150 + 60
+    rows = {}
+    for node in nodes:
+        level = depth[node['id']]
+        slot = (level // columns, level % columns)
+        row = rows.get(slot, 0)
+        rows[slot] = row + 1
+        node['position'] = {'x': slot[1] * 270, 'y': offsets[slot[0]] + row * 150}
     return nodes
 
 
 def template(key):
     if key not in TEMPLATES:
         raise ValueError(f'Unknown block template {key!r}')
+    from nova.blocks.catalog import BLOCKS
     t = copy.deepcopy(TEMPLATES[key])
+    for node in t['nodes']:  # every setting is visible and editable, including those the template leaves at their default
+        node['config'] = {**copy.deepcopy(BLOCKS[node['type']]['defaults']), **node['config']}
     layout(t['nodes'], t['edges'])
     return {'schema_version': 2, 'kind': 'blocks', 'template': key, **t}

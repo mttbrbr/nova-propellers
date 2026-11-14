@@ -26,6 +26,7 @@ from .corrections import (
     turbine_axial_induction,
 )
 from .fluids import Fluid
+from .sections import lift_slope, zero_lift_angle
 
 EPS = 1e-6
 # Largest k = σ'Cn/(4F sin²φ) handled by pure momentum, per high-induction model.
@@ -67,11 +68,11 @@ class AxialRotor:
 
 def _coefficients(rotor, fluid, corrections, alpha_deg, r, chord, speed, slope, alpha0, tsr=math.inf):
     reynolds = fluid.density_kg_m3 * speed * chord / fluid.viscosity_pa_s
-    cl, cd = rotor.section(alpha_deg, reynolds)
+    cl, cd = rotor.section(alpha_deg, reynolds, r)
     if corrections.rotational_augmentation == 'snel':
         cl = snel_augmentation(cl, alpha_deg, chord, r, alpha0, slope, r / rotor.tip_radius_m)
     elif corrections.rotational_augmentation == 'du_selig':
-        cd0 = rotor.section(np.full_like(np.asarray(alpha_deg, dtype=float), alpha0), reynolds)[1]
+        cd0 = rotor.section(np.broadcast_to(alpha0, np.shape(alpha_deg)).astype(float), reynolds, r)[1]
         cl, cd = du_selig_augmentation(cl, cd, cd0, alpha_deg, chord, r, rotor.tip_radius_m, tsr, alpha0, slope)
     mach = speed / fluid.speed_of_sound_m_s
     if corrections.compressibility == 'prandtl_glauert':
@@ -204,8 +205,8 @@ def solve_axial(rotor: AxialRotor, *, mode, velocity_m_s, rpm, fluid: Fluid, cor
     r, chord = rotor.radius_m[inner], rotor.chord_m[inner]
     theta = np.radians(rotor.twist_deg[inner] + rotor.pitch_deg)
     tsr = omega * R / V if V > 0 else math.inf
-    slope = rotor.section.lift_slope_per_rad() if corrections.rotational_augmentation != 'none' else 2 * math.pi
-    alpha0 = rotor.section.zero_lift_angle_deg() if corrections.rotational_augmentation != 'none' else 0.0
+    slope = lift_slope(rotor.section, r) if corrections.rotational_augmentation != 'none' else 2 * math.pi
+    alpha0 = zero_lift_angle(rotor.section, r) if corrections.rotational_augmentation != 'none' else 0.0
     args = (mode, rotor, fluid, corrections)
     station = (r, chord, theta, V, omega, slope, alpha0, tsr)
 

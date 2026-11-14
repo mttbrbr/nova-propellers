@@ -55,7 +55,7 @@ class ConstraintTests(unittest.TestCase):
 class EngineTests(unittest.TestCase):
     def test_every_template_validates_and_runs(self):
         for item in templates.templates():
-            if item['id'] in ('openfast_limits', 'openfast_rigid_vs_bemt'):  # needs a user-chosen case folder and a configured executable
+            if item['id'] in ('openfast_limits', 'openfast_rigid_vs_bemt', 'openfast_flexible_example'):  # needs a user-chosen case folder and a configured executable
                 self.assertTrue(engine.validate(templates.template(item['id']))['valid'])
                 continue
             result = engine.execute(templates.template(item['id']))

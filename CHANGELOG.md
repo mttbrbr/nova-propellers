@@ -6,6 +6,20 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Flexible OpenFAST models from blocks: *Hub*, *Nacelle & shaft*, *Tower* (tubular
+  or table) and *Blade structure* blocks feed *OpenFAST case from rotor*, which
+  then writes a full ElastoDyn case at prescribed rotor speed. Mode shapes are
+  computed by Nova from the mass and stiffness distributions (finite-element
+  beam, checked against analytic frequencies) and fitted to the ElastoDyn
+  polynomial form. Missing data are named and block the case; assumptions and
+  modal frequencies are reported. Template with the NREL AOC 15/50 structural
+  data as an editable example. Station tables accept pasted spreadsheet columns.
+- Different sections along the blade span: Design → Geometry (*Sections along
+  the span*), the `sections` setting of the HAWT and propeller blocks and the API.
+  Polars are evaluated at the local Reynolds number and blended linearly in r;
+  OpenFAST cases carry each station's blended polar.
+- Template nodes now carry every setting at its default, so all of them are
+  editable; the template auto-layout no longer overlaps wrapped rows.
 - *OpenFAST case from rotor* block: writes a rigid-rotor OpenFAST 5 case
   (Simplified ElastoDyn with prescribed speed and pitch, AeroDyn BEMT, steady
   InflowWind) from a Nova horizontal-axis rotor, using Nova's own polars at each

@@ -8,7 +8,7 @@ import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, St
 import { formatValue, niceTicks } from '../lib/blade.js';
 
 const IntegrationsContext = createContext({ list: [], openSettings: null });
-const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A' };
+const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A', hub: '#7BD88F', nacelle: '#5BC0BE', tower: '#C9A66B', blade: '#E58FB7' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
 const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink focus:border-nv-accent focus:outline-none';
@@ -25,7 +25,16 @@ function optionsFor(key, catalog, rotors) {
   if (key === 'preset' && map.preset) return map.preset;
   return map[key] || null;
 }
+const stationColumns = {
+  'Blade structure': ['span_fraction', 'mass_per_length_kg_m', 'flap_stiffness_nm2', 'edge_stiffness_nm2'],
+  Tower: ['height_fraction', 'mass_per_length_kg_m', 'fore_aft_stiffness_nm2', 'side_side_stiffness_nm2'],
+};
+const columnLabel = { span_fraction: 'r/L', height_fraction: 'h/H', mass_per_length_kg_m: 'kg/m', flap_stiffness_nm2: 'EI flap', edge_stiffness_nm2: 'EI edge',
+  fore_aft_stiffness_nm2: 'EI fa', side_side_stiffness_nm2: 'EI ss' };
+const tubularOnly = ['base_diameter_m', 'top_diameter_m', 'wall_thickness_m', 'youngs_modulus_pa', 'density_kg_m3'];
+const BlockKind = createContext('');
 const rowTemplates = {
+  sections: { r_over_R: 0.5, section: { name: 'NACA 0012' } },
   checks: { quantity: 'power_w', operator: '<=', value: 1000, severity: 'hard', label: '', unit: '' },
   values: { name: 'p', value: 1, unit: '', min: null, max: null },
   assignments: { name: 'y', expression: 'x * 2', unit: '' },
@@ -391,7 +400,7 @@ function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onD
   const [text, setText] = useState(JSON.stringify(node.data.config, null, 2));
   const [textError, setTextError] = useState('');
   useEffect(() => { if (!raw) setText(JSON.stringify(node.data.config, null, 2)); }, [node.data.config, raw]);
-  return <div className="flex flex-col gap-4">
+  return <BlockKind.Provider value={spec.label}><div className="flex flex-col gap-4">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="m-0 truncate text-[15px] font-semibold">{node.id}</h2>
       <p className="m-0 mt-0.5 text-xs text-nv-muted">{spec.label} · {spec.family === 'general' ? 'general' : 'rotor'} block</p></div>
       <button type="button" aria-label="Close settings" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-nv-muted hover:bg-nv-hover hover:text-nv-ink" onClick={onClose}><X size={15} aria-hidden="true" /></button></div>
@@ -406,18 +415,19 @@ function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onD
       {textError && <p className="m-0 text-xs text-nv-err-ink">{textError}</p>}</>
       : <ConfigEditor value={node.data.config} onChange={onChange} catalog={catalog} rotors={rotors} path={[]} />}
     {result && <BlockResult result={result} />}
-  </div>;
+  </div></BlockKind.Provider>;
 }
 
 function ConfigEditor({ value, onChange, catalog, rotors, path }) {
-  const entries = Object.entries(value || {});
+  const hidden = value?.shape === 'tubular' ? ['stations'] : value?.shape === 'table' ? tubularOnly : [];
+  const entries = Object.entries(value || {}).filter(([key]) => !hidden.includes(key));
   if (!entries.length) return <p className="m-0 text-xs text-nv-muted">No settings.</p>;
   return <div className="flex flex-col gap-2">{entries.map(([key, item]) => <ConfigField key={key} name={key} value={item} catalog={catalog} rotors={rotors} path={[...path, key]}
     onChange={(next) => onChange({ ...value, [key]: next })} />)}</div>;
 }
 
 function ScalarInput({ name, value, onChange, catalog, rotors }) {
-  const options = optionsFor(name, catalog, rotors);
+  const options = name === 'shape' && ['tubular', 'table'].includes(value) ? ['tubular', 'table'] : optionsFor(name, catalog, rotors);
   if (typeof value === 'boolean') return <input type="checkbox" aria-label={name} className="accent-nv-accent" checked={value} onChange={(e) => onChange(e.target.checked)} />;
   if (options && (typeof value === 'string' || typeof value === 'boolean')) return <select aria-label={name} className={fieldClass} value={String(value)} onChange={(e) => onChange(e.target.value)}>
     {(options.includes(value) ? options : [value, ...options]).map((o) => <option key={String(o)} value={String(o)} className="bg-nv-panel">{String(o).replaceAll('_', ' ')}</option>)}</select>;
@@ -441,8 +451,36 @@ function IntegrationField({ value, onChange }) {
       {list.map((i) => <option key={i.id} value={i.id} className="bg-nv-panel">{i.probe?.version ? `OpenFAST ${i.probe.version}` : 'OpenFAST'} · {String(i.executable).split('/').slice(-4).join('/')}</option>)}</select></label>;
 }
 
+// Compact grid for lists of flat numeric rows (blade and tower stations); accepts pasted spreadsheet columns.
+function NumberTable({ name, value, columns, onChange }) {
+  const keys = value.length ? Object.keys(value[0]) : columns;
+  const parse = (text) => text.trim().split(/\r?\n/).map((line) => line.trim().split(/[\t;,\s]+/).map(Number)).filter((row) => row.length === keys.length && row.every(Number.isFinite));
+  const set = (index, key, text) => {
+    const number = Number(text.trim());
+    onChange(value.map((row, i) => (i === index ? { ...row, [key]: text.trim() === '' || !Number.isFinite(number) ? row[key] : number } : row)));
+  };
+  return <Disclosure title={name.replaceAll('_', ' ')} summary={`${value.length} station${value.length === 1 ? '' : 's'}`} defaultOpen>
+    <div role="group" aria-label={`${name} table`} className="flex flex-col gap-1" onPaste={(e) => {
+      const rows = parse(e.clipboardData.getData('text'));
+      if (rows.length) { e.preventDefault(); onChange(rows.map((r) => Object.fromEntries(keys.map((k, i) => [k, r[i]])))); }
+    }}>
+      <div className="grid gap-1 text-[11px] text-nv-muted" style={{ gridTemplateColumns: `repeat(${keys.length}, minmax(0, 1fr)) 20px` }}>
+        {keys.map((k) => <span key={k} title={k} className="truncate">{columnLabel[k] || k}</span>)}<span /></div>
+      {value.map((row, index) => <div key={index} className="grid gap-1" style={{ gridTemplateColumns: `repeat(${keys.length}, minmax(0, 1fr)) 20px` }}>
+        {keys.map((k) => <input key={`${k}-${row[k]}`} aria-label={`${name} ${index + 1} ${k}`} className="h-7 min-w-0 rounded border border-nv-edge bg-nv-chrome px-1 font-mono text-[11px] text-nv-ink focus:border-nv-accent focus:outline-none"
+          inputMode="decimal" defaultValue={row[k]} onBlur={(e) => { set(index, k, e.target.value); e.target.value = String(row[k]); }} />)}
+        <button type="button" aria-label={`Remove ${name} row ${index + 1}`} className="text-nv-err-ink" onClick={() => onChange(value.filter((_, i) => i !== index))}>×</button></div>)}
+    </div>
+    <div className="flex items-center gap-3">
+      <button type="button" className="text-xs text-nv-reference hover:text-nv-ink" onClick={() => onChange([...value, value.length ? { ...value.at(-1) } : Object.fromEntries(keys.map((k) => [k, 0]))])}>+ Add row</button>
+      <span className="text-xs text-nv-muted">or paste {keys.length} columns from a spreadsheet</span></div>
+  </Disclosure>;
+}
+
 function ConfigField({ name, value, onChange, catalog, rotors, path }) {
+  const kind = useContext(BlockKind);
   const label = name.replaceAll('_', ' ');
+  if (name === 'stations' && Array.isArray(value) && stationColumns[kind]) return <NumberTable name={name} value={value} columns={stationColumns[kind]} onChange={onChange} />;
   if (name === 'integration_id') return <IntegrationField value={value} onChange={onChange} />;
   if (name === 'bindings') return <BindingsEditor value={value || {}} onChange={onChange} />;
   if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {
@@ -494,6 +532,8 @@ function BlockResult({ result }) {
 }
 
 function PortValue({ port, value }) {
+  if (port === 'notes' && Array.isArray(value)) return <div className="flex flex-col gap-1.5"><span className="text-xs text-nv-muted">Model notes</span>
+    {value.map((n) => <p key={n} className="m-0 text-[12.5px] text-nv-reference">{n}</p>)}</div>;
   if (value && Array.isArray(value.checks) && 'feasible' in value) return <ConstraintTable report={value} title={`Constraints (${port})`} />;
   if (value && value.rows) return <TableValue port={port} table={value} />;
   if (value && value.kind && value.performance) {

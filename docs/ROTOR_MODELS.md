@@ -124,7 +124,48 @@ Schema 2 workflows are typed DAGs. Port types: `record` (named scalars),
   content-addressed under the data directory (`generated-cases`). Output
   `reference` carries Nova's BEMT power, thrust and torque for comparison.
   AeroDyn is validated for wind turbines, so propellers, VAWTs and marine
-  rotors are rejected.
+  rotors are rejected. On the default 5 m rotor at 8 m/s, λ = 7, OpenFAST 5.0.0
+  gave power −1.1 %, thrust +0.1 % and torque −1.1 % against Nova's BEMT.
+* **Flexible model.** Connect the four structure blocks (*Hub*, *Nacelle & shaft*,
+  *Tower*, *Blade structure*) to the same case block and it writes a full
+  ElastoDyn model (`CompElast=1`) at prescribed rotor speed: blade flap (two
+  modes) and edge (one mode), tower fore-aft and side-to-side (two modes each).
+  Nothing is assumed for the data that define the machine: every required mass,
+  inertia and distribution starts empty and the block that lacks it says so; if
+  only some of the four are connected, the case block names the missing ones.
+  *Tower* either builds a tubular steel tower from base/top diameter and wall
+  (mass and stiffness follow from the material, editable) or takes a table.
+  *Blade structure* is a table of mass per length and flap/edge stiffness over
+  the span (0 = root, 1 = tip) that accepts pasted spreadsheet columns.
+  ElastoDyn needs mode shapes as x²…x⁶ polynomials (coefficients summing to 1):
+  Nova computes them with Euler–Bernoulli cantilever finite elements (cubic
+  Hermite, consistent mass; checked against the analytic uniform-beam
+  frequencies 3.5160 and 22.0345) and fits that polynomial, refusing a fit with
+  rms error above 0.03. The shapes are non-rotating (ElastoDyn adds centrifugal
+  stiffening itself); tower shapes include the nacelle and rotor mass lumped at
+  the top, without rotary inertia. Structural twist is taken equal to the
+  aerodynamic twist. The time step is reduced to 0.07 of the shortest enabled
+  modal period when needed. Damping values come from the blocks (default 1 %).
+  The block lists these assumptions in its result and emits the computed modal
+  frequencies as `nova_blade_flap1_hz`, `nova_tower_fa1_hz` and so on. Rotor
+  speed is prescribed: no generator, drivetrain or controller dynamics, no
+  platform. Template *OpenFAST flexible rotor (AOC 15/50 example structure)*
+  uses the structural data of the NREL AOC 15/50 test case (r-test, Apache-2.0)
+  on a 7.49 m rotor; it is an example to replace, not a validated design. With
+  it, the tower response in OpenFAST peaks at 1.57–1.64 Hz against 1.647 Hz
+  computed by Nova, and mean power is −2.7 % against Nova's BEMT (precone and
+  flexibility are not in the BEMT).
+* **Sections along the span.** A horizontal-axis rotor (and a propeller through
+  the API) may carry `sections`: a list of `{r_over_R, section}` stations, 2–20,
+  strictly increasing. Nova evaluates every polar at the local Reynolds number
+  and blends lift and drag linearly in r between neighbours; the end sections
+  hold beyond the first and last station, and rotational-augmentation inputs
+  (lift slope, zero-lift angle) are blended the same way. Equal sections
+  reproduce the single-section result exactly. Design → Geometry has *Sections
+  along the span*, the rotor blocks have a `sections` setting, and the OpenFAST
+  writer gives each blade node the blended polar. VAWT and marine rotors reject
+  it. When no explicit chord/twist is given, the optimum-blade design uses the
+  section nearest 70 % span.
 * **OpenFAST blocks** (port type `openfast_case`): *OpenFAST case* points at a
   self-contained input folder (absolute path, `.fst`, expected output) and is
   only inspected. *OpenFAST run* snapshots the case, runs the executable

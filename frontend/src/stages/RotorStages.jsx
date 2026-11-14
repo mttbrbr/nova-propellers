@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Plus, X } from 'lucide-react';
 import { request } from '../backend.js';
 import { formatValue, niceTicks } from '../lib/blade.js';
 import StageLayout, { StageTitle } from '../shell/StageLayout.jsx';
 import LineChart from '../ui/LineChart.jsx';
 import UpstreamWake from './UpstreamWake.jsx';
-import { Button, Disclosure, Field, KeyValue, Metric, Notice, Section, Segmented, SelectField } from '../ui/controls.jsx';
+import { Button, Disclosure, Field, KeyValue, Metric, Notice, Section, Segmented, SelectField, buttonClass } from '../ui/controls.jsx';
 
 // The rotor family is chosen once, at the start of the Design flow; every stage
 // then shows only the inputs, corrections and results that apply to it.
@@ -192,6 +192,36 @@ function useRotorPreview(spec) {
   return [preview, error];
 }
 
+const MAX_SPAN_SECTIONS = 20;
+
+// Several section polars along the span; the solver blends them linearly in r between stations.
+function SpanSections({ spec, setSpec, catalog }) {
+  const list = spec.sections || [];
+  const on = list.length > 0;
+  const write = (rows) => setSpec({ ...spec, sections: rows.length ? [...rows].sort((a, b) => a.r_over_R - b.r_over_R) : undefined });
+  const update = (index, patch) => write(list.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  const toggle = (checked) => (checked
+    ? write([{ r_over_R: 0.25, section: { name: spec.section.name } }, { r_over_R: 1, section: { name: spec.section.name } }])
+    : write([]));
+  const add = () => {
+    const gaps = list.slice(1).map((row, i) => [row.r_over_R - list[i].r_over_R, i]).sort((a, b) => b[0] - a[0]);
+    const at = gaps.length ? gaps[0][1] : 0;
+    write([...list, { r_over_R: Number(((list[at].r_over_R + list[at + 1].r_over_R) / 2).toFixed(3)), section: { name: list[at].section.name } }]);
+  };
+  return <Disclosure title="Sections along the span" summary={on ? `${list.length} stations` : 'one section'} defaultOpen={on}>
+    <label className="flex items-center justify-between gap-3 text-[13px]">Different section per station
+      <input type="checkbox" className="h-4 w-4 accent-nv-accent" checked={on} onChange={(e) => toggle(e.target.checked)} /></label>
+    {on && <>
+      {list.map((row, index) => <div key={index} className="grid grid-cols-[86px_minmax(0,1fr)_34px] items-center gap-2">
+        <Field inline ariaLabel={`Station ${index + 1} r/R`} step="0.01" value={row.r_over_R} onChange={(v) => update(index, { r_over_R: Math.max(0, Math.min(1, v)) })} />
+        <SelectField inline ariaLabel={`Station ${index + 1} section`} value={row.section.name} options={catalog.sections.map((s) => [s, s])} onChange={(v) => update(index, { section: { name: v } })} />
+        <button type="button" aria-label={`Remove station ${index + 1}`} className={buttonClass('danger', '!px-0')} disabled={list.length <= 2}
+          onClick={() => write(list.filter((_, i) => i !== index))}><X size={14} aria-hidden="true" /></button></div>)}
+      <Button disabled={list.length >= MAX_SPAN_SECTIONS} onClick={add}><Plus size={15} aria-hidden="true" />Add station</Button>
+      <p className="m-0 text-xs text-nv-muted">r/R is the span position. Between two stations the lift and drag are blended linearly; beyond the first or last station the end section applies.</p></>}
+  </Disclosure>;
+}
+
 export function RotorGeometryStage({ family, spec, setSpec, catalog, onContinue }) {
   const [preview, error] = useRotorPreview(spec);
   const set = (key, value) => setSpec({ ...spec, geometry: { ...spec.geometry, [key]: value } });
@@ -203,8 +233,9 @@ export function RotorGeometryStage({ family, spec, setSpec, catalog, onContinue 
       <Section title="Blade">
         {geometryFields[family].map(([key, label, unit, step]) => <Field key={key} label={label} unit={unit} step={step || 'any'} value={spec.geometry[key] ?? ''} onChange={(v) => set(key, v)} />)}
         {family === 'vawt' && <SelectField label="Blade shape" value={spec.geometry.shape} options={[['straight', 'Straight (H-rotor)'], ['troposkien', 'Troposkien (Φ-rotor)']]} onChange={(v) => set('shape', v)} />}
-        <SelectField label="Section" value={spec.section.name} options={catalog.sections.map((s) => [s, s])} onChange={(v) => setSpec({ ...spec, section: { name: v } })} />
+        {!spec.sections?.length && <SelectField label="Section" value={spec.section.name} options={catalog.sections.map((s) => [s, s])} onChange={(v) => setSpec({ ...spec, section: { name: v } })} />}
       </Section>
+      {family === 'hawt' && <SpanSections spec={spec} setSpec={setSpec} catalog={catalog} />}
       {family === 'vawt' && <Disclosure title="Struts & shaft" summary="parasitic losses">
         {vawtExtras.map(([key, label, unit, step]) => <Field key={key} label={label} unit={unit} step={step || 'any'} value={spec.geometry[key] ?? ''} onChange={(v) => set(key, v)} />)}
       </Disclosure>}

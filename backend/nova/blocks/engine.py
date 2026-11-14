@@ -195,6 +195,8 @@ def _rotor(node, args):
         spec['geometry'] = copy.deepcopy(config['geometry'])
     if config.get('section'):
         spec['section'] = copy.deepcopy(config['section'])
+    if config.get('sections'):
+        spec['sections'] = copy.deepcopy(config['sections'])
     if config.get('method'):
         spec['method'] = config['method']
     spec = rotors.merged(spec)
@@ -562,18 +564,31 @@ def _openfast_run(node, args, cancelled):
             'values': record}
 
 
+def _structure_block(kind):
+    def handler(node, _args):
+        from nova.adapters import openfast_structure as structure
+        build = {'hub': structure.hub_record, 'nacelle': structure.nacelle_record, 'tower': structure.tower_record,
+                 'blade': structure.blade_record}[kind]
+        try:
+            return {kind: build(node.get('config', {}))}
+        except structure.StructureError as exc:
+            raise BlockError(str(exc)) from exc
+    return handler
+
+
 def _openfast_rotor_case(node, args):
     import shutil
     import uuid
     import database
-    from nova.adapters.openfast_case import OUTPUT, CaseError, SETTINGS, write_rigid_case
+    from nova.adapters.openfast_case import CaseError, DOF_SETTINGS, SETTINGS, write_case
     config = node.get('config', {})
-    settings = {k: config[k] for k in SETTINGS if k in config}
+    settings = {k: config[k] for k in (*SETTINGS, *DOF_SETTINGS) if k in config}
+    structure = {k: args.get(k) for k in ('hub', 'nacelle', 'tower', 'blade')}
     parent = database.DB_PATH.parent / 'generated-cases'
     parent.mkdir(parents=True, exist_ok=True)
     scratch = parent / f'.tmp-{uuid.uuid4().hex}'
     try:
-        info = write_rigid_case(args['spec'], scratch, settings)
+        info = write_case(args['spec'], scratch, settings, structure)
         final = parent / info['case_hash'][:20]
         if final.exists():
             shutil.rmtree(scratch)
@@ -584,9 +599,11 @@ def _openfast_rotor_case(node, args):
         raise BlockError(str(exc)) from exc
     result = rotors.analyze(args['spec'])
     reference = {f'nova_{k}': v for k, v in rotors.scalar_outputs(result).items() if k in ('power_w', 'thrust_n', 'torque_nm', 'cp', 'ct')}
-    case = {'case_directory': str(final.resolve()), 'input_file': info['input_file'], 'output_file': OUTPUT,
+    for name, value in (info['frequencies_hz'] or {}).items():
+        reference[f'nova_{name}_hz'] = value
+    case = {'case_directory': str(final.resolve()), 'input_file': info['input_file'], 'output_file': info['output_file'],
             'timeout_seconds': float(config.get('timeout_seconds', 600.0))}
-    return {'case': case, 'reference': reference}
+    return {'case': case, 'reference': reference, 'notes': [f'{info["model"].capitalize()} OpenFAST model', *info['assumptions']]}
 
 
 HANDLERS = {
@@ -598,6 +615,8 @@ HANDLERS = {
     'corrections_axial': _corrections, 'corrections_vertical': _corrections,
     'solver': _solver, 'performance_curve': _curve, 'openfast_case': _openfast_case,
     'openfast_rotor_case': _openfast_rotor_case,
+    'hub': _structure_block('hub'), 'nacelle': _structure_block('nacelle'), 'tower': _structure_block('tower'),
+    'blade_structure': _structure_block('blade'),
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run}
 

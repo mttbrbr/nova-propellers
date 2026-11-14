@@ -30,6 +30,7 @@ import numpy as np
 from . import wake as upstream
 from .axial import EPS, _flow, _solve_points
 from .corrections import AxialCorrections
+from .sections import lift_slope, zero_lift_angle
 
 KEYS = {'resolved', 'yaw_deg', 'shear_exponent', 'hub_height_m', 'tower', 'azimuth_steps'}
 TOWER_KEYS = {'kind', 'radius_m', 'distance_m'}
@@ -128,9 +129,9 @@ def solve_azimuthal(rotor, *, mode, velocity_m_s, rpm, fluid, corrections: Axial
         tsr = np.where(normal > 0, omega * R / np.maximum(normal, 1e-12), np.inf)
 
     needs_slope = corrections.rotational_augmentation != 'none' or corrections.dynamic_stall != 'none'
-    slope = rotor.section.lift_slope_per_rad() if needs_slope else 2 * math.pi
-    alpha0 = rotor.section.zero_lift_angle_deg() if needs_slope else 0.0
     flat = lambda a: a.reshape(-1)  # noqa: E731
+    slope = lift_slope(rotor.section, flat(rr)) if needs_slope else 2 * math.pi
+    alpha0 = zero_lift_angle(rotor.section, flat(rr)) if needs_slope else 0.0
     station = (flat(rr), flat(np.broadcast_to(chord[:, None], rr.shape)), flat(np.broadcast_to(theta[:, None], rr.shape)),
                flat(normal), flat(omega_eff), slope, alpha0, flat(tsr), None if skew is None else flat(skew))
     phi, st, solved = _solve_points(mode, (mode, rotor, fluid, corrections), station)
@@ -143,7 +144,7 @@ def solve_azimuthal(rotor, *, mode, velocity_m_s, rpm, fluid, corrections: Axial
 
     dynamic = None
     if corrections.dynamic_stall == 'oye':
-        cl, dynamic = _oye(cl, alpha, W, c, slope, alpha0, omega, m)
+        cl, dynamic = _oye(cl, alpha, W, c, shape(slope) if np.ndim(slope) else slope, shape(alpha0) if np.ndim(alpha0) else alpha0, omega, m)
     s, co = np.sin(phi), np.cos(phi)
     cn, ct = (cl * co + cd * s, cl * s - cd * co) if mode == 'turbine' else (cl * co - cd * s, cl * s + cd * co)
     q = 0.5 * fluid.density_kg_m3 * W**2
