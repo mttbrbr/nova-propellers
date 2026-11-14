@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SEGMENTS, THICKNESS, GAP_DEG, ROUNDING = 3, 0.40, 45.0, 0.70
-INK, TILE = '#F2F4F6', '#12151A'
+INK, TILE = '#FF8533', '#12151A'
 
 
 def _fmt(value):
