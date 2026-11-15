@@ -1,45 +1,68 @@
-# Nova Propellers
+<p align="center">
+  <img src="docs/media/brand/nova-wordmark.svg" alt="NOVA" width="320">
+</p>
 
-<img src="docs/media/icon-nova-propellers.png" alt="Nova Propellers icon" width="128">
+<p align="center">
+  <b>Open-source, local-first workbench for designing and exploring propellers and rotors.</b>
+</p>
 
-[![CI](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml)
-[![Desktop packages](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml/badge.svg)](https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
+<p align="center">
+  <a href="https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml"><img src="https://github.com/mttbrbr/nova-propellers/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml"><img src="https://github.com/mttbrbr/nova-propellers/actions/workflows/desktop-linux.yml/badge.svg" alt="Desktop packages"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status: alpha"></a>
+</p>
 
-Nova is an open-source, local-first workbench for designing and exploring
-traditional propellers. It brings geometry definition, low-order aerodynamic
-analysis, project storage and STL export into one focused interface.
+Nova (Nova Propellers) brings rotor sizing, blade geometry, low-order
+aerodynamic analysis, project storage, STL export and block-based workflows into
+one focused interface. It started as a propeller configurator and now covers air
+propellers, marine propellers, horizontal-axis wind turbines (HAWT) and
+vertical-axis wind turbines (VAWT). A design can be followed from its first
+sizing estimate to a reproducible report, and Nova keeps units, solver maturity,
+convergence information and warnings visible instead of hiding the engineering
+behind a polished screen.
 
-![Nova Propellers geometry workbench](docs/media/nova-workbench.jpg)
-
-The project grew from a simple propeller configurator into a place where a
-design can be followed from its first sizing estimate to a reproducible report.
-The aim is not to hide the engineering behind a polished screen: Nova keeps
-units, solver maturity, convergence information and warnings visible.
+![Nova geometry workspace: draggable chord and twist, live 3-D blade](docs/media/screenshot-geometry.jpg)
 
 > [!WARNING]
 > Nova is alpha software intended for learning, experimentation and research.
 > It is not a certified engineering tool. The built-in polar data are synthetic,
 > and all results must be independently validated before manufacturing or flight.
 
+## Screenshots
+
+| Sizing | Geometry |
+| --- | --- |
+| ![Sizing: trade-off charts and actuator-disk estimate](docs/media/screenshot-sizing.jpg) | ![Geometry: chord and twist editing with live 3-D render](docs/media/screenshot-geometry.jpg) |
+| **Results** | **Block workflow** |
+| ![Results: technical report, spanwise distributions and convergence](docs/media/screenshot-results.jpg) | ![Workflow: executable block graph for a HAWT design](docs/media/screenshot-workflow.jpg) |
+
 ## What you can do
 
-- Size a propeller from thrust, power, RPM and operating conditions.
-- Build traditional blade geometry with Bézier curves or Laguerre polynomials.
-- Inspect the generated propeller in an interactive Three.js viewport.
+- Choose the rotor family at project start (air propeller, marine propeller,
+  HAWT, VAWT); the design sheet adapts to it.
+- Size a rotor from thrust, power, RPM, wind or ship conditions.
+- Build blade geometry with Bézier curves or Laguerre polynomials, with
+  different airfoil sections along the span.
+- Inspect the generated rotor in an interactive Three.js viewport, coloured by
+  any spanwise result.
 - Compare BEMT, lifting-line and experimental vortex-based methods.
 - Optimize chord and twist distributions against a target thrust.
 - Import UIUC/XFOIL-style `.dat` airfoil coordinates and spanwise lofts.
 - Store complete projects locally, revisit reports and export STL geometry.
 - Save multiple named simulation configurations in one project, with independent
-  models/operating conditions, shared versioned geometry and reproducible
-  execution history. See
+  models/operating conditions, shared versioned geometry (locked once run) and
+  reproducible execution history. See
   [Project and simulation context](docs/PROJECT_SIMULATIONS.md).
 - Run saved solver configurations as a controlled comparison, or explore one/two
   parameters with frozen cases, result grids and CSV exports.
-- Import OpenFAST output and exchange standalone `.nova-run` external results;
-  optional PyWake/OpenFAST execution uses independently installed software.
+- Build or customise executable block workflows (rotor, operating point,
+  corrections, solver, checks, report), run them in the background with
+  progress and cancel, and share projects as portable `.nova` archives.
+- Generate OpenFAST cases from a Nova rotor (rigid rotor, or flexible ElastoDyn
+  models from structure blocks), run them and read channel statistics; import
+  OpenFAST output and exchange standalone `.nova-run` external results.
+  PyWake/OpenFAST execution uses independently installed software.
   See [Integrations](docs/EXTERNAL_INTEGRATIONS.md).
 
 Toroidal propellers are deliberately out of scope for the current alpha. Nova
@@ -112,11 +135,14 @@ change `NOVA_FRONTEND_PORT` or `NOVA_BACKEND_PORT` before starting the stack.
 
 ## Typical workflow
 
-1. Enter the operating point and let Nova estimate an initial diameter.
-2. Define chord, twist and airfoil distribution in the geometry workspace.
-3. Generate and inspect the mesh, then export it to STL if needed.
-4. Run one or more aerodynamic methods and compare their results.
-5. Review the report and save the complete project to the local database.
+1. Pick the rotor type, enter the operating point and let Nova estimate an
+   initial size.
+2. Define chord, twist and airfoil distribution in the geometry workspace; the
+   3-D preview updates as you edit.
+3. Export the geometry to STL if needed.
+4. Run one or more aerodynamic methods, or a customised block workflow, and
+   compare their results.
+5. Review the technical report and save the project to the local database.
 
 ## Method status
 
@@ -215,9 +241,9 @@ and source/media provenance are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [PROVENANCE.md](PROVENANCE.md).
 
-## NOVA workflow foundation
+## Workflow engine
 
-The guided propeller workflow now shares a typed execution engine with an
+The guided design workflow shares a typed execution engine with an
 editable workflow view. Projects support explicit polar import, immutable runs,
 job cancellation, and portable `.nova` archives. See
 [implementation and verification](docs/NOVA_IMPLEMENTATION.md) for the user
