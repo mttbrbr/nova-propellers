@@ -6,7 +6,7 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 qualification_dir="${NOVA_QUALIFICATION_DIR:-${project_root}/.desktop-tools/qualification}"
 target="${1:-all}"
 if [[ "${target}" != arch && "${target}" != ubuntu && "${target}" != all ]]; then
-  echo 'Usage: tools/qualify_linux_packages.sh [arch|ubuntu|all]' >&2
+  echo 'Usage: qa/qualify_linux_packages.sh [arch|ubuntu|all]' >&2
   exit 2
 fi
 for command in podman python git; do
@@ -48,12 +48,12 @@ qualify_arch() {
   podman run --rm --userns keep-id --env CARGO_BUILD_JOBS=2 \
     -v "${qualification_dir}/arch:/workspace:Z" localhost/nova-arch-qualification \
     bash -lc './tools/package_arch.sh' >"${qualification_dir}/arch-build.log" 2>&1
-  podman build -t localhost/nova-arch-runtime -f "${project_root}/packaging/qualification/arch.Containerfile" "${project_root}/packaging/qualification" \
+  podman build -t localhost/nova-arch-runtime -f "${project_root}/qa/containers/arch.Containerfile" "${project_root}/qa/containers" \
     >"${qualification_dir}/arch-runtime-image.log" 2>&1
   podman run --rm --init \
     -v "${qualification_dir}/arch/packaging/arch:/packages:ro,Z" \
     -v "${project_root}/tools:/qualification/tools:ro,Z" localhost/nova-arch-runtime \
-    bash -lc 'pacman -U --noconfirm /packages/*.pkg.tar.zst && ./tools/qualify_installed_desktop.sh' \
+    bash -lc 'pacman -U --noconfirm /packages/*.pkg.tar.zst && ./qa/qualify_installed_desktop.sh' \
     >"${qualification_dir}/arch-installed.log" 2>&1
 }
 qualify_ubuntu() {
@@ -61,14 +61,14 @@ qualify_ubuntu() {
     >"${qualification_dir}/ubuntu-builder.log" 2>&1
   podman run --rm --env CARGO_BUILD_JOBS=2 \
     -v "${qualification_dir}/ubuntu:/workspace:Z" localhost/nova-ubuntu-qualification \
-    bash -lc './tools/package_deb.sh && python3 tools/smoke_desktop_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu && python3 tools/smoke_workflow_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu && python3 tools/smoke_integrations_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu' \
+    bash -lc './tools/package_deb.sh && python3 qa/smoke_desktop_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu && python3 qa/smoke_workflow_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu && python3 qa/smoke_integrations_backend.py src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu' \
     >"${qualification_dir}/ubuntu-build.log" 2>&1
-  podman build -t localhost/nova-ubuntu-runtime -f "${project_root}/packaging/qualification/ubuntu.Containerfile" "${project_root}/packaging/qualification" \
+  podman build -t localhost/nova-ubuntu-runtime -f "${project_root}/qa/containers/ubuntu.Containerfile" "${project_root}/qa/containers" \
     >"${qualification_dir}/ubuntu-runtime-image.log" 2>&1
   podman run --rm --init \
     -v "${qualification_dir}/ubuntu/src-tauri/target/debian/release/bundle/deb:/packages:ro,Z" \
     -v "${project_root}/tools:/qualification/tools:ro,Z" localhost/nova-ubuntu-runtime \
-    bash -lc 'apt-get update && apt-get install --yes /packages/*.deb && ./tools/qualify_installed_desktop.sh' \
+    bash -lc 'apt-get update && apt-get install --yes /packages/*.deb && ./qa/qualify_installed_desktop.sh' \
     >"${qualification_dir}/ubuntu-installed.log" 2>&1
 }
 if [[ "${target}" == arch || "${target}" == all ]]; then qualify_arch; fi

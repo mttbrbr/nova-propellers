@@ -34,8 +34,8 @@ export XDG_DATA_HOME=/tmp/nova-qualified-data
 export XDG_CACHE_HOME=/tmp/nova-qualified-cache
 
 unset NOVA_SESSION_TOKEN
-./tools/smoke_installed_workflow.sh "${sidecar}"
+./qa/smoke_installed_workflow.sh "${sidecar}"
 
 export NOVA_DESKTOP_ENTRY="$(basename "${desktop_file}" .desktop)"
 xvfb-run --auto-servernum env NOVA_XVFB_ACTIVE=1 dbus-run-session -- \
-  ./tools/smoke_desktop_lifecycle.sh "${executable}"
+  ./qa/smoke_desktop_lifecycle.sh "${executable}"

@@ -2,7 +2,6 @@
 import copy
 import json
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -10,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from nova.infrastructure import library
+from nova.infrastructure.proc import group_kwargs, stop_group
 from nova.workflow.engine import validate
 
 _executor = None
@@ -27,17 +27,11 @@ def start():
 
 
 def _terminate(process):
-    try:
-        if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
+    if process.poll() is None:
+        stop_group(process)
     def force_stop():
-        try:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        if process.poll() is None:
+            stop_group(process, force=True)
     timer = threading.Timer(5, force_stop)
     timer.daemon = True
     timer.start()
@@ -89,7 +83,7 @@ def _run(id, control):
         root = str(Path(__file__).resolve().parents[2])
         env['PYTHONPATH'] = root + os.pathsep + env.get('PYTHONPATH', '')
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, text=True, start_new_session=True, env=env)
+                                   stderr=subprocess.STDOUT, text=True, env=env, **group_kwargs())
         with _lock:
             control['process'] = process
             if control['cancel'].is_set():
@@ -129,10 +123,7 @@ def _run(id, control):
             process = control['process']
             if process:
                 if process.poll() is None:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                    stop_group(process, force=True)
                     process.wait()
                 if process.stdin and not process.stdin.closed:
                     process.stdin.close()

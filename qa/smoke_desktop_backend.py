@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import selectors
+import queue
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -17,18 +18,26 @@ ENDPOINT_PREFIX = "NOVA_BACKEND_ENDPOINT="
 
 def wait_for_endpoint(process: subprocess.Popen[str], timeout: float = 25) -> str:
     assert process.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
+    lines: queue.Queue[str] = queue.Queue()
+
+    def pump() -> None:
+        # A thread keeps this portable: select() on pipes does not work on Windows.
+        for line in process.stdout:
+            lines.put(line)
+
+    threading.Thread(target=pump, daemon=True).start()
     deadline = time.monotonic() + timeout
     output = []
     while time.monotonic() < deadline:
-        if process.poll() is not None:
-            break
-        for key, _ in selector.select(timeout=0.2):
-            line = key.fileobj.readline()
-            output.append(line)
-            if line.startswith(ENDPOINT_PREFIX):
-                return line.removeprefix(ENDPOINT_PREFIX).strip()
+        try:
+            line = lines.get(timeout=0.2)
+        except queue.Empty:
+            if process.poll() is not None and lines.empty():
+                break
+            continue
+        output.append(line)
+        if line.startswith(ENDPOINT_PREFIX):
+            return line.removeprefix(ENDPOINT_PREFIX).strip()
     raise RuntimeError(f"backend did not report an endpoint: {''.join(output)}")
 
 

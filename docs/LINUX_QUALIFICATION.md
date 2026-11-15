@@ -109,7 +109,7 @@ With Podman, Git and Python available on the development host:
 
 ```sh
 NOVA_QUALIFICATION_DIR="$PWD/.desktop-tools/qualification-next" \
-  ./tools/qualify_linux_packages.sh all
+  ./qa/qualify_linux_packages.sh all
 ```
 
 Use `arch` or `ubuntu` to qualify one target. Choose a fresh directory: the
@@ -117,8 +117,8 @@ script preserves existing evidence. It snapshots tracked and untracked source
 files permitted by Git ignore rules, creates a commit only in the isolated
 checkout, and leaves the original repository/index untouched.
 
-Runtime recipes are in `packaging/qualification/`. Installation checks use
-`tools/qualify_installed_desktop.sh` and `tools/smoke_installed_workflow.sh`.
+Runtime recipes are in `qa/containers/`. Installation checks use
+`qa/qualify_installed_desktop.sh` and `qa/smoke_installed_workflow.sh`.
 The latter uses curl/jq to exercise the packaged backend, so a system Python
 installation cannot conceal a missing bundled runtime.
 

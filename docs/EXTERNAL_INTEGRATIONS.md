@@ -230,7 +230,7 @@ binary simulation outputs accidentally added to source files.
 With NOVA's Python dependencies available, qualify a local installation:
 
 ```sh
-python tools/qualify_openfast.py \
+python qa/qualify_openfast.py \
   --executable "$HOME/.local/share/nova-external/openfast/5.0.0/bin/openfast" \
   --case-directory "$HOME/.local/share/nova-external/openfast/5.0.0/cases/aoc-steady" \
   --input-file AOC_WSt/AOC_WSt.fst \

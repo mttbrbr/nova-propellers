@@ -17,6 +17,8 @@ def main():
         print(json.dumps(value, allow_nan=False), flush=True)
     def cancel(_signal, _frame):
         raise WorkerCancelled('Run cancelled')
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, cancel)
     signal.signal(signal.SIGTERM, cancel)
     try:
         request = json.load(sys.stdin)

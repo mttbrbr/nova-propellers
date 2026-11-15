@@ -18,13 +18,14 @@ if [[ -z "${python_bin}" || ! -x "$(command -v "${python_bin}" 2>/dev/null || pr
 fi
 
 "${python_bin}" -m venv --clear "${venv_dir}"
-"${venv_dir}/bin/python" -m pip install --disable-pip-version-check \
+if [[ -d "${venv_dir}/Scripts" ]]; then venv_bin="${venv_dir}/Scripts"; exe=".exe"; else venv_bin="${venv_dir}/bin"; exe=""; fi
+"${venv_bin}/python" -m pip install --disable-pip-version-check \
   --requirement "${backend_dir}/requirements-desktop.txt"
 
 rm -rf "${backend_dir}/build" "${backend_dir}/dist"
 (
   cd "${backend_dir}"
-  "${venv_dir}/bin/pyinstaller" \
+  "${venv_bin}/pyinstaller" \
     --noconfirm \
     --clean \
     --onefile \
@@ -36,5 +37,5 @@ rm -rf "${backend_dir}/build" "${backend_dir}/dist"
 
 target_triple="${NOVA_TAURI_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 destination="${project_root}/src-tauri/binaries/nova-backend-${target_triple}"
-install -Dm755 "${backend_dir}/dist/nova-backend" "${destination}"
-echo "Desktop backend sidecar: ${destination}"
+install -Dm755 "${backend_dir}/dist/nova-backend${exe}" "${destination}${exe}"
+echo "Desktop backend sidecar: ${destination}${exe}"

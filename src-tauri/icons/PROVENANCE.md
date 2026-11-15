@@ -6,3 +6,5 @@ drawn geometrically by `tools/brand/make_logo.py` (three rounded ring
 segments; thickness 40 % of the radius, 45° gaps, 70 % corner rounding) from
 parameters chosen by the project author. It contains no third-party material
 and is released under the repository's Apache-2.0 license.
+
+`icon.ico` (2026-11-15) is a multi-size Windows icon converted from `docs/media/icon-max-nova-propellers.png` with ImageMagick; Apache-2.0.

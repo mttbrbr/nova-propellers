@@ -52,7 +52,7 @@
   backends: 101 samples × 30 channels, 0–5 s,
   maximum absolute difference 0. Queued input hashes, portable `.nova-run`
   restoration and original raw output bytes also matched; backend stopped.
-  `tools/qualify_openfast.py` repeats this test with external paths and an
+  `qa/qualify_openfast.py` repeats this test with external paths and an
   isolated library, optionally using a frozen backend.
 - Source/report provenance: OpenFAST commit
   `2895884d2be01862173c88d70f86b358d2f1a50a`, r-test commit
@@ -230,6 +230,6 @@ Physical Wayland/GPU behavior and byte-identical builds remain unverified.
 - Isolated package sources/caches: `.desktop-tools/qualification/arch/` and `ubuntu/`.
 - Builder images: `localhost/nova-arch-qualification`, `localhost/nova-ubuntu-qualification`; corresponding runtime images are available.
 - Integration setup/contracts/limits: `docs/EXTERNAL_INTEGRATIONS.md`.
-- Repeatable smoke: `tools/smoke_integrations_backend.py`, optionally `--pywake-python /path/to/environment/bin/python`.
+- Repeatable smoke: `qa/smoke_integrations_backend.py`, optionally `--pywake-python /path/to/environment/bin/python`.
 
 No C++ solver migration or external scientific solver implementation was bundled.

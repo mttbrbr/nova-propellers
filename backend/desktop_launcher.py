@@ -1,4 +1,4 @@
-"""Linux desktop entrypoint for the bundled Nova FastAPI backend."""
+"""Desktop entrypoint for the bundled Nova FastAPI backend."""
 
 from __future__ import annotations
 
@@ -15,6 +15,10 @@ ENDPOINT_PREFIX = "NOVA_BACKEND_ENDPOINT="
 
 
 def default_data_dir() -> Path:
+    if sys.platform == "win32":
+        local = os.getenv("LOCALAPPDATA")
+        root = Path(local) if local else Path.home() / "AppData" / "Local"
+        return root / "nova-propellers"
     data_home = os.getenv("XDG_DATA_HOME")
     root = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
     return root / "nova-propellers"

@@ -231,7 +231,7 @@ class AdapterTests(unittest.TestCase):
             process = real_popen(*args, **kwargs)
             started.append(process)
             return process
-        with patch('nova.adapters.process.subprocess.Popen', side_effect=tracked), patch('nova.adapters.process.selectors.DefaultSelector', side_effect=OSError('selector fixture failure')):
+        with patch('nova.adapters.process.subprocess.Popen', side_effect=tracked), patch('nova.adapters.process.threading.Thread', side_effect=OSError('reader fixture failure')):
             with self.assertRaises(OSError):
                 run_process(self.spec('--sleep'), self.root)
         self.assertIsNotNone(started[0].poll())

@@ -32,7 +32,8 @@
     ],
     "category": "Education",
     "icon": [
-      "../docs/media/icon-nova-propellers.png"
+      "../docs/media/icon-nova-propellers.png",
+      "icons/icon.ico"
     ],
     "shortDescription": "Propeller design and analysis workbench",
     "longDescription": "Local-first workbench for designing, analyzing, optimizing, and exporting traditional propellers.",

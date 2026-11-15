@@ -195,7 +195,7 @@ downloads rather than writes into the installation directory.
 ## Smoke and regression checks
 
 ```bash
-python tools/smoke_desktop_backend.py \
+python qa/smoke_desktop_backend.py \
   src-tauri/binaries/nova-backend-x86_64-unknown-linux-gnu
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 npm --prefix frontend run lint
@@ -206,7 +206,7 @@ With `xorg-server-xvfb`, `xdotool`, `openbox` and `procps-ng` installed, the pac
 application lifecycle can also be exercised without a physical display:
 
 ```bash
-./tools/smoke_desktop_lifecycle.sh /usr/bin/nova-propellers
+./qa/smoke_desktop_lifecycle.sh /usr/bin/nova-propellers
 ```
 
 `packaging/arch/PKGBUILD` runs both the sidecar smoke test and Rust tests during

@@ -1,14 +1,16 @@
 """Bounded, shell-free execution of independently installed programs."""
 import codecs
 import os
-import selectors
-import signal
+import queue
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+
+from nova.infrastructure.proc import group_kwargs, stop_group
 
 
 class ProcessFailure(RuntimeError):
@@ -90,23 +92,38 @@ def run_process(spec: ProcessSpec, working_directory: Path, *, cancelled: Callab
         return ProcessResult(command, code, time.monotonic() - start, log, truncated)
     process = subprocess.Popen(command, cwd=directory, env=external_environment(spec.environment),
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True)
-    selector = None
+                               stderr=subprocess.STDOUT, **group_kwargs())
+    chunks = queue.Queue()
+    def pump():
+        # A reader thread keeps pipe reading portable (select() on pipes is POSIX-only).
+        descriptor = process.stdout.fileno()
+        while True:
+            try:
+                data = os.read(descriptor, 4096)
+            except OSError:
+                data = b''
+            chunks.put(data)
+            if not data:
+                return
+    reader = None
     try:
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
-        while selector.get_map():
+        reader = threading.Thread(target=pump, daemon=True)
+        reader.start()
+        eof = False
+        while not eof:
             if cancelled and cancelled():
                 raise ProcessCancelled('External process cancelled', result(process.poll() if process.poll() is not None else -1))
             if time.monotonic() - start >= spec.timeout_seconds:
                 raise ProcessFailure('External process exceeded its timeout', result(process.poll() if process.poll() is not None else -1))
-            for key, _ in selector.select(timeout=.05):
-                data = os.read(key.fileobj.fileno(), 4096)
-                if data:
-                    append(decoder.decode(data))
-                else:
-                    selector.unregister(key.fileobj)
-                    append(decoder.decode(b'', final=True))
+            try:
+                data = chunks.get(timeout=.05)
+            except queue.Empty:
+                continue
+            if data:
+                append(decoder.decode(data))
+            else:
+                eof = True
+                append(decoder.decode(b'', final=True))
         while process.poll() is None:
             if cancelled and cancelled():
                 raise ProcessCancelled('External process cancelled', result(process.poll() if process.poll() is not None else -1))
@@ -120,23 +137,14 @@ def run_process(spec: ProcessSpec, working_directory: Path, *, cancelled: Callab
         return completed
     finally:
         # Also stop descendants holding pipes or surviving their launcher.
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        stop_group(process)
         try:
             process.wait(timeout=.5)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            stop_group(process, force=True)
             process.wait()
         # A launcher can exit while a descendant ignores TERM in its group.
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        if selector is not None:
-            selector.close()
+        stop_group(process, force=True)
+        if reader is not None and reader.is_alive():
+            reader.join(timeout=2)
         process.stdout.close()

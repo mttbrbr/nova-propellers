@@ -54,6 +54,7 @@ impl BackendManager {
     }
 }
 
+#[cfg(unix)]
 fn parse_child_pids(contents: &str) -> Vec<u32> {
     contents
         .split_whitespace()
@@ -61,6 +62,7 @@ fn parse_child_pids(contents: &str) -> Vec<u32> {
         .collect()
 }
 
+#[cfg(unix)]
 fn descendant_pids(parent: u32) -> Vec<u32> {
     let children_path = format!("/proc/{parent}/task/{parent}/children");
     let direct = std::fs::read_to_string(children_path)
@@ -74,6 +76,7 @@ fn descendant_pids(parent: u32) -> Vec<u32> {
     descendants
 }
 
+#[cfg(unix)]
 fn signal_processes(processes: &[u32], signal: libc::c_int) {
     for process in processes {
         // PIDs come from the sidecar's /proc descendants and are never supplied
@@ -84,6 +87,7 @@ fn signal_processes(processes: &[u32], signal: libc::c_int) {
     }
 }
 
+#[cfg(unix)]
 fn terminate_process_tree(child: CommandChild) {
     let descendants = descendant_pids(child.pid());
     // Give Uvicorn time to cancel workers and commit terminal run states.
@@ -93,6 +97,16 @@ fn terminate_process_tree(child: CommandChild) {
         thread::sleep(Duration::from_millis(100));
     }
     signal_processes(&descendants, libc::SIGKILL);
+    let _ = child.kill();
+}
+
+#[cfg(windows)]
+fn terminate_process_tree(child: CommandChild) {
+    // Windows has no SIGTERM: end the sidecar and every process it started.
+    // The PID is the sidecar's own, never supplied by the frontend.
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &child.pid().to_string(), "/T", "/F"])
+        .output();
     let _ = child.kill();
 }
 
@@ -356,6 +370,7 @@ mod tests {
         assert!(manager.child.lock().unwrap().is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn parses_linux_child_process_list() {
         assert_eq!(parse_child_pids("123  456\n"), vec![123, 456]);
