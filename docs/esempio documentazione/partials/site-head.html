@@ -1,0 +1,32 @@
+{#- MetiX: barra in alto senza i collegamenti alle sezioni (sono già nel menu a sinistra):
+    marchio, ricerca larga al centro, PDF del manuale e tema a destra. -#}
+<div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="{{ pathto(root_doc) }}">
+      <img class="metix-marchio metix-marchio-chiaro" src="{{ pathto('_static/marchio-chiaro.svg', 1) }}" alt="{{ project }}" height="26" />
+      <img class="metix-marchio metix-marchio-scuro" src="{{ pathto('_static/marchio-scuro.svg', 1) }}" alt="{{ project }}" height="26" />
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <div class="metix-head-cerca">
+        {%- include "components/searchbox.html" -%}
+      </div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden">
+      {%- if metix_pdf %}
+      <a class="metix-head-pdf" href="{{ pathto('metix-manuale-tecnico.pdf', 1) }}" title="Manuale tecnico in PDF">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+        <span>PDF</span>
+      </a>
+      {%- endif %}
+      {%- include "components/theme-switch.html" -%}
+      <button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>

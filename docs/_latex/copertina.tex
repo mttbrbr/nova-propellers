@@ -1,0 +1,35 @@
+% PDF title page (latex_elements["maketitle"] in conf.py)
+\begin{titlepage}
+\begin{tikzpicture}[remember picture,overlay]
+  % black band with orange rule
+  \fill[novanero] (current page.north west) rectangle ([yshift=-14cm]current page.north east);
+  \fill[novaarancio] ([yshift=-14cm]current page.north west) rectangle ([yshift=-14.25cm]current page.north east);
+  % motif: the three ring segments of the NOVA symbol
+  \begin{scope}[shift={([xshift=-4.6cm,yshift=-7.2cm]current page.north east)}]
+    \foreach \a in {90,210,330}{
+      \draw[novaarancio,line width=9pt,line cap=round]
+        ([shift={(\a-38:2.3cm)}]0,0) arc[start angle=\a-38,end angle=\a+38,radius=2.3cm];
+      \draw[white,opacity=0.35,line width=0.7pt]
+        ([shift={(\a+60:1.35cm)}]0,0) arc[start angle=\a+60,end angle=\a+120,radius=1.35cm];
+    }
+  \end{scope}
+\end{tikzpicture}
+\vspace*{0.6cm}
+{\novasans\color{white!65!novanero}\small\bfseries\addfontfeatures{LetterSpace=18}TECHNICAL MANUAL\par}
+\vspace{10pt}
+\includegraphics[height=1.75cm]{marchio-bianco.pdf}\par
+\vspace{12pt}
+{\novasans\color{white}\LARGE NOVA documentation\par}
+\vspace{6pt}
+{\novasans\color{white!65!novanero}\large How it works\par}
+\vspace{8.4cm}
+\begin{minipage}{0.84\textwidth}
+\large\color{novainchiostro}
+This document describes how NOVA works: architecture, rotor models, block workflows, and the
+verification and validation process.
+\textbf{[TO COMPLETE]} Replace this paragraph with an introduction to the manual: who it is for,
+what it covers, and which software version it refers to.
+\end{minipage}
+\vfill
+{\novasans\color{novagrigio}\small NOVA \hfill \textbf{[TO COMPLETE]} version and date}
+\end{titlepage}

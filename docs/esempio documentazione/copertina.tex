@@ -1,0 +1,41 @@
+% Frontespizio del PDF (latex_elements["maketitle"] in conf.py)
+\begin{titlepage}
+\begin{tikzpicture}[remember picture,overlay]
+  % fascia nera con filetto arancione
+  \fill[metixnero] (current page.north west) rectangle ([yshift=-14cm]current page.north east);
+  \fill[metixarancio] ([yshift=-14cm]current page.north west) rectangle ([yshift=-14.25cm]current page.north east);
+  % motivo: colonna di layer che diventa celle poliedriche
+  \begin{scope}[shift={([xshift=-5.4cm,yshift=-7.2cm]current page.north east)},scale=1.05,line width=0.7pt]
+    \foreach \k in {0,1,2,3}{
+      \draw[white,opacity=0.55] ({-2.2},{-1.6+0.32*\k*\k*0.6+0.25*\k}) -- (2.2,{-1.6+0.32*\k*\k*0.6+0.25*\k});
+    }
+    \foreach \x in {-2.2,-1.1,0,1.1,2.2}{\draw[white,opacity=0.55] (\x,-1.6) -- (\x,0.7);}
+    \begin{scope}[metixarancio]
+      \draw (-2.2,0.7) -- (-1.4,1.9) -- (-0.2,1.5) -- (0.6,2.4) -- (1.7,1.8) -- (2.2,0.7);
+      \draw (-1.1,0.7) -- (-0.2,1.5); \draw (0,0.7) -- (-0.2,1.5); \draw (1.1,0.7) -- (1.7,1.8);
+      \draw (-1.4,1.9) -- (-1.6,2.9) -- (-0.4,3.1) -- (0.6,2.4); \draw (-0.4,3.1) -- (-0.2,1.5);
+      \draw (0.6,2.4) -- (1.4,3.2) -- (2.3,2.8) -- (1.7,1.8);
+    \end{scope}
+    \fill[metixarancio] (-2.2,-1.6) rectangle (2.2,-1.78);
+  \end{scope}
+\end{tikzpicture}
+\vspace*{0.6cm}
+{\metixsans\color{white!65!metixnero}\small\bfseries\addfontfeatures{LetterSpace=18}MANUALE TECNICO\par}
+\vspace{10pt}
+\includegraphics[height=1.75cm]{marchio-bianco.pdf}\par
+\vspace{12pt}
+{\metixsans\color{white}\LARGE Mesher poliedrico \emph{layer-first}\par}
+\vspace{6pt}
+{\metixsans\color{white!65!metixnero}\large Costruzione, algoritmi, origini\par}
+\vspace{8.4cm}
+\begin{minipage}{0.84\textwidth}
+\large\color{metixinchiostro}
+Questo documento descrive in dettaglio come MetiX costruisce una mesh poliedrica per OpenFOAM
+a partire da una superficie triangolata: la preparazione della geometria, la parete, i layer di
+strato limite, il core di Voronoi, l'assemblaggio duale, i controlli di qualità e gli sviluppi
+sperimentali di novembre 2026. Per ogni metodo si indica se è ripreso dalla letteratura o se è
+una costruzione nostra, e lo stato in cui si trova.
+\end{minipage}
+\vfill
+{\metixsans\color{metixgrigio}\small Progetto MetiX \hfill Stato del codice: 13 novembre 2026 \hfill \texttt{metix-mesh/metix\_mesh/dualmesh}}
+\end{titlepage}

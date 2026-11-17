@@ -1,0 +1,113 @@
+% Stile MetiX per il PDF di Sphinx: testo in Pagella, titoli e apparato in sans (TeX Gyre Heros),
+% nero per titoli e testo, arancione solo per gli accenti grafici (mai per il testo).
+% Caricato in fondo al preambolo di Sphinx (latex_elements['preamble'] in conf.py).
+\input{colori.tex}
+\usepackage{microtype}
+\usepackage{csquotes}
+\usepackage{mathtools}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit,backgrounds,decorations.pathreplacing}
+\usepackage[skins,breakable]{tcolorbox}
+\usepackage[chapter]{algorithm}
+\usepackage{algorithmic}
+\usepackage{siunitx}
+\sisetup{output-decimal-marker={,},group-separator={\,},group-minimum-digits=4,per-mode=symbol}
+
+\newfontfamily\metixsans{texgyreheros}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,
+  ItalicFont=*-italic,BoldItalicFont=*-bolditalic,Scale=0.92]
+\AtBeginDocument{\color{metixinchiostro}}
+
+% ---------------------------------------------------------------- titoli
+\titleformat{\chapter}[display]
+  {\normalfont\metixsans}
+  {\color{metixgrigio}\small\bfseries\addfontfeatures{LetterSpace=15}%
+   \MakeUppercase{\chaptertitlename}\enspace\thechapter}
+  {8pt}
+  {\color{metixnero}\fontsize{30}{34}\selectfont\bfseries}
+  [{\color{metixarancio}\rule{2.4cm}{2.5pt}}]
+\titlespacing*{\chapter}{0pt}{-6pt}{28pt}
+\titleformat{\section}{\normalfont\metixsans\Large\bfseries\color{metixnero}}
+  {\color{metixgrigio}\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\metixsans\large\bfseries\color{metixnero}}
+  {\color{metixgrigio}\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.4ex plus .2ex}
+\newcommand{\metixpar}[1]{{\metixsans\bfseries\color{metixnero}#1}\enspace}
+
+% ---------------------------------------------------------------- testatine
+\fancypagestyle{normal}{%
+  \fancyhf{}%
+  \fancyhead[L]{\raisebox{-0.2ex}{\includegraphics[height=2.2mm]{marchio-inchiostro.pdf}}\enspace
+    \metixsans\footnotesize\color{metixgrigio}manuale tecnico}%
+  \fancyhead[R]{\metixsans\footnotesize\color{metixgrigio}\nouppercase{\leftmark}}%
+  \fancyfoot[C]{\metixsans\footnotesize\color{metixgrigio}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}}
+\fancypagestyle{plain}{%
+  \fancyhf{}\fancyfoot[C]{\metixsans\footnotesize\color{metixgrigio}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}
+\renewcommand{\chaptermark}[1]{\markboth{\ifnum\value{chapter}>0\thechapter\enspace\fi#1}{}}
+
+% ---------------------------------------------------------------- testo
+\setlist{itemsep=2pt,topsep=4pt,leftmargin=1.4em}
+\setlist[itemize]{label={\color{metixarancio}\small\textbullet}}
+\setlength{\emergencystretch}{2.5em}
+\DeclareCaptionFont{metixnero}{\color{metixnero}}
+\captionsetup{font={small,sf},labelfont={bf,metixnero},format=hang,
+  justification=raggedright,singlelinecheck=true}
+\renewcommand{\arraystretch}{1.18}
+
+% etichette di origine e di stato: pillole sans
+\newcommand{\etichetta}[2]{\tikz[baseline=(t.base)]\node[fill=#1,text=white,rounded corners=3pt,
+  inner xsep=3.5pt,inner ysep=1.6pt,font=\metixsans\scriptsize\bfseries](t){#2};}
+\newcommand{\Nostro}{\etichetta{nostro}{NOSTRO}}
+\newcommand{\Lett}{\etichetta{letteratura}{LETTERATURA}}
+\newcommand{\Misto}{\etichetta{misto}{LETT.\,+\,NOSTRO}}
+\newcommand{\Sospeso}{\etichetta{sospeso}{SOSPESO}}
+\newcommand{\Sperim}{\etichetta{sperim}{SPERIMENTALE}}
+\newcommand{\Opz}{\etichetta{metixgrigio}{OPZIONE}}
+% stato dell'implementazione: dove vive il codice
+\newcommand{\etichettachiara}[2]{\tikz[baseline=(t.base)]\node[draw=#1,line width=0.6pt,text=#1,
+  rounded corners=3pt,inner xsep=3.2pt,inner ysep=1.3pt,font=\metixsans\scriptsize\bfseries](t){#2};}
+\newcommand{\StatoRust}{\etichetta{metixnero}{RUST}}
+\newcommand{\StatoPython}{\etichettachiara{metixnero}{SOLO PYTHON}}
+\newcommand{\StatoContorno}{\etichettachiara{metixgrigio}{CONTORNO}}
+
+% riquadri: fondo tenue e barra laterale nel colore del riquadro, titolo sans nero spaziato
+\tcbset{metixriquadro/.style={enhanced,breakable,frame hidden,boxrule=0pt,arc=0pt,
+  left=10pt,right=8pt,top=5pt,bottom=5pt,
+  fonttitle=\metixsans\scriptsize\bfseries\addfontfeatures{LetterSpace=10},
+  coltitle=metixnero,colbacktitle=#1!6,colback=#1!6,
+  attach title to upper={\par\smallskip},
+  borderline west={3pt}{0pt}{#1}}}
+\newtcolorbox{origine}[1][]{metixriquadro=metixarancio,title={ORIGINE DEL METODO},#1}
+\newtcolorbox{nota}[1][]{metixriquadro=metixgrigio,#1}
+\newtcolorbox{attenzione}[1][]{metixriquadro=sospeso,title={ATTENZIONE},#1}
+\newtcolorbox{misura}[1][]{metixriquadro=nostro,title={MISURA},#1}
+\newtcolorbox{implementazione}[1][]{metixriquadro=metixnero,colback=metixnero!3,colbacktitle=metixnero!3,
+  title={IMPLEMENTAZIONE},#1}
+
+% codice in linea: più piccolo, può andare a capo dopo _
+\newcommand{\spezza}{\discretionary{}{}{}}
+\DeclareRobustCommand{\ttbreak}{\def\_{\textunderscore\spezza}}
+\let\metixorigcode\sphinxcode
+\renewcommand{\sphinxcode}[1]{{\small\color{metixnero}\ttbreak\metixorigcode{#1}}}
+\newcommand{\file}[1]{{\small\ttfamily\ttbreak#1}}
+\newcommand{\vect}[1]{\symbf{#1}}
+\newcommand{\R}{\mathbb{R}}
+
+% algoritmi in italiano
+\renewcommand{\algorithmicrequire}{\textbf{Dati:}}
+\renewcommand{\algorithmicensure}{\textbf{Risultato:}}
+\renewcommand{\algorithmicfor}{\textbf{per}}
+\renewcommand{\algorithmicdo}{\textbf{:}}
+\renewcommand{\algorithmicendfor}{\textbf{fine}}
+\renewcommand{\algorithmicif}{\textbf{se}}
+\renewcommand{\algorithmicthen}{\textbf{allora}}
+\renewcommand{\algorithmicendif}{\textbf{fine}}
+\floatname{algorithm}{Algoritmo}
+
+% tabelle: intestazioni sans, tabelle lunghe in corpo minore
+\renewcommand{\sphinxstyletheadfamily}{\metixsans\bfseries\color{metixnero}}
+\AtBeginEnvironment{longtable}{\small}

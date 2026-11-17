@@ -99,3 +99,7 @@ temp/
 # Preserved pre-migration generated artifacts
 frontend/.node_modules-before-nova/
 frontend/.dist-before-nova/
+
+# Documentazione Sphinx
+.venv-docs/
+docs/_build/

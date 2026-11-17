@@ -1,0 +1,101 @@
+% NOVA style for the Sphinx PDF: body text in Pagella, headings and apparatus in sans (TeX Gyre Heros),
+% black for headings and text, orange only for graphic accents (never for text).
+% Loaded at the end of Sphinx's preamble (latex_elements['preamble'] in conf.py).
+\input{colori.tex}
+\usepackage{microtype}
+\usepackage{csquotes}
+\usepackage{mathtools}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit,backgrounds,decorations.pathreplacing}
+\usepackage[skins,breakable]{tcolorbox}
+\usepackage[chapter]{algorithm}
+\usepackage{algorithmic}
+\usepackage{siunitx}
+\sisetup{group-separator={\,},group-minimum-digits=4,per-mode=symbol}
+
+\newfontfamily\novasans{texgyreheros}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,
+  ItalicFont=*-italic,BoldItalicFont=*-bolditalic,Scale=0.92]
+\AtBeginDocument{\color{novainchiostro}}
+
+% ---------------------------------------------------------------- headings
+\titleformat{\chapter}[display]
+  {\normalfont\novasans}
+  {\color{novagrigio}\small\bfseries\addfontfeatures{LetterSpace=15}%
+   \MakeUppercase{\chaptertitlename}\enspace\thechapter}
+  {8pt}
+  {\color{novanero}\fontsize{30}{34}\selectfont\bfseries}
+  [{\color{novaarancio}\rule{2.4cm}{2.5pt}}]
+\titlespacing*{\chapter}{0pt}{-6pt}{28pt}
+\titleformat{\section}{\normalfont\novasans\Large\bfseries\color{novanero}}
+  {\color{novagrigio}\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\novasans\large\bfseries\color{novanero}}
+  {\color{novagrigio}\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.4ex plus .2ex}
+\newcommand{\novapar}[1]{{\novasans\bfseries\color{novanero}#1}\enspace}
+
+% ---------------------------------------------------------------- running heads
+\fancypagestyle{normal}{%
+  \fancyhf{}%
+  \fancyhead[L]{\raisebox{-0.2ex}{\includegraphics[height=2.2mm]{marchio-inchiostro.pdf}}\enspace
+    \novasans\footnotesize\color{novagrigio}technical manual}%
+  \fancyhead[R]{\novasans\footnotesize\color{novagrigio}\nouppercase{\leftmark}}%
+  \fancyfoot[C]{\novasans\footnotesize\color{novagrigio}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}}
+\fancypagestyle{plain}{%
+  \fancyhf{}\fancyfoot[C]{\novasans\footnotesize\color{novagrigio}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}}
+\renewcommand{\chaptermark}[1]{\markboth{\ifnum\value{chapter}>0\thechapter\enspace\fi#1}{}}
+
+% ---------------------------------------------------------------- text
+\setlist{itemsep=2pt,topsep=4pt,leftmargin=1.4em}
+\setlist[itemize]{label={\color{novaarancio}\small\textbullet}}
+\setlength{\emergencystretch}{2.5em}
+\DeclareCaptionFont{novanero}{\color{novanero}}
+\captionsetup{font={small,sf},labelfont={bf,novanero},format=hang,
+  justification=raggedright,singlelinecheck=true}
+\renewcommand{\arraystretch}{1.18}
+
+% origin and status labels: sans pills
+\newcommand{\etichetta}[2]{\tikz[baseline=(t.base)]\node[fill=#1,text=white,rounded corners=3pt,
+  inner xsep=3.5pt,inner ysep=1.6pt,font=\novasans\scriptsize\bfseries](t){#2};}
+\newcommand{\Ours}{\etichetta{nostro}{OURS}}
+\newcommand{\Lit}{\etichetta{letteratura}{LITERATURE}}
+\newcommand{\Mixed}{\etichetta{misto}{LIT.\,+\,OURS}}
+\newcommand{\Suspended}{\etichetta{sospeso}{SUSPENDED}}
+\newcommand{\Experimental}{\etichetta{sperim}{EXPERIMENTAL}}
+\newcommand{\Option}{\etichetta{novagrigio}{OPTION}}
+
+% boxes: soft background and side bar in the box colour, spaced black sans title
+\tcbset{novariquadro/.style={enhanced,breakable,frame hidden,boxrule=0pt,arc=0pt,
+  left=10pt,right=8pt,top=5pt,bottom=5pt,
+  fonttitle=\novasans\scriptsize\bfseries\addfontfeatures{LetterSpace=10},
+  coltitle=novanero,colbacktitle=#1!6,colback=#1!6,
+  attach title to upper={\par\smallskip},
+  borderline west={3pt}{0pt}{#1}}}
+\newtcolorbox{origin}[1][]{novariquadro=novaarancio,title={ORIGIN OF THE METHOD},#1}
+\newtcolorbox{note}[1][]{novariquadro=novagrigio,#1}
+\newtcolorbox{warning}[1][]{novariquadro=sospeso,title={WARNING},#1}
+\newtcolorbox{measure}[1][]{novariquadro=nostro,title={MEASURE},#1}
+\newtcolorbox{implementation}[1][]{novariquadro=novanero,colback=novanero!3,colbacktitle=novanero!3,
+  title={IMPLEMENTATION},#1}
+
+% inline code: smaller, may break after _
+\newcommand{\spezza}{\discretionary{}{}{}}
+\DeclareRobustCommand{\ttbreak}{\def\_{\textunderscore\spezza}}
+\let\novaorigcode\sphinxcode
+\renewcommand{\sphinxcode}[1]{{\small\color{novanero}\ttbreak\novaorigcode{#1}}}
+\newcommand{\file}[1]{{\small\ttfamily\ttbreak#1}}
+\newcommand{\vect}[1]{\symbf{#1}}
+\newcommand{\R}{\mathbb{R}}
+
+% algorithms
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\floatname{algorithm}{Algorithm}
+
+% tables: sans headers, long tables in smaller type
+\renewcommand{\sphinxstyletheadfamily}{\novasans\bfseries\color{novanero}}
+\AtBeginEnvironment{longtable}{\small}

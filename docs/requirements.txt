@@ -1,0 +1,7 @@
+sphinx>=8
+shibuya
+myst-parser
+sphinxcontrib-bibtex
+sphinxcontrib-mermaid
+sphinx-autobuild
+fonttools
