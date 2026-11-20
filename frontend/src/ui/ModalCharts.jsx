@@ -71,7 +71,7 @@ export function CampbellChart({ campbell, operating, selected, onSelect, height 
         {operating && operating >= lo && operating <= hi && <g pointerEvents="none">
           <rect x={sx(operating * 0.9)} y={margin.top} width={Math.max(0, sx(Math.min(hi, operating * 1.1)) - sx(Math.max(lo, operating * 0.9)))} height={plotH} fill="#FF8533" opacity=".06" />
           <line x1={sx(operating)} x2={sx(operating)} y1={margin.top} y2={margin.top + plotH} stroke="#FF8533" strokeDasharray="2 4" opacity=".8" />
-          <text x={sx(operating) + 4} y={margin.top + plotH - 4} className="fill-nv-accent font-mono text-[11px]">{formatValue(operating, 3)} rpm</text></g>}
+          <text x={sx(operating) + 4} y={margin.top + 11} className="fill-nv-accent font-mono text-[11px]">{formatValue(operating, 3)} rpm</text></g>}
         {campbell.curves.map((c) => {
           const style = curveStyle(c);
           const active = selected === c.id;

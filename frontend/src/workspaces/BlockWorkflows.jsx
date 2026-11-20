@@ -590,6 +590,21 @@ function chartAxes(table, signal) {
   }
 }
 
+// Performance map: the response surface along the first variable, at the best value of the second one
+// (e.g. the best Cp over pitch at every λ). Falls back to the evaluations when there is no surface.
+function mapEnvelope(table) {
+  const [first] = table.variables || [];
+  const source = table.surface?.length ? table.surface : table.rows.filter((r) => r.state === 'succeeded');
+  const better = table.sense === 'minimize' ? (a, b) => a < b : (a, b) => a > b;
+  const best = new Map();
+  for (const r of source) {
+    if (typeof r[first] !== 'number' || typeof r.objective !== 'number') continue;
+    const key = Number(r[first].toPrecision(8));
+    if (!best.has(key) || better(r.objective, best.get(key))) best.set(key, r.objective);
+  }
+  return [...best].map(([x, y]) => ({ x, y })).sort((a, b) => a.x - b.x);
+}
+
 function TableValue({ port, table }) {
   const rows = table.rows.filter((r) => r.state !== 'failed');
   const signals = table.kind === 'time_series' ? Object.keys(rows[0] || {}).filter((k) => k !== 'time_s') : [];
@@ -597,7 +612,7 @@ function TableValue({ port, table }) {
   const axes = chartAxes(table, signals.includes(signal) ? signal : signals[0]);
   const x = axes?.x, y = axes?.y;
   const charted = Boolean(axes && x && y);
-  const points = charted ? rows.filter((r) => typeof r[x] === 'number' && typeof r[y] === 'number').map((r) => ({ x: r[x], y: r[y] })).sort((a, b) => a.x - b.x) : [];
+  const points = !charted ? [] : table.kind === 'performance_map' ? mapEnvelope(table) : rows.filter((r) => typeof r[x] === 'number' && typeof r[y] === 'number').map((r) => ({ x: r[x], y: r[y] })).sort((a, b) => a.x - b.x);
   const reference = charted && axes.reference ? rows.filter((r) => typeof r[x] === 'number' && typeof r[axes.reference] === 'number').map((r) => ({ x: r[x], y: r[axes.reference] })).sort((a, b) => a.x - b.x) : [];
   const lo = points[0]?.x ?? 0, hi = points.at(-1)?.x ?? 1;
   const ticks = niceTicks(lo, hi, 3).filter((t) => t >= lo - 1e-9 && t <= hi + 1e-9);
@@ -609,7 +624,7 @@ function TableValue({ port, table }) {
     {signals.length > 1 && <label className="flex items-center gap-2 text-xs text-nv-muted">Signal
       <select aria-label="Signal" className="h-[28px] rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink" value={signal} onChange={(e) => setSignal(e.target.value)}>
         {signals.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>}
-    {charted && points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`}
+    {charted && points.length > 1 && hi > lo && <LineChart title={`${y}${table.kind === 'performance_map' && table.variables?.length > 1 ? ` (best over ${table.variables[1].split('.').pop()})` : ''} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`}
       series={[{ id: 'y', color: '#FF8533', points, label: reference.length ? y : undefined }, ...(reference.length ? [{ id: 'ref', color: '#4CC9F0', points: reference, dashed: true, label: axes.reference }] : [])]}
       legend={reference.length > 0} height={170}
       xDomain={[lo, hi]} xTicks={ticks.length > 1 ? ticks : [lo, hi]} xLabel={x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : ''} />}
