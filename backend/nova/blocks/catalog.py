@@ -19,7 +19,7 @@ import copy
 from nova.physics.rotors import DEFAULTS
 
 TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade',
-         'attachment', 'modal')
+         'attachment', 'modal', 'layup')
 
 
 def port(name, kind, optional=False, label=None):
@@ -276,6 +276,27 @@ BLOCKS = {
         outputs=[port('table', 'table'), port('values', 'record')],
         defaults={'integration_id': '', 'rpm': None, 'azimuths': 12, 'settle_time_s': 5.0, 'blades': 3}),
     # ------------------------------------------------------------ structural dynamics (no aerodynamics)
+    'blade_layup': dict(
+        family='specific', category='Structural dynamics', label='Blade layup (2-D sections)',
+        description='Blade structure from the connected rotor (chord, twist, airfoil) and a layup: shell, spar caps and shear webs. Thin-walled '
+                    'section properties (mass, EA, principal EI, multi-cell GJ, GA, inertias, centre-of-mass offset, structural twist) feed the '
+                    'modal, Campbell and flexible-performance blocks; the layup feeds the CalculiX shell model.',
+        inputs=[port('spec', 'rotor_spec')],
+        outputs=[port('blade', 'blade'), port('layup', 'layup'), port('table', 'table'), port('values', 'record')],
+        defaults={'airfoil': 'auto', 'stations': 11, 'pitch_axis': 0.25, 'root_cylinder_fraction': 0.0, 'transition_fraction': 0.15,
+                  'root_diameter_m': None, 'tip_mass_kg': 0.0, 'flap_damping_pct': 1.0, 'edge_damping_pct': 1.0,
+                  'shell': {'E_pa': 2.0e10, 'G_pa': 4.0e9, 'density_kg_m3': 1900.0, 'thickness_m': 0.004},
+                  'spar_cap': {'E_pa': 4.0e10, 'G_pa': 4.0e9, 'density_kg_m3': 1950.0, 'thickness_m': 0.02, 'tip_thickness_m': 0.004,
+                               'centre': 0.3, 'width': 0.2},
+                  'webs': [{'E_pa': 1.0e10, 'G_pa': 4.0e9, 'density_kg_m3': 1900.0, 'thickness_m': 0.008, 'position': 0.2},
+                           {'E_pa': 1.0e10, 'G_pa': 4.0e9, 'density_kg_m3': 1900.0, 'thickness_m': 0.008, 'position': 0.4}]}),
+    'calculix_blade_modes': dict(
+        family='specific', category='Structural dynamics', label='Blade shell modes (CalculiX)',
+        description='3-D shell finite-element model of the blade from the layup (S4 shells, webs, clamped root), natural frequencies with the '
+                    'CalculiX executable configured in Settings → Integrations. Connect the beam modes to pair them by frequency.',
+        inputs=[port('layup', 'layup'), port('modal', 'modal', True)],
+        outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'integration_id': '', 'modes': 10, 'span_elements': 30, 'perimeter_points': 48, 'timeout_seconds': 900.0}),
     'point_mass': dict(
         family='specific', category='Structural dynamics', label='Point mass',
         description='Concentrated mass and/or rotary inertia at a position along the blade or tower (0 = clamped end, 1 = free end). '

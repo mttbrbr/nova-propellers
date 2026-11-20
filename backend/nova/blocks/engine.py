@@ -22,7 +22,7 @@ from nova.physics import rotors
 from nova.physics.corrections import corrections_from
 from nova.physics.vawt import METHODS as VAWT_METHODS
 
-from . import economics, optimization, performance, structural
+from . import economics, fem, optimization, performance, structural
 from .catalog import BLOCKS
 from .constraints import evaluate_check, normalise, penalty, report
 from .expressions import ExpressionError, evaluate
@@ -700,11 +700,12 @@ HANDLERS = {
     'tower_modes': structural.tower_modes, 'campbell': structural.campbell,
     'operating_strategy': performance.operating_strategy,
     'annual_energy': economics.annual_energy, 'cost_model': economics.cost_model,
+    'blade_layup': fem.blade_layup,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization,
         'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible,
         'design_optimizer': optimization.design_optimizer, 'pareto_optimizer': optimization.pareto_optimizer,
-        'multi_fidelity': optimization.multi_fidelity}
+        'multi_fidelity': optimization.multi_fidelity, 'calculix_blade_modes': fem.calculix_blade_modes}
 SUBGRAPH = {'design_optimizer', 'pareto_optimizer', 'multi_fidelity'}
 
 
