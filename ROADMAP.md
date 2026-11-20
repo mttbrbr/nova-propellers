@@ -158,7 +158,9 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 - OpenFAST linearisation block (ElastoDyn, aerodynamics off, MBC3) with a mode-by-mode comparison; on the
   AOC 15/50 example the first five coupled modes agree within 2.5 %, the second flap within about 7 %.
 - Campbell chart, animated mode shapes and participation in the block result panel.
-- Mode view with an animated 3-D turbine, opened from the Workflow. Next: a Structural tab in Design.
+- Mode view with an animated 3-D turbine; Structure workspace (blade, hub, nacelle, tower) with structural runs on a
+  chosen aerodynamic run. Next: native aeroelastic time-domain simulation and the full OpenFAST case with a Nova
+  controller (DISCON) for comparison.
 
 ### Phase 2 — Performance curves and operating strategy (done)
 
@@ -203,7 +205,8 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 
 - Qualify the external runs: CalculiX shell modes against the beam, DUST against BEMT/OpenFAST, a real
   OpenModelica FMU.
-- Structural tab in Design; dedicated result views for wind farms and control time series.
+- Native aeroelastic time-domain simulation; OpenFAST with ServoDyn and a Nova DISCON controller; dedicated result
+  views for wind farms and control time series.
 
 ### To decide
 

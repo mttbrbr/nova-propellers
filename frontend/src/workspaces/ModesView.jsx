@@ -17,7 +17,7 @@ function nearest(list, value) {
 }
 
 // Every mode of a modal output as { id, label, frequency(i), damping(i), participation(i), shape(i) } over speed index i.
-function entries(modal) {
+export function entries(modal) {
   const campbell = modal.campbell;
   if (campbell) {
     return campbell.curves.map((c) => ({

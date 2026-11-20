@@ -30,6 +30,7 @@ ring on the render together.
 | Workspace | Contents |
 |---|---|
 | Library | Projects (search, filters, compare, export), airfoils and polars, physical models with maturity and warnings |
+| Structure | Structure of the open version: blade (layup or solid section), and for wind turbines hub, nacelle and tower; structural run on a chosen aerodynamic run: modes, Campbell diagram, deflection, aeroelastic Cp–λ, mode view |
 | Comparisons | Runs from any project overlaid, with a table against a baseline |
 | Studies | Solver comparison, design comparison, parameter sweep |
 | Workflow | Project graph or block workflows with constraints |

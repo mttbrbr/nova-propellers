@@ -78,8 +78,8 @@ def attachment_handler(kind):
 def _rotor(spec):
     """Blade count, radii, operating rpm (None when not fixed) and the blade orientation (twist + pitch) over the span."""
     built, rotor, _ = rotors.build(spec)
-    if built['kind'] != 'hawt':
-        raise StructuralError('Rotor-based structural blocks apply to horizontal-axis wind turbines')
+    if built['kind'] not in ('hawt', 'propeller', 'marine'):
+        raise StructuralError('Rotor-based structural blocks apply to axial rotors (HAWT, air and marine propellers)')
     try:
         rpm = rotors.resolve_operating(built, rotor)[1]
     except ValueError:
@@ -87,7 +87,7 @@ def _rotor(spec):
     tip, hub = float(rotor.tip_radius_m), float(rotor.hub_radius_m)
     fraction = (np.asarray(rotor.radius_m) - hub) / (tip - hub)
     angle = np.asarray(rotor.twist_deg) + float(rotor.pitch_deg)
-    return {'blades': int(rotor.blades), 'tip': tip, 'hub': hub, 'rpm': rpm,
+    return {'kind': built['kind'], 'blades': int(rotor.blades), 'tip': tip, 'hub': hub, 'rpm': rpm,
             'twist': lambda x: np.interp(x, fraction, angle)}
 
 

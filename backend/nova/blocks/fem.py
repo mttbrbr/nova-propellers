@@ -6,7 +6,7 @@ import numpy as np
 
 from nova.adapters import openfast_structure as st
 from nova.physics import rotors
-from nova.physics.section_properties import SectionError, properties
+from nova.physics.section_properties import SectionError, properties, solid_properties
 
 
 class FemError(ValueError):
@@ -45,11 +45,21 @@ def blade_layup(node, args):
     config = node.get('config', {})
     spec = rotors.merged(args['spec'])
     built, rotor, _ = rotors.build(spec)
-    if built['kind'] != 'hawt':
-        raise FemError('The blade layup applies to horizontal-axis rotors')
-    shell = _material(config, 'shell')
-    cap = _material(config, 'spar_cap', ('centre', 'width', 'tip_thickness_m')) if config.get('spar_cap') else None
-    webs = [_material({'w': w}, 'w', ('position',)) for w in config.get('webs') or []]
+    if built['kind'] not in ('hawt', 'propeller', 'marine'):
+        raise FemError('The blade layup applies to axial rotors (HAWT, air and marine propellers)')
+    construction = config.get('construction', 'thin_wall')
+    if construction not in ('thin_wall', 'solid'):
+        raise FemError('construction must be thin_wall or solid')
+    if construction == 'solid':
+        solid = dict(config.get('solid') or {})
+        for key in ('E_pa', 'G_pa', 'density_kg_m3'):
+            if isinstance(solid.get(key), bool) or not isinstance(solid.get(key), (int, float)) or solid[key] <= 0:
+                raise FemError(f'solid.{key} must be a positive number')
+        shell, cap, webs = None, None, []
+    else:
+        shell = _material(config, 'shell')
+        cap = _material(config, 'spar_cap', ('centre', 'width', 'tip_thickness_m')) if config.get('spar_cap') else None
+        webs = [_material({'w': w}, 'w', ('position',)) for w in config.get('webs') or []]
     count = config.get('stations', 11)
     if type(count) is not int or not 3 <= count <= 41:
         raise FemError('stations must be an integer in 3–41')
@@ -72,7 +82,8 @@ def blade_layup(node, args):
         if cap:
             local_cap = {**cap, 'thickness_m': cap['thickness_m'] + x * (cap['tip_thickness_m'] - cap['thickness_m'])}
         try:
-            p = properties(c, code, shell=shell, spar_cap=local_cap, webs=webs, blend=blend)
+            p = solid_properties(c, code, material=solid, blend=blend) if construction == 'solid' else \
+                properties(c, code, shell=shell, spar_cap=local_cap, webs=webs, blend=blend)
         except SectionError as exc:
             raise FemError(f'Station {x:.2f}: {exc}') from exc
         aero = float(np.interp(r, radius, twist))
@@ -91,11 +102,13 @@ def blade_layup(node, args):
         raise FemError(str(exc)) from exc
     x = np.array([s['fraction'] for s in sections])
     mass = float(np.trapezoid([s['mass_kg_m'] for s in sections], x) * length)
-    layup = {'kind': 'layup', 'airfoil': code, 'length_m': length, 'hub_radius_m': hub, 'pitch_axis': pitch_axis, 'shell': shell,
+    layup = {'kind': 'layup', 'construction': construction, 'airfoil': code, 'length_m': length, 'hub_radius_m': hub, 'pitch_axis': pitch_axis, 'shell': shell,
              'spar_cap': cap, 'webs': webs, 'stations': layup_stations, 'blades': int(rotor.blades)}
-    notes = [f'Thin-walled sections (NACA {code}, smeared isotropic layers): E-weighted centroid and principal bending stiffnesses, '
-             'multi-cell Bredt–Batho torsion with the webs, shear stiffness without correction factor; structural twist = aerodynamic '
-             'twist + principal-axis angle. Laminate couplings and warping are not modelled']
+    notes = [f'Solid homogeneous sections (NACA {code}): polygon area properties, Saint-Venant torsion J ≈ A⁴/(4π² Ip), shear 5/6 G A; '
+             'structural twist = aerodynamic twist + principal-axis angle'] if construction == 'solid' else \
+        [f'Thin-walled sections (NACA {code}, smeared isotropic layers): E-weighted centroid and principal bending stiffnesses, '
+         'multi-cell Bredt–Batho torsion with the webs, shear stiffness without correction factor; structural twist = aerodynamic '
+         'twist + principal-axis angle. Laminate couplings and warping are not modelled']
     if root_cylinder or transition and root_diameter is not None:
         notes.append(f'Circular root to {root_cylinder:g} of the span, blended into the airfoil over {transition:g}')
     return {'blade': blade, 'layup': layup, 'table': {'kind': 'sections', 'rows': sections},

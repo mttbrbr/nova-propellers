@@ -10,7 +10,8 @@ from database import connect
 from nova.core.data import canonical_json, content_hash
 from nova.core.geometry_assets import geometry_definition, geometry_hash
 
-KINDS = {'project', 'asset', 'workflow', 'run', 'integration', 'simulation', 'geometry', 'run_link', 'block_workflow'}
+KINDS = {'project', 'asset', 'workflow', 'run', 'integration', 'simulation', 'geometry', 'run_link', 'block_workflow',
+         'structure', 'structure_run'}
 
 
 def now():
@@ -106,7 +107,7 @@ def save(kind, document, id=None, expected_revision=None, new_asset=None, base_v
                 document = {**document, 'version': document.get('version') if _parse_version(document.get('version')) else next_version(db, document['project_id'], base_version)}
         if row and kind == 'run' and json.loads(row['document']).get('state') in ('succeeded', 'failed', 'cancelled', 'interrupted'):
             raise ValueError('Completed runs are immutable')
-        if row and kind in ('asset', 'geometry', 'run_link'):
+        if row and kind in ('asset', 'geometry', 'run_link', 'structure_run'):
             raise ValueError('Assets and geometry revisions are immutable')
         if expected_revision is not None and (row['revision'] if row else 0) != expected_revision:
             raise ValueError('Revision conflict; reload before saving')

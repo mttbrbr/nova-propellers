@@ -6,6 +6,10 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- *Structure* workspace: structural data of the open version kept apart from the aerodynamics (blade layup or
+  solid section; hub, nacelle and tower for wind turbines), structural run on a chosen aerodynamic run with
+  sections, modes, Campbell diagram, deflection, aeroelastic Cp–λ, 3-D turbine and mode view. API under
+  `/api/v2/simulations/{id}/structure`.
 - Steady aeroelastic Cp–λ: the BEMT runs on the deformed blade (cone, in-plane radius, elastic twist about the
   elastic axis) and is iterated with the rotating 3-D beam; default model of *Cp–λ flexible & sheared*.
   Checked against OpenFAST AeroDyn + ElastoDyn. Blade structures accept `elastic_axis_offset_m`, filled by

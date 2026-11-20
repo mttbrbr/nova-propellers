@@ -47,6 +47,7 @@ from nova.transport.external_case_api import router as external_case_router
 from nova.transport.mixed_api import router as mixed_router
 from nova.transport.rotor_api import router as rotor_router
 from nova.transport.simulation_api import router as simulation_router
+from nova.transport.structure_api import router as structure_router
 
 
 class AirfoilCreate(BaseModel):
@@ -440,6 +441,7 @@ def saved_project_stl(run_id: int) -> Response:
 
 
 app.include_router(nova_router)
+app.include_router(structure_router)
 app.include_router(external_router)
 app.include_router(external_archive_router)
 app.include_router(external_case_router)

@@ -3,6 +3,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { api, apiFetch as fetch, download } from './backend.js';
 import EngineeringWorkspace from './workspaces/EngineeringWorkspace.jsx';
 import StudiesWorkspace from './workspaces/StudiesWorkspace.jsx';
+import StructureWorkspace from './workspaces/StructureWorkspace.jsx';
 import { toggleFullscreen } from './lib/fullscreen.js';
 import SettingsWorkspace from './workspaces/SettingsWorkspace.jsx';
 import IntegrationsWorkspace from './workspaces/IntegrationsWorkspace.jsx';
@@ -638,6 +639,7 @@ function App() {
     workbench.current?.openRun(record); go('results');
   })} />;
   else if (phase === 'workflow') body = <BlockWorkflows seed={blockSeed} onOpenSettings={() => go('settings')} />;
+  else if (phase === 'structure') body = <StructureWorkspace context={workspaceContext} />;
   else if (phase === 'studies') body = <StudiesWorkspace projectId={activeProjectId} projectControls={workbench} methods={computationalMethods} studyRequest={studyRequest}
     onOpenSource={(record) => { workbench.current?.openProjectById(record.project_id, record.simulation_id); go('analysis'); }}
     configurationBusy={busy || workspaceContext?.busy || !workspaceContext?.ready} selectedRun={selectedStudyRun} activeStudy={studyExecution} onExecutionChange={trackStudyExecution}

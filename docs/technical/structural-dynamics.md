@@ -218,6 +218,26 @@ Checks (`backend/tests/test_coupled.py`):
 - at standstill with very stiff blades the tower modes equal those of the tower carrying the rotor as
   a rigid body (0.2 %).
 
+### Structure workspace
+
+The *Structure* workspace (left rail) holds the structure of the open project version, apart from its
+aerodynamic specification: the aerodynamic geometry is read from Design and never changed here. Its sheet
+adapts to the rotor family:
+
+- **Blade** (every axial rotor): thin-walled layup (shell, spar caps tapering from root to tip, webs,
+  circular root) or a solid section (moulded or machined propellers: polygon area properties,
+  Saint-Venant torsion $J \approx A^4/(4\pi^2 I_p)$, shear $\tfrac56 GA$), or a station table;
+- **Hub & nacelle** and **Tower** (wind turbines only); values start empty and incomplete parts are left
+  out of the analysis;
+- **Analysis**: which aerodynamic run of the version to use (when several solvers were run) and the
+  Campbell speed range.
+
+*Run structure* stores an immutable structural run with the section properties, clamped and rotating
+blade modes, the Campbell diagram (rotor–tower coupled when tower and nacelle are given and the rotor has
+three or more blades), tower modes, the deflection under the chosen run's spanwise loads and, for wind
+turbines, the steady aeroelastic operating point and Cp–λ curve. Air propellers designed with the native
+pipeline do not yet provide a rotor specification to this workspace.
+
 ### Mode view
 
 Every block with a modal result shows a *Modes* button (on the node, in the result card and in the run

@@ -188,3 +188,39 @@ def _torsion(upper, lower, webs, walls):
     q = np.linalg.solve(delta, 2 * areas)
     GJ = float(np.sum(2 * areas * q))
     return GJ, [{'area_m2': float(a), 'shear_flow_per_twist': float(v)} for a, v in zip(areas, q)]
+
+
+def solid_properties(chord, code='4412', *, material, blend=1.0, points=120):
+    """Properties of a solid (moulded or machined) homogeneous section filling the outline.
+
+    Area, centroid and second moments from the polygon (Green's theorem); torsion constant from Saint-Venant's
+    approximation J ≈ A⁴ / (4π² I_p), exact for an ellipse; shear stiffness κ G A with κ = 5/6."""
+    if chord <= 0:
+        raise SectionError('Chord must be positive')
+    for key in ('E_pa', 'G_pa', 'density_kg_m3'):
+        if not isinstance(material.get(key), (int, float)) or material[key] <= 0:
+            raise SectionError(f'solid material: {key} must be positive')
+    upper, lower = outline(code, blend, points)
+    polygon = np.vstack([upper, lower[::-1][1:-1]]) * chord
+    x, y = polygon[:, 0], polygon[:, 1]
+    if (x * np.roll(y, -1) - np.roll(x, -1) * y).sum() < 0:  # make the outline counter-clockwise
+        x, y = x[::-1].copy(), y[::-1].copy()
+    xn, yn = np.roll(x, -1), np.roll(y, -1)
+    cross = x * yn - xn * y
+    A = cross.sum() / 2
+    cy = ((x + xn) * cross).sum() / (6 * A)
+    cz = ((y + yn) * cross).sum() / (6 * A)
+    Izz = ((y * y + y * yn + yn * yn) * cross).sum() / 12 - A * cz * cz   # about the chord-parallel centroidal axis
+    Iyy = ((x * x + x * xn + xn * xn) * cross).sum() / 12 - A * cy * cy
+    Iyz = ((x * yn + 2 * x * y + 2 * xn * yn + xn * y) * cross).sum() / 24 - A * cy * cz
+    E, G, rho = material['E_pa'], material['G_pa'], material['density_kg_m3']
+    principal = 0.5 * math.atan2(-2 * Iyz, Iyy - Izz)
+    mean, half = (Iyy + Izz) / 2, math.hypot((Iyy - Izz) / 2, Iyz)
+    Ip = Iyy + Izz
+    J = A**4 / (4 * math.pi**2 * Ip)
+    return {'mass_kg_m': rho * A, 'EA_n': E * A, 'EI_flap_nm2': E * (mean - half), 'EI_edge_nm2': E * (mean + half),
+            'principal_angle_deg': math.degrees(principal), 'EI_chord_normal_nm2': E * Izz, 'EI_chordwise_nm2': E * Iyy,
+            'GJ_nm2': G * J, 'cells': [], 'GA_edge_n': 5 / 6 * G * A, 'GA_flap_n': 5 / 6 * G * A,
+            'elastic_centre_m': (float(cy), float(cz)), 'mass_centre_m': (float(cy), float(cz)),
+            'torsional_inertia_kg_m': rho * Ip, 'flap_inertia_kg_m': rho * Izz, 'edge_inertia_kg_m': rho * Iyy,
+            'cm_offset_m': 0.0, 'area_enclosed_m2': float(A)}
