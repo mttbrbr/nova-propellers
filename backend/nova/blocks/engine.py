@@ -22,7 +22,7 @@ from nova.physics import rotors
 from nova.physics.corrections import corrections_from
 from nova.physics.vawt import METHODS as VAWT_METHODS
 
-from . import economics, farm, fem, optimization, performance, structural
+from . import control, economics, farm, fem, optimization, performance, structural
 from .catalog import BLOCKS
 from .constraints import evaluate_check, normalise, penalty, report
 from .expressions import ExpressionError, evaluate
@@ -702,12 +702,18 @@ HANDLERS = {
     'annual_energy': economics.annual_energy, 'cost_model': economics.cost_model,
     'blade_layup': fem.blade_layup,
     'farm_turbine': farm.farm_turbine, 'farm_layout': farm.farm_layout, 'wind_climate': farm.wind_climate,
+    'control_source': control.element_block('source', control.SOURCE_KEYS), 'pid_controller': control.element_block('pid', control.PID_KEYS),
+    'pitch_schedule': control.element_block('lookup', control.LOOKUP_KEYS),
+    'transfer_function': control.element_block('transfer_function', control.TF_KEYS),
+    'state_space': control.element_block('state_space', control.SS_KEYS), 'fmu_model': control.element_block('fmu', control.FMU_KEYS),
+    'torque_law': control.torque_law,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization,
         'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible,
         'design_optimizer': optimization.design_optimizer, 'pareto_optimizer': optimization.pareto_optimizer,
         'multi_fidelity': optimization.multi_fidelity, 'calculix_blade_modes': fem.calculix_blade_modes,
-        'wind_farm': farm.wind_farm, 'dust_rotor': farm.dust_rotor}
+        'wind_farm': farm.wind_farm, 'dust_rotor': farm.dust_rotor,
+        'rotor_dynamics': control.rotor_dynamics, 'control_simulation': control.control_simulation}
 SUBGRAPH = {'design_optimizer', 'pareto_optimizer', 'multi_fidelity'}
 
 

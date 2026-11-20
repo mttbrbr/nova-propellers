@@ -19,7 +19,7 @@ import copy
 from nova.physics.rotors import DEFAULTS
 
 TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade',
-         'attachment', 'modal', 'layup', 'farm_turbine', 'farm_layout', 'wind_climate')
+         'attachment', 'modal', 'layup', 'farm_turbine', 'farm_layout', 'wind_climate', 'dynamics')
 
 
 def port(name, kind, optional=False, label=None):
@@ -379,6 +379,66 @@ BLOCKS = {
         defaults={'rpm_min': 0.0, 'rpm_max': None, 'points': 31, 'operating_rpm': None, 'flap_modes': 2, 'edge_modes': 1,
                   'torsion_modes': 0, 'tower_modes': 2, 'tower_torsion_modes': 0, 'harmonics': [], 'use_aerodynamic_twist': True,
                   'top_mass_kg': None, 'top_inertia_kg_m2': 0.0, 'coupling': 'none'}),
+    # ------------------------------------------------------------ control and co-simulation
+    'control_source': dict(
+        family='general', category='Control', label='Signal source',
+        description='Writes a named signal: constant, step, ramp, sine or time table (e.g. a wind-speed history). Control blocks chain '
+                    'through their dynamics port; signals connect them by name.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'output': 'wind_speed', 'kind': 'step', 'value': 8.0, 'amplitude': 2.0, 'time': 10.0, 'end_time': None,
+                  'frequency_hz': 0.1, 'phase': 0.0, 'times': [], 'values': []}),
+    'pid_controller': dict(
+        family='general', category='Control', label='PI / PID controller',
+        description='u = offset + g·(kp e + ki ∫e + kd ė) with e = setpoint − measurement (or reversed), output limits with anti-windup, '
+                    'derivative filter and an optional gain-scheduling signal g. Setpoint is a number or a signal name.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'output': 'pitch', 'measurement': 'rotor_speed', 'setpoint': 10.0, 'kp': 1.0, 'ki': 0.1, 'kd': 0.0,
+                  'derivative_filter_s': 0.0, 'min': 0.0, 'max': 30.0, 'gain_signal': None, 'reverse': True, 'offset': 0.0}),
+    'torque_law': dict(
+        family='specific', category='Control', label='Torque law kω²',
+        description='Generator torque on the low-speed shaft T = k ω² from a speed signal, capped at rated torque; k from the connected '
+                    'rotor\'s Cp_max and λ_opt when empty.',
+        inputs=[port('dynamics', 'dynamics', True), port('spec', 'rotor_spec', True)], outputs=[port('dynamics', 'dynamics'), port('values', 'record')],
+        defaults={'input': 'rotor_speed', 'output': 'gen_torque', 'k': None, 'rated_torque_nm': None}),
+    'pitch_schedule': dict(
+        family='general', category='Control', label='Schedule / lookup',
+        description='Piecewise-linear table from one named signal to another: pitch against wind speed, controller gain against pitch '
+                    '(gain scheduling), or any static map.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'input': 'pitch', 'output': 'pitch_gain', 'breakpoints': [0.0, 10.0, 20.0, 30.0], 'values': [1.0, 0.6, 0.4, 0.3]}),
+    'transfer_function': dict(
+        family='general', category='Control', label='Transfer function',
+        description='Continuous SISO transfer function (numerator and denominator coefficients in s, highest power first) between two '
+                    'named signals, discretised with the bilinear transform.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'input': 'u', 'output': 'y', 'numerator': [1.0], 'denominator': [1.0, 1.0]}),
+    'state_space': dict(
+        family='general', category='Control', label='State space',
+        description='Continuous model ẋ = Ax + Bu, y = Cx + Du with named input and output signals, discretised with the bilinear transform.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'inputs': ['u'], 'outputs': ['y'], 'A': [[-1.0]], 'B': [[1.0]], 'C': [[1.0]], 'D': [[0.0]], 'initial_state': None}),
+    'fmu_model': dict(
+        family='general', category='Control', label='FMU (co-simulation)',
+        description='FMI 2.0 co-simulation FMU (e.g. exported from OpenModelica) stepped with the simulation; maps Nova signal names to '
+                    'FMU inputs and outputs and sets parameters. Needs the optional FMPy package.',
+        inputs=[port('dynamics', 'dynamics', True)], outputs=[port('dynamics', 'dynamics')],
+        defaults={'path': '', 'inputs': {}, 'outputs': {}, 'parameters': {}}),
+    'rotor_dynamics': dict(
+        family='specific', category='Control', label='Rotor–drivetrain plant',
+        description='One-degree-of-freedom rotor and drivetrain: aerodynamic torque and thrust from a Cp(λ, β), C_T(λ, β) table computed '
+                    'with Nova\'s BEMT, generator torque through the gearbox. Signal names are configurable.',
+        inputs=[port('dynamics', 'dynamics', True), port('spec', 'rotor_spec'), port('blade', 'blade', True), port('hub', 'hub', True)],
+        outputs=[port('dynamics', 'dynamics'), port('values', 'record')],
+        defaults={'inertia_kg_m2': None, 'generator_inertia_kg_m2': 0.0, 'gearbox_ratio': 1.0, 'generator_efficiency': 1.0,
+                  'friction_nms': 0.0, 'initial_rpm': None, 'tsr_grid': None, 'pitch_grid': None, 'substeps': 4, 'wind': 'wind_speed',
+                  'generator_torque': 'gen_torque', 'pitch': 'pitch', 'speed': 'rotor_speed', 'aero_torque': 'aero_torque',
+                  'power': 'power', 'thrust': 'thrust', 'tsr': 'tsr'}),
+    'control_simulation': dict(
+        family='general', category='Control', label='Control simulation',
+        description='Time-domain simulation of the chained control elements: recorded signals as a time series and, for every signal, '
+                    'final, mean, minimum, maximum and standard deviation (from statistics_from_s) for constraints and reports.',
+        inputs=[port('dynamics', 'dynamics')], outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'duration_s': 60.0, 'dt_s': 0.01, 'initial': {}, 'record': [], 'statistics_from_s': 0.0}),
 }
 
 
