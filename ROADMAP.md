@@ -150,9 +150,11 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 
 ### Phase 1 — Structural dynamics (in progress)
 
-- Done: clamped and rotating blade modes, tower modes, Campbell diagram with MAC mode tracking,
-  1P/BP/2BP margins and crossings, point masses, springs and dampers with damped modes, template
-  `structural_campbell`. See `docs/technical/structural-dynamics.md`.
+- Done: 3-D coupled Timoshenko beam (spectral elements); clamped and rotating blade modes, tower
+  modes, Campbell diagram with MAC mode tracking, 1P/BP/2BP margins and crossings, point masses,
+  springs and dampers with damped modes, template `structural_campbell`. See
+  `docs/technical/structural-dynamics.md`.
+- Open: rotor–tower coupled Campbell diagram (multi-blade coordinates).
 - Open: Campbell chart and animated mode shapes in the 3-D view (mock-up first); OpenFAST
   linearisation block (ElastoDyn, aerodynamics off, MBC3) to verify the in-house Campbell diagram;
   refreshed README screenshots.

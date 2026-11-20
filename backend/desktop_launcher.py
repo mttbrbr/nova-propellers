@@ -10,6 +10,11 @@ from pathlib import Path
 
 import uvicorn
 
+# Nova's matrices are small: BLAS threads cost more than they save and load every core.
+# Set before numpy is imported (main, workers); the environment can still override it.
+for _variable in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_variable, "1")
+
 LOOPBACK_HOST = "127.0.0.1"
 ENDPOINT_PREFIX = "NOVA_BACKEND_ENDPOINT="
 

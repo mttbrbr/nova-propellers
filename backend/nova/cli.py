@@ -1,9 +1,13 @@
 """Headless workflow validation/execution: python -m nova.cli."""
 import argparse
 import json
+import os
 from pathlib import Path
 
-from nova.workflow.engine import execute, validate
+for _variable in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):  # small matrices: one BLAS thread
+    os.environ.setdefault(_variable, '1')
+
+from nova.workflow.engine import execute, validate  # noqa: E402
 
 
 def main():

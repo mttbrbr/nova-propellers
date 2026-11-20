@@ -20,7 +20,7 @@ function optionsFor(key, catalog, rotors) {
     operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
     method: ['auto', 'bemt', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
-    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
+    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
   };
   if (key === 'preset' && map.preset) return map.preset;
   return map[key] || null;
@@ -29,8 +29,18 @@ const stationColumns = {
   'Blade structure': ['span_fraction', 'mass_per_length_kg_m', 'flap_stiffness_nm2', 'edge_stiffness_nm2'],
   Tower: ['height_fraction', 'mass_per_length_kg_m', 'fore_aft_stiffness_nm2', 'side_side_stiffness_nm2'],
 };
+// Optional columns read by the 3-D beam of the structural-dynamics blocks (ElastoDyn ignores them).
+const optionalColumns = {
+  'Blade structure': ['structural_twist_deg', 'axial_stiffness_n', 'torsional_stiffness_nm2', 'edge_shear_stiffness_n', 'flap_shear_stiffness_n',
+    'torsional_inertia_kg_m', 'flap_inertia_kg_m', 'edge_inertia_kg_m', 'cm_offset_m'],
+  Tower: ['axial_stiffness_n', 'torsional_stiffness_nm2', 'side_side_shear_stiffness_n', 'fore_aft_shear_stiffness_n', 'torsional_inertia_kg_m',
+    'fore_aft_inertia_kg_m', 'side_side_inertia_kg_m'],
+};
 const columnLabel = { span_fraction: 'r/L', height_fraction: 'h/H', mass_per_length_kg_m: 'kg/m', flap_stiffness_nm2: 'EI flap', edge_stiffness_nm2: 'EI edge',
-  fore_aft_stiffness_nm2: 'EI fa', side_side_stiffness_nm2: 'EI ss' };
+  fore_aft_stiffness_nm2: 'EI fa', side_side_stiffness_nm2: 'EI ss', structural_twist_deg: 'twist °', axial_stiffness_n: 'EA', torsional_stiffness_nm2: 'GJ',
+  edge_shear_stiffness_n: 'GA edge', flap_shear_stiffness_n: 'GA flap', side_side_shear_stiffness_n: 'GA ss', fore_aft_shear_stiffness_n: 'GA fa',
+  torsional_inertia_kg_m: 'I tors', flap_inertia_kg_m: 'I flap', edge_inertia_kg_m: 'I edge', fore_aft_inertia_kg_m: 'I fa', side_side_inertia_kg_m: 'I ss',
+  cm_offset_m: 'cm off' };
 const tubularOnly = ['base_diameter_m', 'top_diameter_m', 'wall_thickness_m', 'youngs_modulus_pa', 'density_kg_m3'];
 const BlockKind = createContext('');
 const rowTemplates = {
@@ -452,8 +462,11 @@ function IntegrationField({ value, onChange }) {
 }
 
 // Compact grid for lists of flat numeric rows (blade and tower stations); accepts pasted spreadsheet columns.
-function NumberTable({ name, value, columns, onChange }) {
+function NumberTable({ name, value, columns, optional = [], onChange }) {
   const keys = value.length ? Object.keys(value[0]) : columns;
+  const addable = optional.filter((k) => !keys.includes(k));
+  const addColumn = (key) => onChange(value.map((row) => ({ ...row, [key]: null })));
+  const removeColumn = (key) => onChange(value.map(({ [key]: _, ...row }) => row));
   const parse = (text) => text.trim().split(/\r?\n/).map((line) => line.trim().split(/[\t;,\s]+/).map(Number)).filter((row) => row.length === keys.length && row.every(Number.isFinite));
   const set = (index, key, text) => {
     const number = Number(text.trim());
@@ -465,22 +478,25 @@ function NumberTable({ name, value, columns, onChange }) {
       if (rows.length) { e.preventDefault(); onChange(rows.map((r) => Object.fromEntries(keys.map((k, i) => [k, r[i]])))); }
     }}>
       <div className="grid gap-1 text-[11px] text-nv-muted" style={{ gridTemplateColumns: `repeat(${keys.length}, minmax(0, 1fr)) 20px` }}>
-        {keys.map((k) => <span key={k} title={k} className="truncate">{columnLabel[k] || k}</span>)}<span /></div>
+        {keys.map((k) => <span key={k} title={k} className="flex min-w-0 items-center gap-0.5"><span className="truncate">{columnLabel[k] || k}</span>
+          {optional.includes(k) && <button type="button" aria-label={`Remove column ${k}`} className="text-nv-err-ink" onClick={() => removeColumn(k)}>×</button>}</span>)}<span /></div>
       {value.map((row, index) => <div key={index} className="grid gap-1" style={{ gridTemplateColumns: `repeat(${keys.length}, minmax(0, 1fr)) 20px` }}>
         {keys.map((k) => <input key={`${k}-${row[k]}`} aria-label={`${name} ${index + 1} ${k}`} className="h-7 min-w-0 rounded border border-nv-edge bg-nv-chrome px-1 font-mono text-[11px] text-nv-ink focus:border-nv-accent focus:outline-none"
-          inputMode="decimal" defaultValue={row[k]} onBlur={(e) => { set(index, k, e.target.value); e.target.value = String(row[k]); }} />)}
+          inputMode="decimal" defaultValue={row[k] ?? ''} placeholder={row[k] == null ? '—' : undefined} onBlur={(e) => { set(index, k, e.target.value); e.target.value = row[k] == null ? '' : String(row[k]); }} />)}
         <button type="button" aria-label={`Remove ${name} row ${index + 1}`} className="text-nv-err-ink" onClick={() => onChange(value.filter((_, i) => i !== index))}>×</button></div>)}
     </div>
     <div className="flex items-center gap-3">
       <button type="button" className="text-xs text-nv-reference hover:text-nv-ink" onClick={() => onChange([...value, value.length ? { ...value.at(-1) } : Object.fromEntries(keys.map((k) => [k, 0]))])}>+ Add row</button>
-      <span className="text-xs text-nv-muted">or paste {keys.length} columns from a spreadsheet</span></div>
+      <span className="text-xs text-nv-muted">or paste {keys.length} columns from a spreadsheet</span>
+      {addable.length > 0 && <select aria-label="Add column" className={`${fieldClass} ml-auto w-auto`} value="" onChange={(e) => e.target.value && addColumn(e.target.value)}>
+        <option value="">+ Column (3-D beam)…</option>{addable.map((k) => <option key={k} value={k} className="bg-nv-panel">{columnLabel[k]} · {k.replaceAll('_', ' ')}</option>)}</select>}</div>
   </Disclosure>;
 }
 
 function ConfigField({ name, value, onChange, catalog, rotors, path }) {
   const kind = useContext(BlockKind);
   const label = name.replaceAll('_', ' ');
-  if (name === 'stations' && Array.isArray(value) && stationColumns[kind]) return <NumberTable name={name} value={value} columns={stationColumns[kind]} onChange={onChange} />;
+  if (name === 'stations' && Array.isArray(value) && stationColumns[kind]) return <NumberTable name={name} value={value} columns={stationColumns[kind]} optional={optionalColumns[kind]} onChange={onChange} />;
   if (name === 'integration_id') return <IntegrationField value={value} onChange={onChange} />;
   if (name === 'bindings') return <BindingsEditor value={value || {}} onChange={onChange} />;
   if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {

@@ -6,15 +6,19 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
-- Structural-dynamics blocks without aerodynamics: *Blade modes (clamped)*,
-  *Blade modes (rotating)* with centrifugal stiffening and edgewise spin
-  softening, *Tower modes* with the rotor and nacelle mass at the top, and
-  *Campbell diagram* with 1P/BP/2BP excitation lines, crossings, MAC mode
-  tracking and the smallest excitation margin at the operating speed. *Point
-  mass* and *Spring & damper* blocks chain onto them; with dampers the damped
-  frequencies and damping ratios come from the state-space eigenproblem.
-  Template `structural_campbell`; the first flap frequency of a rotating uniform
-  beam reproduces Wright et al. (1982).
+- Structural-dynamics blocks without aerodynamics on a 3-D coupled beam (Timoshenko,
+  six degrees of freedom per node, spectral elements as in BeamDyn): *Blade modes
+  (clamped)*, *Blade modes (rotating)* with centrifugal stiffening, spin softening,
+  Coriolis and propeller-moment terms, *Tower modes* with the nacelle and parked
+  rotor as rigid bodies at the top, and *Campbell diagram* with 1P/BP/2BP lines,
+  crossings, MAC mode tracking and the smallest excitation margin at the operating
+  speed. Flap, edge, torsion and axial modes are coupled through structural twist
+  (aerodynamic twist by default) and centre-of-mass offset. *Point mass* and
+  *Spring & damper* blocks chain onto them. *Blade structure* and table *Tower*
+  accept optional columns (EA, GJ, GA, rotary inertias, twist, offset); tubular
+  towers derive them from the material. Template `structural_campbell`.
+- BLAS libraries run on one thread in the desktop backend, CLI and Docker image:
+  at Nova's matrix sizes extra threads only slow the solution and load every core.
 - Flexible OpenFAST models from blocks: *Hub*, *Nacelle & shaft*, *Tower* (tubular
   or table) and *Blade structure* blocks feed *OpenFAST case from rotor*, which
   then writes a full ElastoDyn case at prescribed rotor speed. Mode shapes are

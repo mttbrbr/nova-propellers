@@ -20,6 +20,16 @@ LIMITS = {'mass_kg': (0.0, 1e8), 'inertia_kg_m2': (0.0, 1e12), 'yaw_inertia_kg_m
           'wall_thickness_m': (1e-4, 5.0), 'youngs_modulus_pa': (1e8, 1e12), 'density_kg_m3': (100.0, 2e4),
           'damping_pct': (0.0, 20.0), 'tip_mass_kg': (0.0, 1e6), 'flap_damping_pct': (0.0, 20.0), 'edge_damping_pct': (0.0, 20.0)}
 MINIMUM_STATIONS = 2
+# Optional per-station columns used by the 3-D beam of the structural-dynamics blocks (ElastoDyn ignores them).
+# name → may be zero or negative? Stiffnesses must be positive, inertias non-negative, twist and offsets free.
+BLADE_OPTIONAL = {'structural_twist_deg': 'free', 'axial_stiffness_n': 'positive', 'torsional_stiffness_nm2': 'positive',
+                  'edge_shear_stiffness_n': 'positive', 'flap_shear_stiffness_n': 'positive', 'torsional_inertia_kg_m': 'non_negative',
+                  'flap_inertia_kg_m': 'non_negative', 'edge_inertia_kg_m': 'non_negative', 'cm_offset_m': 'free'}
+TOWER_OPTIONAL = {'axial_stiffness_n': 'positive', 'torsional_stiffness_nm2': 'positive', 'side_side_shear_stiffness_n': 'positive',
+                  'fore_aft_shear_stiffness_n': 'positive', 'torsional_inertia_kg_m': 'non_negative',
+                  'fore_aft_inertia_kg_m': 'non_negative', 'side_side_inertia_kg_m': 'non_negative'}
+POISSON = 0.3
+TUBE_SHEAR_FACTOR = 0.5  # thin circular tube
 
 
 class StructureError(ValueError):
@@ -106,6 +116,39 @@ def _table(config, key, fields, problems, label):
     return out
 
 
+def _optional_columns(config, key, fields, optional, problems):
+    rows = config.get(key) or []
+    if not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
+        return {}
+    unknown = sorted({k for r in rows for k in r} - set(fields) - set(optional))
+    if unknown:
+        problems.append(f'{key}: unsupported columns {", ".join(unknown)}')
+        return {}
+    out = {}
+    for name, rule in optional.items():
+        present = [name in r and r[name] is not None for r in rows]
+        if not any(present):
+            continue
+        if not all(present):
+            problems.append(f'{key}: column {name} must be given at every station or at none')
+            continue
+        values = []
+        for i, r in enumerate(rows):
+            v = r[name]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                problems.append(f'{key}[{i + 1}].{name} must be a finite number')
+                break
+            if (rule == 'positive' and v <= 0) or (rule == 'non_negative' and v < 0):
+                problems.append(f'{key}[{i + 1}].{name} must be {"positive" if rule == "positive" else "zero or positive"}')
+                break
+            values.append(float(v))
+        else:
+            out[name] = values
+    if 'torsional_stiffness_nm2' in out and 'torsional_inertia_kg_m' not in out:
+        problems.append(f'{key}: torsional_stiffness_nm2 needs torsional_inertia_kg_m as well')
+    return out
+
+
 def tower_record(config):
     problems = []
     _unknown('Tower', config, TOWER, problems)
@@ -126,19 +169,30 @@ def tower_record(config):
         if base and top and wall and (2 * wall >= min(base, top)):
             problems.append('wall_thickness_m must be less than half of the smallest diameter')
         _finish('Tower', problems)
-        rows = []
+        rows, extended = [], {k: [] for k in TOWER_OPTIONAL}
+        shear = young / (2 * (1 + POISSON))
         for i in range(11):
             x = i / 10
             d = base + (top - base) * x
             area = math.pi / 4 * (d**2 - (d - 2 * wall) ** 2)
             inertia = math.pi / 64 * (d**4 - (d - 2 * wall) ** 4)
             rows.append([x, density * area, young * inertia, young * inertia])
+            for name, value in (('axial_stiffness_n', young * area), ('torsional_stiffness_nm2', shear * 2 * inertia),
+                                ('side_side_shear_stiffness_n', TUBE_SHEAR_FACTOR * shear * area),
+                                ('fore_aft_shear_stiffness_n', TUBE_SHEAR_FACTOR * shear * area),
+                                ('torsional_inertia_kg_m', density * 2 * inertia), ('fore_aft_inertia_kg_m', density * inertia),
+                                ('side_side_inertia_kg_m', density * inertia)):
+                extended[name].append(value)
         record['stations'] = rows
+        record['extended'] = extended
         record['material'] = {'youngs_modulus_pa': young, 'density_kg_m3': density}
     elif shape == 'table':
-        rows = _table(config, 'stations', ('height_fraction', 'mass_per_length_kg_m', 'fore_aft_stiffness_nm2', 'side_side_stiffness_nm2'), problems, 'Tower')
+        fields = ('height_fraction', 'mass_per_length_kg_m', 'fore_aft_stiffness_nm2', 'side_side_stiffness_nm2')
+        rows = _table(config, 'stations', fields, problems, 'Tower')
+        extended = _optional_columns(config, 'stations', fields, TOWER_OPTIONAL, problems)
         _finish('Tower', problems)
         record['stations'] = rows
+        record['extended'] = extended
     _finish('Tower', problems)
     return record
 
@@ -146,8 +200,11 @@ def tower_record(config):
 def blade_record(config):
     problems = []
     _unknown('Blade structure', config, BLADE, problems)
-    rows = _table(config, 'stations', ('span_fraction', 'mass_per_length_kg_m', 'flap_stiffness_nm2', 'edge_stiffness_nm2'), problems, 'Blade structure')
-    record = {'kind': 'blade', 'stations': rows, 'tip_mass_kg': _value(config, 'tip_mass_kg', 'Blade structure', problems, False) or 0.0}
+    fields = ('span_fraction', 'mass_per_length_kg_m', 'flap_stiffness_nm2', 'edge_stiffness_nm2')
+    rows = _table(config, 'stations', fields, problems, 'Blade structure')
+    extended = _optional_columns(config, 'stations', fields, BLADE_OPTIONAL, problems)
+    record = {'kind': 'blade', 'stations': rows, 'extended': extended,
+              'tip_mass_kg': _value(config, 'tip_mass_kg', 'Blade structure', problems, False) or 0.0}
     for key in ('flap_damping_pct', 'edge_damping_pct'):
         v = _value(config, key, 'Blade structure', problems, False)
         record[key] = BLADE[key] if v is None else v

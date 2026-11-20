@@ -1,7 +1,8 @@
 """Structural-dynamics blocks: attachments, blade and tower modes, Campbell diagram (no aerodynamics).
 
-Attachment blocks chain: each takes the list built upstream and appends its own item, so any number of
-point masses, springs and dampers reach the modal blocks through one optional input.
+All modal blocks use the 3-D coupled beam of ``nova.physics.modal``. Attachment blocks chain: each takes
+the list built upstream and appends its own item, so any number of point masses, springs and dampers
+reach the modal blocks through one optional input.
 """
 import math
 
@@ -10,8 +11,11 @@ import numpy as np
 from nova.physics import modal, rotors
 
 TARGETS = ('blade', 'tower')
-DIRECTIONS = ('both', 'flap', 'edge', 'fore_aft', 'side_side')
+DIRECTIONS = ('both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial')
+BLADE_ONLY, TOWER_ONLY = ('flap', 'edge'), ('fore_aft', 'side_side')
 MAX_ATTACHMENTS = 50
+MODEL_NOTE = ('3-D Timoshenko beam (axial, shear, bending and torsion coupled through structural twist and centre-of-mass '
+              'offset), spectral elements; no aerodynamics')
 
 
 class StructuralError(ValueError):
@@ -43,7 +47,7 @@ def _attachment(config, kind):
     direction = config.get('direction', 'both')
     if direction not in DIRECTIONS:
         raise StructuralError(f'direction must be one of {", ".join(DIRECTIONS)}')
-    if (target == 'blade' and direction in ('fore_aft', 'side_side')) or (target == 'tower' and direction in ('flap', 'edge')):
+    if (target == 'blade' and direction in TOWER_ONLY) or (target == 'tower' and direction in BLADE_ONLY):
         raise StructuralError(f'direction {direction} does not apply to the {target}')
     item = {'kind': kind, 'target': target, 'direction': direction, 'position': _number(config, 'position', 0.0, 1.0, 1.0)}
     if kind == 'point_mass':
@@ -72,7 +76,7 @@ def attachment_handler(kind):
 
 
 def _rotor(spec):
-    """Blade count, tip and hub radius and operating rpm (None when the operating point is incomplete)."""
+    """Blade count, radii, operating rpm (None when not fixed) and the blade orientation (twist + pitch) over the span."""
     built, rotor, _ = rotors.build(spec)
     if built['kind'] != 'hawt':
         raise StructuralError('Rotor-based structural blocks apply to horizontal-axis wind turbines')
@@ -80,65 +84,93 @@ def _rotor(spec):
         rpm = rotors.resolve_operating(built, rotor)[1]
     except ValueError:
         rpm = None
-    return int(rotor.blades), float(rotor.tip_radius_m), float(rotor.hub_radius_m), rpm
+    tip, hub = float(rotor.tip_radius_m), float(rotor.hub_radius_m)
+    fraction = (np.asarray(rotor.radius_m) - hub) / (tip - hub)
+    angle = np.asarray(rotor.twist_deg) + float(rotor.pitch_deg)
+    return {'blades': int(rotor.blades), 'tip': tip, 'hub': hub, 'rpm': rpm,
+            'twist': lambda x: np.interp(x, fraction, angle)}
 
 
-def _blade_length(config, spec):
+def _blade_setup(config, blade, spec):
+    rotor = _rotor(spec) if spec is not None else None
     length = _number(config, 'length_m', 0.01, 500.0, positive=True)
-    hub = 0.0
-    if spec is not None:
-        _, tip, hub, _ = _rotor(spec)
-        if length is None:
-            length = tip - hub
     if length is None:
-        raise StructuralError('Connect a rotor or set length_m')
-    return length, hub
+        if rotor is None:
+            raise StructuralError('Connect a rotor or set length_m')
+        length = rotor['tip'] - rotor['hub']
+    notes = []
+    twist = None
+    if 'structural_twist_deg' in (blade.get('extended') or {}):
+        notes.append('Structural twist from the blade stations')
+    elif rotor is not None and config.get('use_aerodynamic_twist', True):
+        twist = rotor['twist']
+        notes.append('Structural twist taken equal to the aerodynamic twist plus pitch (principal axes follow the chord)')
+    else:
+        notes.append('No structural twist: flap and edge principal axes stay aligned with the rotor plane')
+    return rotor, length, twist, notes
 
 
-def _mode_rows(found, component, direction, rpm, beam, short=None):
-    short = short or direction
-    rows, record = [], {}
-    for k, m in enumerate(found):
-        key = f'{component}_{short}{k + 1}'
-        rows.append({'mode': key, 'rpm': rpm, 'frequency_hz': m['frequency_hz'], 'natural_hz': m['natural_hz'],
-                     'damping_ratio': m['damping_ratio'], 'nodes': m['nodes']})
-        record[f'{key}_hz'] = m['frequency_hz']
-    shapes = [{'id': f'{component}_{short}{k + 1}', 'label': m['label'], 'component': component, 'direction': direction,
-               'rpm': rpm, 'frequency_hz': m['frequency_hz'], 'damping_ratio': m['damping_ratio'],
-               'shape': modal.sample(beam, m['shape'])} for k, m in enumerate(found)]
+def _family_counts(config, keys, defaults):
+    return {family: _integer(config, key, 0, modal.MAX_MODES, default) for family, key, default in zip(*keys, defaults)}
+
+
+def _missing_note(component, counts, available):
+    lacking = [f for f, n in counts.items() if n and f not in available]
+    notes = []
+    if 'torsion' in lacking:
+        notes.append(f'No {component} torsion modes: add torsional stiffness and torsional inertia columns (torsion is rigid otherwise)')
+    if 'axial' in lacking:
+        notes.append(f'No {component} axial modes: add an axial stiffness column (the {component} is axially rigid otherwise)')
+    return notes
+
+
+def _modes_output(beam, found, component, rpm):
+    rows, record, shapes = [], {}, []
+    for family, modes in found.items():
+        for k, m in enumerate(modes):
+            key = f'{component}_{family}{k + 1}'
+            view = modal.describe(beam, m, component)
+            rows.append({'mode': key, 'rpm': rpm, 'frequency_hz': m['frequency_hz'], 'natural_hz': m['natural_hz'],
+                         'damping_ratio': m['damping_ratio'], 'nodes': view['nodes'],
+                         **{f'share_{f}': round(v, 4) for f, v in m['participation'].items()}})
+            record[f'{key}_hz'] = m['frequency_hz']
+            shapes.append({'id': key, 'label': f'{component.capitalize()} {family} {k + 1}', 'component': component, 'direction': family,
+                           'rpm': rpm, 'frequency_hz': m['frequency_hz'], 'damping_ratio': m['damping_ratio'],
+                           'participation': m['participation'], **view})
+    rows.sort(key=lambda r: r['frequency_hz'])
+    shapes.sort(key=lambda s: s['frequency_hz'])
     return rows, record, shapes
 
 
 def blade_modes(node, args, rotating=False):
     config = node.get('config', {})
     blade, spec, attachments = args['blade'], args.get('spec'), args.get('attachments') or []
-    length, hub = _blade_length(config, spec)
+    rotor, length, twist, notes = _blade_setup(config, blade, spec)
     rpm = _number(config, 'rpm', 0.0, 1e5, None) if rotating else 0.0
     if rotating and rpm is None:
-        if spec is None:
+        if rotor is None:
             raise StructuralError('Connect a rotor or set rpm')
-        rpm = _rotor(spec)[3]
+        rpm = rotor['rpm']
         if rpm is None:
             raise StructuralError('The rotor operating point does not fix the rotor speed; set rpm')
-    rows, record, shapes = [], {}, []
-    for direction, key in (('flap', 'flap_modes'), ('edge', 'edge_modes')):
-        count = _integer(config, key, 0, modal.MAX_MODES, 3 if direction == 'flap' else 2)
-        if not count:
-            continue
-        beam = modal.blade_beam(blade, length, direction, attachments)
-        found = modal.modes(beam, modes=count, omega=rpm * math.pi / 30, hub_radius=hub if rotating else 0.0,
-                            direction=direction, damping_ratio=blade[f'{direction}_damping_pct'] / 100, label=f'Blade {direction}')
-        r, v, s = _mode_rows(found, 'blade', direction, rpm, beam)
-        rows += r
-        record.update(v)
-        shapes += s
-    if not rows:
+    hub = rotor['hub'] if rotor is not None else 0.0
+    counts = _family_counts(config, (('flap', 'edge', 'torsion'), ('flap_modes', 'edge_modes', 'torsion_modes')), (3, 2, 1))
+    beam = modal.blade_beam(blade, length, twist, attachments)
+    available = modal.available(beam, 'blade')
+    notes = [MODEL_NOTE, *notes, *_missing_note('blade', counts, available)]
+    wanted = {f: n for f, n in counts.items() if n and f in available}
+    if not wanted:
         raise StructuralError('Ask for at least one flap or edge mode')
-    record['blade_mass_kg'] = modal.blade_mass_kg(blade, length, attachments)
+    found = modal.pick(modal.solve(beam, omega=rpm * math.pi / 30, hub_radius=hub if rotating else 0.0,
+                                   damping=modal.blade_damping(blade)), wanted)
+    short = [f'{f} ({len(found[f])} of {n})' for f, n in wanted.items() if len(found[f]) < n]
+    if short:
+        notes.append(f'Fewer modes than requested within the first {modal.BASIS}: {", ".join(short)}')
+    rows, record, shapes = _modes_output(beam, found, 'blade', rpm)
+    record['blade_mass_kg'] = beam.mass_kg
     record['rpm'] = rpm
-    notes = ['Euler–Bernoulli beam, flap and edge uncoupled (no structural twist, precone or Coriolis coupling); no aerodynamics']
     if rotating:
-        notes.append('Centrifugal stiffening from the blade mass about the rotor axis; edgewise modes include spin softening')
+        notes.append('Rotating frame: centrifugal stiffening, spin softening, Coriolis and propeller-moment terms; precone not modelled')
     else:
         notes.append('Clamped, non-rotating blade')
     modal_out = {'kind': 'modal', 'component': 'blade', 'length_m': length, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
@@ -146,41 +178,63 @@ def blade_modes(node, args, rotating=False):
     return {'table': {'kind': 'modes', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
 
 
-def _top_mass(config, args):
-    top = _number(config, 'top_mass_kg', 0.0, 1e8, None)
-    if top is not None:
-        return top, 'top mass from the block setting'
-    parts, total = [], 0.0
-    if args.get('nacelle'):
-        total += args['nacelle']['mass_kg']
-        parts.append('nacelle')
+def _top_bodies(config, args):
+    """Rigid bodies at the tower top (tower frame: x up, y lateral, z downwind) and a description of them."""
+    override = _number(config, 'top_mass_kg', 0.0, 1e8, None)
+    extra = _number(config, 'top_inertia_kg_m2', 0.0, 1e12, 0.0)
+    bending = np.diag([0.0, extra, extra])
+    if override is not None:
+        return [(override, (0.0, 0.0, 0.0), bending)], f'top mass {override:g} kg from the block setting', override
+    bodies, parts, total = [], [], 0.0
+    nacelle = args.get('nacelle')
+    if nacelle:
+        bodies.append((nacelle['mass_kg'], (nacelle['cm_up_m'], nacelle['cm_lateral_m'], nacelle['cm_downwind_m']),
+                       np.diag([nacelle['yaw_inertia_kg_m2'], 0.0, 0.0])))
+        parts.append('nacelle (with its centre-of-mass offset and yaw inertia)')
+    rotor_mass, shaft_inertia = 0.0, 0.0
     if args.get('hub'):
-        total += args['hub']['mass_kg']
+        rotor_mass += args['hub']['mass_kg']
+        shaft_inertia += args['hub']['inertia_kg_m2']
         parts.append('hub')
     if args.get('blade') and args.get('spec'):
-        blades, tip, hub, _ = _rotor(args['spec'])
-        total += blades * modal.blade_mass_kg(args['blade'], tip - hub)
-        parts.append(f'{blades} blades')
-    return total, ('top mass: ' + ' + '.join(parts)) if parts else 'no top mass'
+        rotor = _rotor(args['spec'])
+        fraction, mass = (np.array(c) for c in list(zip(*args['blade']['stations']))[:2])
+        length = rotor['tip'] - rotor['hub']
+        x = np.linspace(0, 1, 401)
+        m = np.interp(x, fraction, mass)
+        r = rotor['hub'] + x * length
+        tip = args['blade'].get('tip_mass_kg', 0.0)
+        rotor_mass += rotor['blades'] * (np.trapezoid(m, x) * length + tip)
+        shaft_inertia += rotor['blades'] * (np.trapezoid(m * r**2, x) * length + tip * rotor['tip'] ** 2)
+        parts.append(f'{rotor["blades"]} blades')
+    if rotor_mass:
+        if not nacelle:
+            raise StructuralError('Connect the nacelle block to place the rotor mass (overhang and shaft height)')
+        # parked rotor as a disc: polar inertia about the shaft (z), half of it about the two other axes
+        bodies.append((rotor_mass, (nacelle['tower_top_to_shaft_m'], 0.0, nacelle['overhang_m']),
+                       np.diag([shaft_inertia / 2, shaft_inertia / 2, shaft_inertia])))
+    if extra:
+        bodies.append((0.0, (0.0, 0.0, 0.0), bending))
+    total = sum(b[0] for b in bodies)
+    return bodies, ('top: ' + ', '.join(parts)) if parts else 'no top mass', total
 
 
 def tower_modes(node, args):
     config = node.get('config', {})
     tower, attachments = args['tower'], args.get('attachments') or []
-    count = _integer(config, 'modes', 1, modal.MAX_MODES, 2)
-    top, source = _top_mass(config, args)
-    inertia = _number(config, 'top_inertia_kg_m2', 0.0, 1e12, 0.0)
-    rows, record, shapes = [], {}, []
-    for direction, short in (('fore_aft', 'fa'), ('side_side', 'ss')):
-        beam = modal.tower_beam(tower, direction, top, inertia, attachments)
-        found = modal.modes(beam, modes=count, direction='none', damping_ratio=tower['damping_pct'] / 100,
-                            label=f'Tower {direction.replace("_", "-")}')
-        r, v, s = _mode_rows(found, 'tower', direction, 0.0, beam, short)
-        rows += r
-        record.update(v)
-        shapes += s
-    record['tower_top_mass_kg'] = top
-    notes = [f'Clamped tower, {source} lumped at the top (rotary inertia {inertia:g} kg·m²); no foundation flexibility, no aerodynamics']
+    counts = _family_counts(config, (('fa', 'ss', 'torsion'), ('modes', 'modes', 'torsion_modes')), (2, 2, 1))
+    bodies, source, total = _top_bodies(config, args)
+    beam = modal.tower_beam(tower, bodies, attachments)
+    available = modal.available(beam, 'tower')
+    wanted = {f: n for f, n in counts.items() if n and f in available}
+    found = modal.pick(modal.solve(beam, damping={f: tower['damping_pct'] / 100 for f in modal.FAMILIES['tower']},
+                                   component='tower'), wanted)
+    rows, record, shapes = _modes_output(beam, found, 'tower', 0.0)
+    record['tower_top_mass_kg'] = float(total)
+    notes = [MODEL_NOTE, f'Clamped tower; {source}; parked rotor (no gyroscopic coupling), no foundation flexibility',
+             *_missing_note('tower', counts, available)]
+    if tower.get('shape') == 'tubular':
+        notes.append(f'Tubular tower: axial, shear (factor {0.5:g}) and torsional properties from the material, Poisson ratio 0.3')
     modal_out = {'kind': 'modal', 'component': 'tower', 'length_m': tower['height_m'],
                  'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(), 'modes': shapes}
     return {'table': {'kind': 'modes', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
@@ -189,8 +243,8 @@ def tower_modes(node, args):
 def campbell(node, args):
     config = node.get('config', {})
     blade, spec, attachments = args['blade'], args['spec'], args.get('attachments') or []
-    blades, tip, hub, spec_rpm = _rotor(spec)
-    operating = _number(config, 'operating_rpm', 0.0, 1e5, None, positive=True) or spec_rpm
+    rotor, length, twist, twist_notes = _blade_setup(config, blade, spec)
+    operating = _number(config, 'operating_rpm', 0.0, 1e5, None, positive=True) or rotor['rpm']
     low = _number(config, 'rpm_min', 0.0, 1e5, 0.0)
     high = _number(config, 'rpm_max', 0.0, 1e5, None, positive=True)
     if high is None:
@@ -203,19 +257,21 @@ def campbell(node, args):
     harmonics = config.get('harmonics') or []
     if not isinstance(harmonics, list) or any(type(h) is not int or not 1 <= h <= 30 for h in harmonics) or len(harmonics) > 10:
         raise StructuralError('harmonics must be a list of at most 10 integers in 1–30')
+    counts = _family_counts(config, (('flap', 'edge', 'torsion'), ('flap_modes', 'edge_modes', 'torsion_modes')), (2, 1, 0))
     tower = args.get('tower')
-    top, source = _top_mass(config, {**args, 'blade': blade, 'spec': spec}) if tower else (0.0, '')
+    tower_counts, bodies, source = None, (), ''
+    if tower is not None:
+        n = _integer(config, 'tower_modes', 0, modal.MAX_MODES, 2)
+        tower_counts = {'fa': n, 'ss': n, 'torsion': _integer(config, 'tower_torsion_modes', 0, modal.MAX_MODES, 0)}
+        bodies, source, _ = _top_bodies(config, {**args, 'blade': blade, 'spec': spec})
     try:
-        result = modal.campbell(blade, tip - hub, hub, blades, np.linspace(low, high, points), tower=tower, top_mass_kg=top,
-                                top_inertia_kg_m2=_number(config, 'top_inertia_kg_m2', 0.0, 1e12, 0.0),
-                                flap_modes=_integer(config, 'flap_modes', 0, modal.MAX_MODES, 2),
-                                edge_modes=_integer(config, 'edge_modes', 0, modal.MAX_MODES, 1),
-                                tower_modes=_integer(config, 'tower_modes', 0, modal.MAX_MODES, 2) if tower else 0,
+        result = modal.campbell(blade, length, rotor['hub'], rotor['blades'], np.linspace(low, high, points), twist=twist,
+                                tower=tower, top_bodies=bodies, counts=counts, tower_counts=tower_counts,
                                 harmonics=harmonics or None, attachments=attachments)
     except modal.ModalError as exc:
         raise StructuralError(str(exc)) from exc
     for curve in result['curves']:
-        if curve['frame'] == 'rotating' and blades >= 3:
+        if curve['frame'] == 'rotating' and rotor['blades'] >= 3:
             curve['fixed_frame'] = modal.whirl(curve, result['rpm'])
     rows = []
     for i, speed in enumerate(result['rpm']):
@@ -226,23 +282,24 @@ def campbell(node, args):
             row[f'{name}_hz'] = line[i]
         rows.append(row)
     record = {'crossings': len(result['crossings'])}
-    notes = ['Blade modes in the rotating frame (centrifugal stiffening, spin softening); tower modes fixed; no aerodynamics, '
-             'no rotor–tower coupling. Fixed-frame whirl frequencies f ± Ω/2π assume an isotropic rotor.']
+    beam = modal.blade_beam(blade, length, twist, attachments)
+    notes = [MODEL_NOTE, *twist_notes, *_missing_note('blade', counts, modal.available(beam, 'blade')),
+             'Blade modes in the rotating frame (centrifugal stiffening, spin softening, Coriolis); tower modes fixed with a parked '
+             'rotor; no rotor–tower coupling. Fixed-frame whirl frequencies f ± Ω/2π assume an isotropic rotor.']
     if tower is not None:
-        notes.append(f'Tower: {source} lumped at the top')
+        notes.append(f'Tower {source}')
     if operating:
         values, worst, at = modal.margins(result, operating)
         record.update({f'{k}_hz': v for k, v in values.items()})
         record['operating_rpm'] = operating
         record['min_excitation_margin_pct'] = worst
+        record['crossings_near_operating'] = len([c for c in result['crossings'] if abs(c['rpm'] - operating) / operating <= 0.1])
         if at:
             notes.append(f'Smallest excitation margin at {operating:g} rpm: {at} ({worst:.1f} %)')
-        crossing_in = [c for c in result['crossings'] if abs(c['rpm'] - operating) / operating <= 0.1]
-        record['crossings_near_operating'] = len(crossing_in)
     weak = [c['id'] for c in result['curves'] if c['tracking_mac_min'] < 0.8]
     if weak:
         notes.append(f'Mode tracking uncertain (MAC < 0.8) for {", ".join(weak)}: modes may swap between speeds')
-    modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': tip - hub, 'blades': blades,
+    modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': length, 'blades': rotor['blades'],
                  'tower_height_m': tower['height_m'] if tower else None, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
                  'campbell': result, 'operating_rpm': operating}
     return {'table': {'kind': 'campbell', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}

@@ -56,9 +56,11 @@ to exercise the software and UI and cannot qualify a design or solver.
 
 ## Structural modes
 
-Blade and tower modes use Euler–Bernoulli Hermite finite elements (80 elements, consistent mass,
-dense generalised eigensolver). Rotating blades add centrifugal geometric stiffness and, edgewise,
-spin softening; the first-flap result reproduces Wright et al. (1982) within 0.02 %. Damped modes
-with discrete dampers come from the state-space eigenproblem. Maturity: `preliminary` (analytical
-and literature checks only; OpenFAST linearisation comparison pending). Details:
-[technical/structural-dynamics.md](technical/structural-dynamics.md).
+Blade and tower modes use a geometrically linear 3-D Timoshenko beam (six degrees of freedom per
+node, 6×6 section stiffness and mass, structural twist and centre-of-mass offset) discretised with
+spectral elements up to order 6, as in OpenFAST BeamDyn. Rotating blades add centrifugal
+stiffening and softening, Coriolis and section gyroscopic terms. Motions without inertia are
+condensed statically; damped and gyroscopic modes come from a state-space solution in a modal
+basis. Checks: Euler–Bernoulli limit, Wright et al. (1982), exact Timoshenko and torsion
+solutions, propeller moment. Maturity: `preliminary` (OpenFAST linearisation comparison pending).
+Details: [technical/structural-dynamics.md](technical/structural-dynamics.md).

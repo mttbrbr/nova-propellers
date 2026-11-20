@@ -12,4 +12,5 @@ COPY . .
 
 EXPOSE 8000
 
+ENV OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
