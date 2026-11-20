@@ -22,7 +22,7 @@ from nova.physics import rotors
 from nova.physics.corrections import corrections_from
 from nova.physics.vawt import METHODS as VAWT_METHODS
 
-from . import structural
+from . import performance, structural
 from .catalog import BLOCKS
 from .constraints import evaluate_check, normalise, penalty, report
 from .expressions import ExpressionError, evaluate
@@ -698,8 +698,10 @@ HANDLERS = {
     'point_mass': structural.attachment_handler('point_mass'), 'spring_damper': structural.attachment_handler('spring_damper'),
     'blade_modes': structural.blade_modes, 'rotating_blade_modes': lambda node, args: structural.blade_modes(node, args, rotating=True),
     'tower_modes': structural.tower_modes, 'campbell': structural.campbell,
+    'operating_strategy': performance.operating_strategy,
 }
-LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization}
+LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization,
+        'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible}
 
 
 def execute(workflow, *, progress=None, cancelled=None):

@@ -142,6 +142,31 @@ BLOCKS = {
         description='Cp–λ for turbines, K_T/K_Q/η–J for propellers; reports the optimum.',
         inputs=[port('spec', 'rotor_spec')], outputs=[port('table', 'table'), port('values', 'record')],
         defaults={'variable': 'auto', 'start': None, 'stop': None, 'points': 21}),
+    'performance_map': dict(
+        family='specific', category='Solvers', label='Performance map',
+        description='Optimum of any rotor output over one or two fields (e.g. CP over tip-speed ratio and pitch, efficiency over J): '
+                    'a grid refined progressively around the best point, then an interpolating response surface whose optimum is '
+                    'evaluated directly. Emits the best specification.',
+        inputs=[port('spec', 'rotor_spec')], outputs=[port('table', 'table'), port('values', 'record'), port('spec', 'rotor_spec')],
+        defaults={'variables': [{'path': 'operating.tip_speed_ratio', 'min': 3.0, 'max': 12.0},
+                                {'path': 'geometry.pitch_deg', 'min': -4.0, 'max': 6.0}],
+                  'objective': 'CP', 'sense': 'maximize', 'points': 5, 'levels': 4, 'shrink': 0.4, 'max_evaluations': 120}),
+    'cp_flexible': dict(
+        family='specific', category='Solvers', label='Cp–λ flexible & sheared',
+        description='Cp–λ and C_T of a HAWT in power-law wind shear and with the steady flapwise deflection of the connected blade '
+                    'structure (each element coned by its slope, cos³β), next to the rigid uniform-inflow curve.',
+        inputs=[port('spec', 'rotor_spec'), port('blade', 'blade', True), port('attachments', 'attachment', True)],
+        outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'start': 2.0, 'stop': 12.0, 'points': 21, 'shear_exponent': 0.0, 'hub_height_m': None, 'precone_deg': 0.0,
+                  'azimuth_steps': 24}),
+    'operating_strategy': dict(
+        family='specific', category='Conditions', label='Operating strategy',
+        description='Rotor speed from a tip-speed ratio and a wind speed (or the optimum λ of a connected Cp–λ table), with rotor-speed '
+                    'limits and rated power; the schedule from cut-in to cut-out. Emits the rotor at that operating point.',
+        inputs=[port('spec', 'rotor_spec'), port('table', 'table', True)],
+        outputs=[port('spec', 'rotor_spec'), port('values', 'record'), port('table', 'table')],
+        defaults={'tip_speed_ratio': None, 'wind_speed_m_s': 8.0, 'rpm_min': 0.0, 'rpm_max': None, 'rated_power_w': None,
+                  'cut_in_m_s': 3.0, 'cut_out_m_s': 25.0, 'points': 23}),
     'design_checks': dict(
         family='specific', category='Constraints', label='Design checks',
         description='Domain limits: Betz, rating, tip speed/Mach, thrust, Keller, Burrill, cavitation, ripple.',
