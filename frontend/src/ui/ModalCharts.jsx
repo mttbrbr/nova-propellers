@@ -7,12 +7,12 @@ const familyColor = { flap: '#FF8533', edge: '#4CC9F0', torsion: '#B49CFB', axia
 const whirlDash = { collective: undefined, backward: '7 4', forward: '2 3', differential: '10 3 2 3' };
 const margin = { left: 44, right: 46, top: 12, bottom: 28 };
 
-function family(curve) {
+export function family(curve) {
   const direction = String(curve.direction || '');
   return direction.replace(/^(blade|tower)_/, '');
 }
 
-function curveStyle(curve) {
+export function curveStyle(curve) {
   return { color: familyColor[family(curve)] || '#9AA4B2', dash: curve.whirl ? whirlDash[curve.whirl] : curve.frame === 'fixed' && curve.component === 'tower' ? '1 0' : undefined };
 }
 
@@ -148,7 +148,7 @@ export function ModeShape({ mode, x, length, component, height = 170 }) {
   </figure>;
 }
 
-function Participation({ shares }) {
+export function Participation({ shares }) {
   const entries = Object.entries(shares || {}).filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
   return <div className="flex flex-col gap-1">{entries.map(([k, v]) => <div key={k} className="grid grid-cols-[120px_minmax(0,1fr)_48px] items-center gap-2 text-xs">
     <span className="text-nv-muted">{k.replace('_', ' ')}</span>

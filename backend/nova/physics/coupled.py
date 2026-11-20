@@ -319,6 +319,41 @@ def modes(system):
     return out
 
 
+SHAPE_SPEEDS = 9
+SHAPE_POINTS = 21
+
+
+def _pairs(values):
+    return [[round(float(v.real), 5) for v in values], [round(float(v.imag), 5) for v in values]]
+
+
+def shape(system, z):
+    """Physical shape of a coupled mode as complex fields along the tower (fore-aft, side-side) and along every blade
+    (flap, edge) with the rotor at ψ = 0 (blade 1 up): displacement(t) = Re(field · e^{iωt}). Scaled so the largest
+    displacement is 1 and turned so that it is real."""
+    nt, nb = system.nt, system.nb
+    t, _, _ = system._blade_rows(0.0)
+    tower = system.tower
+    x = np.linspace(0.0, 1.0, SHAPE_POINTS)
+    if not hasattr(tower, '_sampler'):
+        full = np.vstack([np.zeros((6, nt)), tower.phi]).reshape(-1, 6, nt)
+        S = _sample(tower.beam, x)
+        tower._sampler = (S @ full[:, 2, :], S @ full[:, 1, :])
+    fa, ss = (field @ z[:nt] for field in tower._sampler)
+    bl = system.blade
+    pick = np.round(np.linspace(0, SAMPLES - 1, SHAPE_POINTS)).astype(int)
+    blades = []
+    for b in range(system.B):
+        q = sum(t[b, j] * z[nt + j * nb: nt + (j + 1) * nb] for j in range(len(system.harmonics())))
+        blades.append((bl.w[pick] @ q, bl.v[pick] @ q))
+    peak = max([np.max(np.abs(fa)), np.max(np.abs(ss))] + [np.max(np.abs(f)) for pair in blades for f in pair])
+    biggest = max([fa, ss] + [f for pair in blades for f in pair], key=lambda f: np.max(np.abs(f)))
+    phase = biggest[np.argmax(np.abs(biggest))]
+    scale = (abs(phase) / phase) / max(peak, 1e-300)
+    return {'tower': {'fa': _pairs(fa * scale), 'ss': _pairs(ss * scale)},
+            'blades': [{'flap': _pairs(w * scale), 'edge': _pairs(v * scale)} for w, v in blades]}
+
+
 WHIRL_LABEL = {'collective': 'collective', 'forward': 'FW', 'backward': 'BW', 'differential': 'differential'}
 
 
@@ -348,11 +383,12 @@ def campbell(blade_beam, tower_beam, *, blades, hub_radius, hub_offset, rpm, bla
     if hub and hub.get('mass_kg'):
         radius = np.sqrt(max(hub.get('inertia_kg_m2', 0.0), 0.0) / hub['mass_kg'])
         ring = tuple((hub['mass_kg'] / HUB_RING, radius) for _ in range(HUB_RING))
-    solutions = []
+    solutions, systems = [], []
     for speed in rpm:
         omega = speed * np.pi / 30
         blade = Blade(blade_beam, omega, hub_radius, blade_counts, blade_damping)
-        solutions.append(modes(System(tower, blade, blades, omega, hub_offset, ring)))
+        systems.append(System(tower, blade, blades, omega, hub_offset, ring))
+        solutions.append(modes(systems[-1]))
     # Track from the highest speed down: at standstill the whirl pairs are degenerate and their shapes arbitrary.
     tracks = [[m] for m in solutions[-1]]
     mac_min = [1.0] * len(tracks)
@@ -375,6 +411,7 @@ def campbell(blade_beam, tower_beam, *, blades, hub_radius, hub_offset, rpm, bla
             if not degenerate:
                 mac_min[r] = min(mac_min[r], float(similarity[r, c]))
     tracks = [t[::-1] for t in tracks]
+    shape_index = sorted(set(np.linspace(0, len(rpm) - 1, min(SHAPE_SPEEDS, len(rpm))).round().astype(int).tolist()))
     curves, used = [], {}
     for track, similarity in zip(tracks, mac_min):
         first = track[-1]
@@ -385,7 +422,8 @@ def campbell(blade_beam, tower_beam, *, blades, hub_radius, hub_offset, rpm, bla
         curves.append({'id': ident, 'label': label, 'component': 'coupled', 'direction': first['dominant'], 'whirl': first['whirl'],
                        'frame': 'fixed', 'frequency_hz': [m['frequency_hz'] for m in track],
                        'damping_ratio': [m['damping_ratio'] for m in track],
-                       'participation': [m['participation'] for m in track], 'tracking_mac_min': float(similarity)})
+                       'participation': [m['participation'] for m in track], 'tracking_mac_min': float(similarity),
+                       'shape_index': shape_index, 'shapes': [shape(systems[i], track[i]['z']) for i in shape_index]})
     curves.sort(key=lambda c: c['frequency_hz'][0])
     short = {f'tower {f}': v for f, v in tower.short.items()}
     return curves, short

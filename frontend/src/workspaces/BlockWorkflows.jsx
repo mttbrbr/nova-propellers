@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, Square, X } from 'lucide-react';
+import { Activity, CheckCircle2, Keyboard, LayoutTemplate, Maximize, Network, Play, Save, Search, Square, X } from 'lucide-react';
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState, useReactFlow, useViewport } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { request } from '../backend.js';
 import LineChart from '../ui/LineChart.jsx';
 import { LinearizationComparison, ModalView } from '../ui/ModalCharts.jsx';
 import WindFarmLayout from '../components/WindFarmLayout.jsx';
+import ModesView, { modalOf } from './ModesView.jsx';
 import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
@@ -70,7 +71,8 @@ function BlockNode({ data }) {
     <div className="flex items-center gap-2 border-b border-nv-line px-3 py-2">
       {data.status && <StatusDot tone={statusTone[data.status] || 'muted'} />}
       <span className="truncate text-[13px] font-medium">{data.id}</span>
-      <span className={`ml-auto rounded px-1.5 py-px text-[10.5px] uppercase tracking-wide ${spec.family === 'general' ? 'bg-nv-active text-nv-reference' : 'bg-nv-accent/15 text-nv-accent'}`}>{spec.family === 'general' ? 'gen' : 'spec'}</span>
+      {data.hasModes && <ModesButton onClick={(e) => { e.stopPropagation(); data.openModes(data.id); }} label={`Open the mode view of ${data.id}`} className="nodrag ml-auto h-6 px-2" />}
+      <span className={`${data.hasModes ? '' : 'ml-auto '}rounded px-1.5 py-px text-[10.5px] uppercase tracking-wide ${spec.family === 'general' ? 'bg-nv-active text-nv-reference' : 'bg-nv-accent/15 text-nv-accent'}`}>{spec.family === 'general' ? 'gen' : 'spec'}</span>
     </div>
     <div className="px-3 pb-1 pt-1.5 text-[11.5px] text-nv-muted">{spec.label}</div>
     <div className="relative" style={{ height: rows * 22 + 6 }}>
@@ -82,6 +84,13 @@ function BlockNode({ data }) {
         <Handle type="source" position={Position.Right} id={port.name} style={{ top: 9, background: typeColor[port.type], width: 9, height: 9 }} /></div>)}
     </div>
   </div>;
+}
+
+// One button style for every way into the mode view (node, result card, run summary).
+function ModesButton({ onClick, label, children = 'Modes', className = '' }) {
+  return <button type="button" aria-label={label} onClick={onClick}
+    className={`inline-flex h-8 items-center gap-1.5 rounded-md border border-nv-accent/60 bg-nv-accent/15 px-3 text-[12px] font-medium text-nv-ink hover:bg-nv-accent/25 ${className}`}>
+    <Activity size={14} aria-hidden="true" className="text-nv-accent" />{children}</button>;
 }
 const nodeTypes = { block: BlockNode };
 
@@ -182,6 +191,7 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
   const [record, setRecord] = useState(null);
   const [selected, setSelected] = useState(null);
   const [result, setResult] = useState(null);
+  const [modesFor, setModesFor] = useState(null);
   const [panel, setPanel] = useState(null); // 'results' | 'keys' | null
   const [palette, setPalette] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -289,7 +299,8 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [flow]);
 
-  const display = nodes.map((n) => ({ ...n, data: { ...n.data, status: result?.blocks?.[n.id]?.status, selected: n.id === selected } }));
+  const display = nodes.map((n) => ({ ...n, data: { ...n.data, status: result?.blocks?.[n.id]?.status, selected: n.id === selected,
+    hasModes: Boolean(modalOf(result?.blocks?.[n.id])), openModes: setModesFor } }));
   const chosen = nodes.find((n) => n.id === selected);
   const tone = !result ? null : result.status === 'succeeded' ? (result.feasible === false ? 'warn' : 'ok') : result.status === 'failed' ? 'err' : 'warn';
 
@@ -343,13 +354,14 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
       <StatusDot tone={tone} />{result.status}{result.feasible != null && <> · {result.feasible ? 'hard constraints met' : 'constraint violation'}</>}<Kbd>Details</Kbd></button>}
 
     {chosen && !palette && <SettingsCard canvas={canvas} node={chosen} viewport={viewport}>
-      <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog}
+      <BlockInspector key={chosen.id} node={chosen} result={result?.blocks?.[chosen.id]} catalog={catalog} rotors={rotorCatalog} onOpenModes={() => setModesFor(chosen.id)}
         onChange={(config) => setConfig(chosen.id, config)} onRemove={() => removeBlock(chosen.id)} onDuplicate={() => duplicate(chosen.id)} onClose={() => setSelected(null)} />
     </SettingsCard>}
 
     {palette && catalog && <BlockSearch palette={palette} blocks={catalog.blocks} onChange={setPalette} onPick={(type) => addBlock(type, palette.flow)} onClose={() => setPalette(null)} bounds={canvas.current?.getBoundingClientRect()} />}
 
-    {panel === 'results' && result && <div role="region" aria-label="Run summary" className="absolute bottom-16 right-3.5 z-20 max-h-[70%] w-[380px] overflow-y-auto rounded-2xl border border-nv-edge bg-nv-panel/[0.97] p-4 shadow-2xl shadow-black/60"><RunSummary result={result} /></div>}
+    {panel === 'results' && result && <div role="region" aria-label="Run summary" className="absolute bottom-16 right-3.5 z-20 max-h-[70%] w-[380px] overflow-y-auto rounded-2xl border border-nv-edge bg-nv-panel/[0.97] p-4 shadow-2xl shadow-black/60"><RunSummary result={result} onOpenModes={setModesFor} /></div>}
+    {modesFor && result && <ModesView result={result} blockId={modesFor} onBlock={setModesFor} onClose={() => setModesFor(null)} />}
     {panel === 'keys' && <div role="dialog" aria-label="Keyboard shortcuts" className="absolute left-1/2 top-1/2 z-30 w-[min(560px,90%)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-nv-edge bg-nv-panel/[0.97] p-5 shadow-2xl shadow-black/60">
       <div className="mb-3 flex items-center"><h2 className="m-0 text-[15px] font-semibold">Shortcuts</h2><button type="button" aria-label="Close" className="ml-auto text-nv-muted hover:text-nv-ink" onClick={() => setPanel(null)}><X size={16} /></button></div>
       <div className="grid grid-cols-1 gap-x-9 sm:grid-cols-2">{shortcuts.map(([label, combo]) => <div key={label} className="flex items-center justify-between border-b border-nv-line py-1.5 text-[12.5px] text-nv-reference">
@@ -388,7 +400,7 @@ function BlockSearch({ palette, blocks, onChange, onPick, onClose, bounds }) {
   </div>;
 }
 
-function RunSummary({ result }) {
+function RunSummary({ result, onOpenModes }) {
   if (!result) return <div className="flex flex-col gap-3 text-[13px] text-nv-muted">
     <h2 className="m-0 text-[15px] font-semibold text-nv-ink">Run summary</h2>
     <p className="m-0">Select a block to edit it. Run the workflow to see every constraint with its margin.</p>
@@ -398,7 +410,8 @@ function RunSummary({ result }) {
     <h2 className="m-0 text-[15px] font-semibold">Run summary</h2>
     <div className="flex flex-col gap-1">{result.order.map((id) => <div key={id} className="flex items-center gap-2 text-[13px]">
       <StatusDot tone={statusTone[result.blocks[id].status]} /><span className="w-40 truncate">{id}</span><span className="text-nv-muted">{result.blocks[id].status}</span>
-      {result.blocks[id].seconds != null && <span className="ml-auto font-mono text-xs text-nv-muted">{result.blocks[id].seconds.toFixed(2)} s</span>}</div>)}</div>
+      {modalOf(result.blocks[id]) && onOpenModes && <ModesButton onClick={() => onOpenModes(id)} label={`Open the mode view of ${id}`} className="ml-auto h-7" />}
+      {result.blocks[id].seconds != null && <span className={`${modalOf(result.blocks[id]) && onOpenModes ? '' : 'ml-auto '}whitespace-nowrap font-mono text-xs text-nv-muted`}>{result.blocks[id].seconds.toFixed(2)} s</span>}</div>)}</div>
     {result.reports.map((report) => <ConstraintTable key={report.block} report={report} title={`Constraints · ${report.block}`} />)}
   </div>;
 }
@@ -416,7 +429,7 @@ function ConstraintTable({ report, title }) {
   </section>;
 }
 
-function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onDuplicate, onClose }) {
+function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onDuplicate, onClose, onOpenModes }) {
   const spec = node.data.spec;
   const [raw, setRaw] = useState(false);
   const [text, setText] = useState(JSON.stringify(node.data.config, null, 2));
@@ -436,7 +449,7 @@ function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onD
       onChange={(e) => { setText(e.target.value); try { onChange(JSON.parse(e.target.value)); setTextError(''); } catch { setTextError('Invalid JSON'); } }} />
       {textError && <p className="m-0 text-xs text-nv-err-ink">{textError}</p>}</>
       : <ConfigEditor value={node.data.config} onChange={onChange} catalog={catalog} rotors={rotors} path={[]} />}
-    {result && <BlockResult result={result} />}
+    {result && <BlockResult result={result} onOpenModes={onOpenModes} />}
   </div></BlockConfig.Provider></BlockKind.Provider>;
 }
 
@@ -555,9 +568,10 @@ function BindingsEditor({ value, onChange }) {
   </Disclosure>;
 }
 
-function BlockResult({ result }) {
+function BlockResult({ result, onOpenModes }) {
   return <section aria-label="Block result" className="flex flex-col gap-3 border-t border-nv-line pt-4">
-    <h3 className="m-0 flex items-center gap-2 text-[13px] font-semibold"><StatusDot tone={statusTone[result.status]} />Result · {result.status}</h3>
+    <h3 className="m-0 flex items-center gap-2 text-[13px] font-semibold"><StatusDot tone={statusTone[result.status]} />Result · {result.status}
+      {modalOf(result) && onOpenModes && <ModesButton onClick={onOpenModes} label="Open the mode view" className="ml-auto">Open mode view</ModesButton>}</h3>
     {result.error && <Notice tone={result.status === 'blocked' ? 'info' : 'err'}>{result.error}</Notice>}
     {result.outputs && Object.entries(result.outputs).map(([port, value]) => <PortValue key={port} port={port} value={value} />)}
   </section>;

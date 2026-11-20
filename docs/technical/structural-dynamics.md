@@ -218,6 +218,16 @@ Checks (`backend/tests/test_coupled.py`):
 - at standstill with very stiff blades the tower modes equal those of the tower carrying the rotor as
   a rigid body (0.2 %).
 
+### Mode view
+
+Every block with a modal result shows a *Modes* button (on the node, in the result card and in the run
+summary). It opens a full-screen view: the modes with their participation, the Campbell diagram (or a
+table of all modes) and an animated 3-D turbine built from the connected tower, nacelle and rotor. Coupled
+modes carry their physical shape — tower fore-aft and side-side along the height and each blade's flap and
+edge with the rotor frozen at $\psi = 0$ — as complex fields, so the displacement is
+$\operatorname{Re}(\boldsymbol\phi\,e^{i\varphi})$ and whirl modes show the 120° phase lag between blades.
+Shapes are stored at up to nine speeds; the amplitude is a visual scale and the animation rate is fixed.
+
 ### Verification against OpenFAST linearisation
 
 The *OpenFAST linearisation* block turns a flexible ElastoDyn case (from *OpenFAST case from rotor*)

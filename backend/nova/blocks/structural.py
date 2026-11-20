@@ -8,7 +8,7 @@ import math
 
 import numpy as np
 
-from nova.physics import modal, rotors
+from nova.physics import coupled, modal, rotors
 
 TARGETS = ('blade', 'tower')
 DIRECTIONS = ('both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial')
@@ -174,7 +174,7 @@ def blade_modes(node, args, rotating=False):
     else:
         notes.append('Clamped, non-rotating blade')
     modal_out = {'kind': 'modal', 'component': 'blade', 'length_m': length, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
-                 'modes': shapes}
+                 'modes': shapes, 'layout': _layout(rotor, length, None, None)}
     return {'table': {'kind': 'modes', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
 
 
@@ -236,7 +236,8 @@ def tower_modes(node, args):
     if tower.get('shape') == 'tubular':
         notes.append(f'Tubular tower: axial, shear (factor {0.5:g}) and torsional properties from the material, Poisson ratio 0.3')
     modal_out = {'kind': 'modal', 'component': 'tower', 'length_m': tower['height_m'],
-                 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(), 'modes': shapes}
+                 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(), 'modes': shapes,
+                 'layout': _tower_layout(args, tower)}
     return {'table': {'kind': 'modes', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
 
 
@@ -290,7 +291,7 @@ def campbell(node, args):
     _finish_campbell(result, record, notes, operating)
     modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': length, 'blades': rotor['blades'],
                  'tower_height_m': tower['height_m'] if tower else None, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
-                 'campbell': result, 'operating_rpm': operating}
+                 'campbell': result, 'operating_rpm': operating, 'layout': _layout(rotor, length, tower, args.get('nacelle'))}
     return {'table': {'kind': 'campbell', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
 
 
@@ -321,7 +322,6 @@ def _finish_campbell(result, record, notes, operating):
 
 
 def _coupled_campbell(config, args, rotor, length, twist, twist_notes, operating, rpm, harmonics, counts, attachments):
-    from nova.physics import coupled
     blade, tower, nacelle = args['blade'], args.get('tower'), args.get('nacelle')
     if tower is None or nacelle is None:
         raise StructuralError('The coupled Campbell diagram needs the tower and nacelle blocks (hub optional)')
@@ -362,5 +362,27 @@ def _coupled_campbell(config, args, rotor, length, twist, twist_notes, operating
     _finish_campbell(result, record, notes, operating)
     modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': length, 'blades': rotor['blades'],
                  'tower_height_m': tower['height_m'], 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
-                 'campbell': result, 'operating_rpm': operating}
+                 'shape_x': np.linspace(0, 1, coupled.SHAPE_POINTS).tolist(),
+                 'campbell': result, 'operating_rpm': operating, 'layout': _layout(rotor, length, tower, nacelle)}
     return {'table': {'kind': 'campbell', 'rows': _rows(result)}, 'values': record, 'modal': modal_out, 'notes': notes}
+
+
+def _tower_layout(args, tower):
+    rotor = _rotor(args['spec']) if args.get('spec') else None
+    return _layout(rotor, rotor['tip'] - rotor['hub'] if rotor else None, tower, args.get('nacelle'))
+
+
+def _layout(rotor, length, tower, nacelle):
+    """Geometry the 3-D mode view draws: what is known of tower, nacelle and rotor (missing parts are left out)."""
+    out = {}
+    if rotor is not None:
+        out.update(blades=rotor['blades'], hub_radius_m=rotor['hub'], blade_length_m=length)
+    elif length:
+        out.update(blade_length_m=length)
+    if tower is not None:
+        out['tower_height_m'] = tower['height_m']
+        out['tower_base_diameter_m'] = tower.get('base_diameter_m')
+        out['tower_top_diameter_m'] = tower.get('top_diameter_m')
+    if nacelle is not None:
+        out.update(overhang_m=nacelle['overhang_m'], shaft_height_m=nacelle['tower_top_to_shaft_m'])
+    return out

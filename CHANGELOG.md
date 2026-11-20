@@ -6,6 +6,10 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Mode view: a full-screen view over the Workflow canvas, opened with the *Modes* button on any block with a
+  modal result (on the node, in its result card and in the run summary). Mode list and participation, the
+  Campbell diagram or the mode table, and an animated 3-D turbine (tower, nacelle, rotor) showing the
+  selected mode; coupled modes carry their physical shape, so whirl modes show the phase lag between blades.
 - Rotor–tower coupled Campbell diagram (`coupling: mbc`): tower modes and each blade's rotating-frame
   modes coupled through the hub kinematics, multi-blade coordinates and azimuth averaging (MBC3);
   collective, backward- and forward-whirl modes in the fixed frame. Template `coupled_campbell`.

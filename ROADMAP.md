@@ -158,7 +158,7 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 - OpenFAST linearisation block (ElastoDyn, aerodynamics off, MBC3) with a mode-by-mode comparison; on the
   AOC 15/50 example the first five coupled modes agree within 2.5 %, the second flap within about 7 %.
 - Campbell chart, animated mode shapes and participation in the block result panel.
-- Open: mode shapes in the 3-D viewport (today a 2-D animated side view).
+- Mode view with an animated 3-D turbine, opened from the Workflow. Next: a Structural tab in Design.
 
 ### Phase 2 — Performance curves and operating strategy (done)
 
@@ -203,7 +203,7 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 
 - Qualify the external runs: CalculiX shell modes against the beam, DUST against BEMT/OpenFAST, a real
   OpenModelica FMU.
-- Mode shapes in the 3-D viewport; dedicated result views for wind farms and control time series.
+- Structural tab in Design; dedicated result views for wind farms and control time series.
 
 ### To decide
 

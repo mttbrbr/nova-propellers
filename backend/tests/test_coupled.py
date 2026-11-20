@@ -90,6 +90,27 @@ class CoupledBlock(unittest.TestCase):
         self.assertTrue({'collective', 'forward', 'backward'} <= whirls)
         self.assertIn('min_excitation_margin_pct', block['outputs']['values'])
 
+    def test_shapes_show_whirl_phase(self):
+        workflow = copy.deepcopy(TEMPLATES['structural_campbell'])
+        workflow = {'schema_version': 2, 'kind': 'blocks', 'name': 'coupled', 'nodes': workflow['nodes'], 'edges': workflow['edges']}
+        for node in workflow['nodes']:
+            if node['id'] == 'campbell':
+                node['config'].update(coupling='mbc', points=5, rpm_min=40.0, rpm_max=70.0)
+        modal_out = engine.execute(workflow)['blocks']['campbell']['outputs']['modal']
+        self.assertIn('overhang_m', modal_out['layout'])
+        curves = {c['id']: c for c in modal_out['campbell']['curves']}
+
+        def tips(curve):
+            fields = curve['shapes'][-1]['blades']
+            return [complex(f['flap'][0][-1], f['flap'][1][-1]) for f in fields]
+        collective = tips(curves['coupled_blade_flap_collective1'])
+        self.assertLess(max(abs(np.angle(a / collective[0])) for a in collective), 0.05)
+        whirl = tips(curves['coupled_blade_flap_backward1'])
+        gaps = sorted(abs(np.degrees(np.angle(whirl[(k + 1) % 3] / whirl[k]))) for k in range(3))
+        np.testing.assert_allclose(gaps, [120.0, 120.0, 120.0], atol=3.0)
+        tower = curves['coupled_tower_fa1']['shapes'][-1]['tower']['fa']
+        self.assertAlmostEqual(max(abs(v) for v in tower[0]), 1.0, places=3)
+
     def test_coupling_without_tower_fails_clearly(self):
         workflow = copy.deepcopy(TEMPLATES['structural_campbell'])
         edges = [e for e in workflow['edges'] if not (e['target'] == 'campbell' and e['target_port'] in ('tower', 'nacelle'))]
