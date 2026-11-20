@@ -365,6 +365,27 @@ TEMPLATES['aeroelastic_turbine'] = {
 }
 
 
+TEMPLATES['openfast_closed_loop'] = copy.deepcopy(TEMPLATES['aeroelastic_turbine'])
+TEMPLATES['openfast_closed_loop'].update(
+    name='Closed loop: Nova aeroelastic vs OpenFAST with the same controller',
+    description='The aeroelastic template, plus an OpenFAST case written from the same rotor, structure, wind and controller (Nova '
+                'DISCON library through ServoDyn), run with the executable configured in Settings → Integrations.')
+TEMPLATES['openfast_closed_loop']['nodes'] += [
+    _node('case', 'openfast_rotor_case', {'duration_s': 30.0, 'dt_s': 0.005, 'timeout_seconds': 1800.0}, 1680, 80),
+    _node('run', 'openfast_run', {'integration_id': '', 'start_time_s': 22.0, 'statistics': [
+        {'channel': 'RotSpeed', 'stat': 'mean', 'name': 'of_rotor_rpm', 'unit': 'rpm'},
+        {'channel': 'BldPitch1', 'stat': 'mean', 'name': 'of_pitch_deg', 'unit': 'deg'},
+        {'channel': 'GenPwr', 'stat': 'mean', 'name': 'of_power_kw', 'unit': 'kW'},
+        {'channel': 'YawBrTDxp', 'stat': 'max', 'name': 'of_tower_top_fa_max_m', 'unit': 'm'}]}, 1960, 80),
+    _node('report', 'report', {'title': 'Nova vs OpenFAST'}, 2240, -60),
+]
+TEMPLATES['openfast_closed_loop']['edges'] += [
+    _edge('operating', 'spec', 'case', 'spec'), _edge('hub', 'hub', 'case', 'hub'), _edge('nacelle', 'nacelle', 'case', 'nacelle'),
+    _edge('tower', 'tower', 'case', 'tower'), _edge('blade', 'blade', 'case', 'blade'), _edge('plant', 'dynamics', 'case', 'dynamics'),
+    _edge('case', 'case', 'run', 'case'), _edge('simulation', 'values', 'report', 'a'), _edge('run', 'table', 'report', 'b'),
+]
+
+
 def templates():
     return [{'id': key, 'name': t['name'], 'description': t['description']} for key, t in TEMPLATES.items()]
 

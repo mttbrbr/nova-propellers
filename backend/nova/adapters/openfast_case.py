@@ -11,11 +11,12 @@ File layouts follow the module input files of OpenFAST v5.0.0 (sequential `value
 import hashlib
 import json
 import math
+import shutil
 from pathlib import Path
 
 import numpy as np
 
-from nova.adapters import openfast_structure
+from nova.adapters import discon, openfast_structure
 from nova.physics import beam_modes, rotors
 from nova.physics.sections import GRID_DEG
 
@@ -87,7 +88,7 @@ False          Echo            - Echo input data to <RootName>.ech (flag)
 {settings['_elast']}   CompElast       - Compute structural dynamics (switch) {{1=ElastoDyn; 2=ElastoDyn + BeamDyn for blades; 3=Simplified ElastoDyn}}
           1   CompInflow      - Compute inflow wind velocities (switch) {{0=still air; 1=InflowWind; 2=external from ExtInflow}}
           2   CompAero        - Compute aerodynamic loads (switch) {{0=None; 1=AeroDisk; 2=AeroDyn; 3=ExtLoads}}
-          0   CompServo       - Compute control and electrical-drive dynamics (switch) {{0=None; 1=ServoDyn}}
+{settings.get('_servo', 0)}   CompServo       - Compute control and electrical-drive dynamics (switch) {{0=None; 1=ServoDyn}}
           0   CompSeaSt       - Compute sea state information (switch) {{0=None; 1=SeaState}}
           0   CompHydro       - Compute hydrodynamic loads (switch) {{0=None; 1=HydroDyn}}
           0   CompSub         - Compute sub-structural dynamics (switch) {{0=None; 1=SubDyn; 2=External Platform MCKF}}
@@ -113,7 +114,7 @@ False          Echo            - Echo input data to <RootName>.ech (flag)
 "unused"      BDBldFile(3)    - Name of file containing BeamDyn input parameters for blade 3 (quoted string)
 "{settings['_root']}_InflowWind.dat"    InflowFile      - Name of file containing inflow wind input parameters (quoted string)
 "{settings['_root']}_AeroDyn.dat"     AeroFile        - Name of file containing aerodynamic input parameters (quoted string)
-"unused"      ServoFile       - Name of file containing control and electrical-drive input parameters (quoted string)
+"{settings.get('_servofile', 'unused')}"      ServoFile       - Name of file containing control and electrical-drive input parameters (quoted string)
 "unused"      SeaStFile       - Name of file containing sea state input parameters (quoted string)
 "unused"      HydroFile       - Name of file containing hydrodynamic input parameters (quoted string)
 "unused"      SubFile         - Name of file containing sub-structural input parameters (quoted string)
@@ -188,12 +189,13 @@ False         YawDOF      - Yaw degree of freedom -- controlled by controller (f
 """
 
 
-def _inflow(speed, ref_height):
+def _inflow(speed, ref_height, uniform=None, ref_length=1.0):
+    wind_type = 2 if uniform else 1
     return f"""------- InflowWind INPUT FILE -------------------------------------------------------------------------
-Nova steady uniform wind, no shear.
+Nova {'time-varying uniform wind (file)' if uniform else 'steady uniform wind, no shear'}.
 ---------------------------------------------------------------------------------------------------------------
 False         Echo           - Echo input data to <RootName>.ech (flag)
-          1   WindType       - switch for wind file type (1=steady; 2=uniform; 3=binary TurbSim FF; 4=binary Bladed-style FF; 5=HAWC format; 6=User defined; 7=native Bladed FF)
+{wind_type}   WindType       - switch for wind file type (1=steady; 2=uniform; 3=binary TurbSim FF; 4=binary Bladed-style FF; 5=HAWC format; 6=User defined; 7=native Bladed FF)
           0   PropagationDir - Direction of wind propagation (meteorological rotation from aligned with X (positive rotates towards -Y)) (deg)
           0   VFlowAng       - Upflow angle (degrees) (not used for native Bladed format WindType=7)
 False         VelInterpCubic - Use cubic interpolation for velocity in time (false=linear, true=cubic) [Used with WindType=2,3,4,5,7]
@@ -206,9 +208,9 @@ False         VelInterpCubic - Use cubic interpolation for velocity in time (fal
 {_num(ref_height)}   RefHt          - Reference height for horizontal wind speed      (m)
           0   PLExp          - Power law exponent                              (-)
 ================== Parameters for Uniform wind file   [used only for WindType = 2] ============================
-"unused"      FileName_Uni   - Filename of time series data for uniform wind field.      (-)
-         90   RefHt_Uni      - Reference height for horizontal wind speed                (m)
-     125.88   RefLength      - Reference length for linear horizontal and vertical sheer (-)
+"{uniform or 'unused'}"      FileName_Uni   - Filename of time series data for uniform wind field.      (-)
+{_num(ref_height)}   RefHt_Uni      - Reference height for horizontal wind speed                (m)
+{_num(ref_length)}   RefLength      - Reference length for linear horizontal and vertical sheer (-)
 ================== Parameters for Binary TurbSim Full-Field files   [used only for WindType = 3] ==============
 "unused"      FileName_BTS   - Name of the Full field wind file to use (.bts)
 ================== Parameters for Binary Bladed-style Full-Field files   [used only for WindType = 4 or WindType = 7] ==
@@ -402,7 +404,7 @@ False         InclUAdata        ! Is unsteady aerodynamics data included in this
 
 
 ED_OUTPUTS = ('Azimuth', 'RotSpeed', 'TipDxb1', 'TipDyb1', 'RootMEdg1', 'RootMFlp1', 'RootFxb1', 'RootFyb1',
-              'TwrBsMxt', 'TwrBsMyt', 'TwrBsFxt', 'YawBrTDxp', 'YawBrTDyp')
+              'TwrBsMxt', 'TwrBsMyt', 'TwrBsFxt', 'YawBrTDxp', 'YawBrTDyp', 'BldPitch1')
 STABILITY = 0.07  # time step limit as a fraction of the shortest enabled modal period
 
 
@@ -428,7 +430,7 @@ False         Echo        - Echo input data to "<RootName>.ech" (flag)
 False         PitchDOF    - Blade pitch DOF (flag)
 False         TeetDOF     - Rotor-teeter DOF (flag) [unused for 3 blades]
 False         DrTrDOF     - Drivetrain rotational-flexibility DOF (flag)
-False         GenDOF      - Generator DOF (flag)
+{settings.get('_gendof', 'False')}         GenDOF      - Generator DOF (flag)
 False         YawDOF      - Yaw DOF (flag)
 {_flag(settings['tower_fa_dof'])}         TwFADOF1    - First fore-aft tower bending-mode DOF (flag)
 {_flag(settings['tower_fa_dof'])}         TwFADOF2    - Second fore-aft tower bending-mode DOF (flag)
@@ -500,7 +502,7 @@ False         PtfmYDOF    - Platform yaw rotation DOF (flag)
 {_num(hub_record['mass_kg'])}   HubMass     - Hub mass (kg)
 {_num(hub_record['inertia_kg_m2'])}   HubIner     - Hub inertia about rotor axis (2 or 3-blades) (kg m^2)
           0   HubIner_Teeter - Hub inertia about teeter axis (2-blades) (kg m^2)
-          1   GenIner     - Generator inertia about HSS (kg m^2) (unused: rotor speed is prescribed)
+{_num(settings.get('_geniner', 1.0))}   GenIner     - Generator inertia about HSS (kg m^2)
 {_num(nacelle['mass_kg'])}   NacMass     - Nacelle mass (kg)
 {_num(nacelle['yaw_inertia_kg_m2'])}   NacYIner    - Nacelle inertia about yaw axis (kg m^2)
           0   YawBrMass   - Yaw bearing mass (kg)
@@ -538,7 +540,7 @@ False         PtfmYDOF    - Platform yaw rotation DOF (flag)
           0   OmgCut      - Yaw angular velocity cutoff below which viscous friction is linearized (rad/s)
 ---------------------- DRIVETRAIN ----------------------------------------------
         100   GBoxEff     - Gearbox efficiency (%)
-          1   GBRatio     - Gearbox ratio (-)
+{_num(settings.get('_gbratio', 1.0))}   GBRatio     - Gearbox ratio (-)
     1.0E+08   DTTorSpr    - Drivetrain torsional spring (N-m/rad) (unused: DrTrDOF is off)
     1.0E+05   DTTorDmp    - Drivetrain torsional damper (N-m/(rad/s)) (unused: DrTrDOF is off)
 ---------------------- FURLING -------------------------------------------------
@@ -675,7 +677,7 @@ def write_rigid_case(spec, directory, settings=None):
     return write_case(spec, directory, settings, None)
 
 
-def write_case(spec, directory, settings=None, structure=None):
+def write_case(spec, directory, settings=None, structure=None, controller=None, library=None):
     """Write the case into `directory`; return its description (paths, operating point, modes, case hash).
 
     Without `structure` the rotor is rigid (Simplified ElastoDyn). With the hub, nacelle, tower and blade
@@ -733,7 +735,16 @@ def write_case(spec, directory, settings=None, structure=None):
                  ED_BLADE: _ed_blade(blade, twist_at, modes['coefficients']), ED_TOWER: _ed_tower(tower, modes['coefficients'])}
         if rotor.blades != 3:
             assumptions.append(f'{int(rotor.blades)} blades with a rigid hub (no teeter degree of freedom)')
-        assumptions.append('Rotor speed is prescribed (no generator, drivetrain or controller dynamics)')
+        if controller:
+            resolved.update(_gendof='True', _geniner=float(controller.get('generator_inertia_kg_m2', 0.0)) or 1e-3,
+                            _gbratio=float(controller.get('gearbox_ratio', 1.0)), _servo=1, _servofile=f'{root}_ServoDyn.dat')
+            extra[f'{root}_ElastoDyn.dat'] = _elastodyn(rotor.blades, tip, hub, rpm, pitch, hub_r, nac, tower, blade, resolved)
+            extra[f'{root}_ServoDyn.dat'] = discon.servodyn(controller)
+            extra[discon.PARAMETERS] = discon.parameters(controller)
+            assumptions.append('Free rotor speed: generator degree of freedom (rigid drivetrain) driven by the Nova DISCON controller '
+                               '(kω² torque law and PI pitch, the same as the control blocks)')
+        else:
+            assumptions.append('Rotor speed is prescribed (no generator, drivetrain or controller dynamics)')
     else:
         overhang = settings['overhang_m'] if settings['overhang_m'] is not None else -0.05 * tip
         hub_height = settings['hub_height_m'] if settings['hub_height_m'] is not None else max(1.5 * tip, tip + 1.0)
@@ -745,15 +756,25 @@ def write_case(spec, directory, settings=None, structure=None):
         extra = {f'{root}_SED.dat': _sed(rotor.blades, tip, hub, rpm, pitch, resolved)}
     directory = Path(directory)
     (directory / 'airfoils').mkdir(parents=True, exist_ok=True)
-    files = {f'{root}.fst': _fst(resolved), f'{root}_InflowWind.dat': _inflow(speed, hub_height),
+    if controller and not flexible:
+        raise CaseError('A controller needs the flexible model (hub, nacelle, tower and blade structure)')
+    wind_table = (controller or {}).get('wind')
+    uniform = 'wind.hh' if wind_table else None
+    files = {f'{root}.fst': _fst(resolved), f'{root}_InflowWind.dat': _inflow(speed, hub_height, uniform, 2 * tip),
              f'{root}_AeroDyn.dat': _aerodyn(len(r), built['corrections']), 'blade.dat': _blade(r - hub, twist, chord), **extra}
     for i in range(len(r)):
         cl, cd = rotor.section(GRID_DEG, np.full_like(GRID_DEG, reynolds[i]), np.full_like(GRID_DEG, r[i]))
         files[f'airfoils/station_{i + 1:02d}.dat'] = _airfoil(f'Station {i + 1} (r = {r[i]:.4g} m)', reynolds[i], cl, cd)
     manifest = {'model': 'flexible' if flexible else 'rigid', 'assumptions': assumptions,
                 'frequencies_hz': modes['frequencies_hz'] if modes else None, 'mode_fit_rms': modes['fit_rms'] if modes else None}
+    if wind_table:
+        files[uniform] = discon.uniform_wind(wind_table['times'], wind_table['speeds'], wind_table.get('shear_exponent', 0.0))
     for name, text in files.items():
         (directory / name).write_text(text)
+    if controller:
+        if library is None:
+            raise CaseError('The controller needs the compiled Nova DISCON library')
+        shutil.copyfile(library, directory / discon.LIBRARY)
     digest = hashlib.sha256(json.dumps({k: files[k] for k in sorted(files)}, sort_keys=True).encode()).hexdigest()
     return {'case_directory': str(directory.resolve()), 'input_file': f'{root}.fst', 'output_file': f'{root}.outb', 'files': sorted(files),
             'model': manifest['model'], 'assumptions': assumptions, 'frequencies_hz': manifest['frequencies_hz'],

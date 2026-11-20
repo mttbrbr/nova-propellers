@@ -665,8 +665,16 @@ def _openfast_rotor_case(node, args):
     parent = database.DB_PATH.parent / 'generated-cases'
     parent.mkdir(parents=True, exist_ok=True)
     scratch = parent / f'.tmp-{uuid.uuid4().hex}'
+    controller = library = None
     try:
-        info = write_case(args['spec'], scratch, settings, structure)
+        if args.get('dynamics'):
+            from nova.adapters import discon
+            try:
+                controller = discon.from_chain(args['dynamics'], float(settings.get('duration_s', 10.0)))
+                library = discon.build(database.DB_PATH.parent / 'discon')
+            except discon.DisconError as exc:
+                raise CaseError(str(exc)) from exc
+        info = write_case(args['spec'], scratch, settings, structure, controller=controller, library=library)
         final = parent / info['case_hash'][:20]
         if final.exists():
             shutil.rmtree(scratch)

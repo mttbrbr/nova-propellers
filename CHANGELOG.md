@@ -6,6 +6,10 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- OpenFAST with the Nova controller: *OpenFAST case from rotor* accepts the control chain, frees the rotor speed
+  (generator degree of freedom) and runs the same kω² and PI pitch controller through ServoDyn as a Nova DISCON
+  library compiled locally; time-varying wind from the wind source. Checked against the native aeroelastic
+  model in closed loop. Template `openfast_closed_loop`.
 - Aeroelastic time-domain turbine (*Turbine dynamics* block): rotor–tower modes at variable speed, rotor-speed
   degree of freedom, BEMT per element with structural velocities and Øye dynamic inflow, shear and collective
   pitch, driven by the control blocks. Template `aeroelastic_turbine`.

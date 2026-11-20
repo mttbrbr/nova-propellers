@@ -289,9 +289,11 @@ BLOCKS = {
         family='specific', category='OpenFAST', label='OpenFAST case from rotor',
         description='Writes an OpenFAST case from the connected horizontal-axis rotor and its operating point. With only the rotor it is rigid '
                     '(Simplified ElastoDyn); connect hub, nacelle, tower and blade structure for a flexible ElastoDyn model at prescribed rotor speed. '
-                    'Airfoil tables are Nova\'s own polars. Also emits Nova\'s BEMT result (and the computed modal frequencies) as a reference.',
+                    'Airfoil tables are Nova\'s own polars. Connect a control chain (kω² torque law, PI pitch, wind source) to free the '
+                    'rotor speed: ServoDyn then runs the same controller compiled as a Nova DISCON library. Also emits Nova\'s BEMT result '
+                    '(and the computed modal frequencies) as a reference.',
         inputs=[port('spec', 'rotor_spec'), port('hub', 'hub', True), port('nacelle', 'nacelle', True), port('tower', 'tower', True),
-                port('blade', 'blade', True)],
+                port('blade', 'blade', True), port('dynamics', 'dynamics', True)],
         outputs=[port('case', 'openfast_case'), port('reference', 'record')],
         defaults={'duration_s': 10.0, 'dt_s': 0.02, 'hub_height_m': None, 'overhang_m': None, 'shaft_tilt_deg': 0.0,
                   'precone_deg': 0.0, 'flap_dof': True, 'edge_dof': True, 'tower_fa_dof': True, 'tower_ss_dof': True,

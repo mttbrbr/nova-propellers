@@ -68,6 +68,30 @@ the mean power and thrust converge to the steady BEMT within 0.5 %; the free dec
 aerodynamics) oscillates at the coupled fore-aft frequency of the multi-blade analysis within 2 %; with the
 kω² law and a PI pitch controller the rotor holds its speed above rated. Template `aeroelastic_turbine`.
 
+### The same controller in OpenFAST
+
+Connect the control chain to *OpenFAST case from rotor* (with the hub, nacelle, tower and blade structure) to
+free the rotor speed in OpenFAST: ElastoDyn gets the generator degree of freedom, gearbox ratio and
+generator inertia; ServoDyn runs `PCMode = VSContrl = 5` with **Nova DISCON**, a small Bladed-style library
+(`backend/nova/adapters/discon/nova_discon.c`, Apache-2.0) that implements exactly the kω² law with its
+rated-torque cap and the PI pitch controller with limits, conditional anti-windup and gain schedule of the
+control blocks. Nova compiles it once with the system C compiler (cached by the source hash) and copies it
+into the case with its parameter file; the wind source becomes an InflowWind uniform wind file. Elements
+without an OpenFAST counterpart (transfer functions, state space, FMUs, a derivative term) are refused.
+
+On the AOC 15/50 example, with a wind ramp from 8 to 14 m/s (`backend/tests/test_openfast_controller.py`
+checks a shorter step):
+
+| t | Rotor speed Nova / OpenFAST | Pitch | Power | Tower-top fore-aft |
+| --- | --- | --- | --- | --- |
+| 15 s | 68.69 / 68.56 rpm | 7.7 / 8.0° | 48.1 / 47.9 kW | 16.6 / 16.6 mm |
+| 25 s | 65.72 / 65.63 rpm | 13.0 / 12.8° | 42.2 / 42.0 kW | 11.9 / 13.0 mm |
+| 40 s | 64.95 / 64.95 rpm | 13.3 / 13.0° | 40.7 / 40.7 kW | 11.7 / 13.0 mm |
+
+Above rated Nova's thrust is about 9 % higher than AeroDyn's (low incidence on the pitched blade, where the
+two inflow models differ most); OpenFAST also includes gravity, which Nova does not. Template
+`openfast_closed_loop`.
+
 ### FMU import
 
 FMUs are run through FMPy (BSD-2, optional: `pip install fmpy`), co-simulation only: Nova sets the
