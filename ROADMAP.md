@@ -158,7 +158,7 @@ input blocks are added (as `point_mass` and `spring_damper` were for structural 
 - OpenFAST linearisation block (ElastoDyn, aerodynamics off, MBC3) with a mode-by-mode comparison; on the
   AOC 15/50 example the first five coupled modes agree within 2.5 %, the second flap within about 7 %.
 - Campbell chart, animated mode shapes and participation in the block result panel.
-- Open: refreshed README screenshots; mode shapes in the 3-D viewport (today a 2-D animated side view).
+- Open: mode shapes in the 3-D viewport (today a 2-D animated side view).
 
 ### Phase 2 — Performance curves and operating strategy (done)
 

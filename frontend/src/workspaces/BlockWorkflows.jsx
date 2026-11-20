@@ -46,6 +46,15 @@ const columnLabel = { span_fraction: 'r/L', height_fraction: 'h/H', mass_per_len
   cm_offset_m: 'cm off' };
 const tubularOnly = ['base_diameter_m', 'top_diameter_m', 'wall_thickness_m', 'youngs_modulus_pa', 'density_kg_m3'];
 const BlockKind = createContext('');
+const BlockConfig = createContext({});
+// External program used by a block's integration_id setting (null: the block runs natively with these settings).
+const ADAPTER_NAMES = { openfast: 'OpenFAST', calculix: 'CalculiX', dust: 'DUST', pywake: 'PyWake' };
+function adapterFor(kind, config) {
+  if (kind === 'Blade shell modes (CalculiX)') return 'calculix';
+  if (kind === 'DUST rotor (vortex particles)') return 'dust';
+  if (kind === 'Wind farm AEP') return config?.engine === 'pywake' ? 'pywake' : null;
+  return 'openfast';
+}
 const rowTemplates = {
   sections: { r_over_R: 0.5, section: { name: 'NACA 0012' } },
   checks: { quantity: 'power_w', operator: '<=', value: 1000, severity: 'hard', label: '', unit: '' },
@@ -284,7 +293,7 @@ function BlockEditor({ seed = null, onOpenSettings = null }) {
   const chosen = nodes.find((n) => n.id === selected);
   const tone = !result ? null : result.status === 'succeeded' ? (result.feasible === false ? 'warn' : 'ok') : result.status === 'failed' ? 'err' : 'warn';
 
-  return <IntegrationsContext.Provider value={{ list: integrations.filter((i) => i.adapter_id === 'openfast'), openSettings: onOpenSettings }}><div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
+  return <IntegrationsContext.Provider value={{ list: integrations, openSettings: onOpenSettings }}><div ref={canvas} aria-label="Block workflow canvas" className="relative min-h-[560px] min-w-0 flex-1 bg-nv-canvas xl:h-full xl:min-h-0"
     onDoubleClick={(e) => { if (e.target.classList?.contains('react-flow__pane')) openPalette({ x: e.clientX, y: e.clientY }); }}>
     <ReactFlow nodes={display} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) setResult(null); }}
       onConnect={onConnect} isValidConnection={isValidConnection} onNodeClick={(_, n) => { setSelected(n.id); setPalette(null); setPanel(null); }}
@@ -413,7 +422,7 @@ function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onD
   const [text, setText] = useState(JSON.stringify(node.data.config, null, 2));
   const [textError, setTextError] = useState('');
   useEffect(() => { if (!raw) setText(JSON.stringify(node.data.config, null, 2)); }, [node.data.config, raw]);
-  return <BlockKind.Provider value={spec.label}><div className="flex flex-col gap-4">
+  return <BlockKind.Provider value={spec.label}><BlockConfig.Provider value={node.data.config}><div className="flex flex-col gap-4">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="m-0 truncate text-[15px] font-semibold">{node.id}</h2>
       <p className="m-0 mt-0.5 text-xs text-nv-muted">{spec.label} · {spec.family === 'general' ? 'general' : 'rotor'} block</p></div>
       <button type="button" aria-label="Close settings" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-nv-muted hover:bg-nv-hover hover:text-nv-ink" onClick={onClose}><X size={15} aria-hidden="true" /></button></div>
@@ -428,7 +437,7 @@ function BlockInspector({ node, result, catalog, rotors, onChange, onRemove, onD
       {textError && <p className="m-0 text-xs text-nv-err-ink">{textError}</p>}</>
       : <ConfigEditor value={node.data.config} onChange={onChange} catalog={catalog} rotors={rotors} path={[]} />}
     {result && <BlockResult result={result} />}
-  </div></BlockKind.Provider>;
+  </div></BlockConfig.Provider></BlockKind.Provider>;
 }
 
 function ConfigEditor({ value, onChange, catalog, rotors, path }) {
@@ -454,14 +463,18 @@ function ScalarInput({ name, value, onChange, catalog, rotors }) {
 }
 
 function IntegrationField({ value, onChange }) {
-  const { list, openSettings } = useContext(IntegrationsContext);
+  const { list: all, openSettings } = useContext(IntegrationsContext);
+  const adapter = adapterFor(useContext(BlockKind), useContext(BlockConfig));
+  if (!adapter) return null;
+  const name = ADAPTER_NAMES[adapter];
+  const list = all.filter((i) => i.adapter_id === adapter);
   if (!list.length) return <div className="flex flex-col gap-1.5 rounded-md border border-nv-warn/30 bg-nv-warn/10 p-2.5 text-[12.5px] text-nv-reference">
-    OpenFAST is not set up on this computer.
-    {openSettings && <div><Button onClick={openSettings}>Set up OpenFAST</Button></div>}</div>;
+    {name} is not set up on this computer.
+    {openSettings && <div><Button onClick={openSettings}>Set up {name}</Button></div>}</div>;
   return <label className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2 text-[12.5px] text-nv-muted">executable
-    <select aria-label="OpenFAST executable" className={fieldClass} value={value || ''} onChange={(e) => onChange(e.target.value)}>
+    <select aria-label={`${name} executable`} className={fieldClass} value={value || ''} onChange={(e) => onChange(e.target.value)}>
       <option value="" className="bg-nv-panel">First configured</option>
-      {list.map((i) => <option key={i.id} value={i.id} className="bg-nv-panel">{i.probe?.version ? `OpenFAST ${i.probe.version}` : 'OpenFAST'} · {String(i.executable).split('/').slice(-4).join('/')}</option>)}</select></label>;
+      {list.map((i) => <option key={i.id} value={i.id} className="bg-nv-panel">{i.probe?.version ? `${name} ${i.probe.version}` : name} · {String(i.executable).split('/').slice(-4).join('/')}</option>)}</select></label>;
 }
 
 // Compact grid for lists of flat numeric rows (blade and tower stations); accepts pasted spreadsheet columns.

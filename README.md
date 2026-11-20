@@ -34,6 +34,8 @@ behind a polished screen.
 | ![Sizing: trade-off charts and actuator-disk estimate](docs/media/screenshot-sizing.jpg) | ![Geometry: chord and twist editing with live 3-D render](docs/media/screenshot-geometry.jpg) |
 | **Results** | **Block workflow** |
 | ![Results: technical report, spanwise distributions and convergence](docs/media/screenshot-results.jpg) | ![Workflow: executable block graph for a HAWT design](docs/media/screenshot-workflow.jpg) |
+| **Rotor–tower Campbell diagram** | **Wind farm** |
+| ![Coupled Campbell diagram with whirl modes, crossings and mode participation](docs/media/screenshot-campbell.jpg) | ![Wind-farm workflow: layout, wake losses and annual energy](docs/media/screenshot-wind-farm.jpg) |
 
 ## What you can do
 
@@ -62,6 +64,16 @@ behind a polished screen.
   OpenFAST output and exchange standalone `.nova-run` external results.
   PyWake/OpenFAST execution uses independently installed software.
   See [Integrations](docs/EXTERNAL_INTEGRATIONS.md).
+- Structural dynamics without aerodynamics on a 3-D beam: blade and tower modes,
+  rotor–tower coupled Campbell diagrams (collective, backward and forward whirl),
+  verified against OpenFAST linearisation; blade layups to section properties and
+  CalculiX shell models.
+- Performance maps with response surfaces, Cp–λ with blade flexibility and wind
+  shear, variable-speed operating strategies, annual energy, NREL cost model and
+  LCOE, and optimisers (SQP, NSGA-II, multi-fidelity) over any computed quantity.
+- Wind farms with a native NOJ wake model or PyWake, DUST mid-fidelity checks, and
+  control design on named signals (PID, kω², schedules, transfer functions, FMUs)
+  with a rotor–drivetrain plant.
 
 Toroidal propellers are deliberately out of scope for the current alpha. Nova
 only exposes methods that match the geometry and analysis paths implemented in
