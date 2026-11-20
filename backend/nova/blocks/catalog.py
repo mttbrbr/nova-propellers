@@ -195,6 +195,14 @@ BLOCKS = {
         inputs=[port('case', 'openfast_case')], outputs=[port('table', 'table'), port('values', 'record')],
         defaults={'integration_id': '', 'start_time_s': 0.0,
                   'statistics': [{'channel': 'GenPwr', 'stat': 'mean', 'name': 'gen_power_kw', 'unit': 'kW'}]}),
+    'openfast_linearization': dict(
+        family='specific', category='OpenFAST', label='OpenFAST linearisation',
+        description='Structural linearisation of a flexible ElastoDyn case (aerodynamics, control and gravity off, prescribed rotor speed) '
+                    'over one revolution, then multi-blade coordinates (MBC3): fixed-frame frequencies and damping. Connect a coupled '
+                    'Campbell diagram to compare Nova and OpenFAST mode by mode.',
+        inputs=[port('case', 'openfast_case'), port('modal', 'modal', True)],
+        outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'integration_id': '', 'rpm': None, 'azimuths': 12, 'settle_time_s': 5.0, 'blades': 3}),
     # ------------------------------------------------------------ structural dynamics (no aerodynamics)
     'point_mass': dict(
         family='specific', category='Structural dynamics', label='Point mass',
@@ -234,13 +242,15 @@ BLOCKS = {
     'campbell': dict(
         family='specific', category='Structural dynamics', label='Campbell diagram',
         description='Blade (rotating frame) and tower frequencies against rotor speed with the 1P, BP, 2BP excitation lines (or your '
-                    'harmonics), crossings and the smallest margin at the operating speed. Modes are tracked between speeds by MAC.',
+                    'harmonics), crossings and the smallest margin at the operating speed. Modes are tracked between speeds by MAC. '
+                    'coupling "mbc" couples rotor and tower in multi-blade coordinates (fixed frame: collective, backward and forward '
+                    'whirl); it needs the tower and nacelle blocks and three or more blades.',
         inputs=[port('blade', 'blade'), port('spec', 'rotor_spec'), port('tower', 'tower', True), port('nacelle', 'nacelle', True),
                 port('hub', 'hub', True), port('attachments', 'attachment', True)],
         outputs=[port('table', 'table'), port('values', 'record'), port('modal', 'modal')],
         defaults={'rpm_min': 0.0, 'rpm_max': None, 'points': 31, 'operating_rpm': None, 'flap_modes': 2, 'edge_modes': 1,
                   'torsion_modes': 0, 'tower_modes': 2, 'tower_torsion_modes': 0, 'harmonics': [], 'use_aerodynamic_twist': True,
-                  'top_mass_kg': None, 'top_inertia_kg_m2': 0.0}),
+                  'top_mass_kg': None, 'top_inertia_kg_m2': 0.0, 'coupling': 'none'}),
 }
 
 

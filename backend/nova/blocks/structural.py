@@ -264,6 +264,12 @@ def campbell(node, args):
         n = _integer(config, 'tower_modes', 0, modal.MAX_MODES, 2)
         tower_counts = {'fa': n, 'ss': n, 'torsion': _integer(config, 'tower_torsion_modes', 0, modal.MAX_MODES, 0)}
         bodies, source, _ = _top_bodies(config, {**args, 'blade': blade, 'spec': spec})
+    coupling = config.get('coupling', 'none')
+    if coupling not in ('none', 'mbc'):
+        raise StructuralError('coupling must be none or mbc')
+    if coupling == 'mbc':
+        return _coupled_campbell(config, args, rotor, length, twist, twist_notes, operating, np.linspace(low, high, points),
+                                 harmonics, counts, attachments)
     try:
         result = modal.campbell(blade, length, rotor['hub'], rotor['blades'], np.linspace(low, high, points), twist=twist,
                                 tower=tower, top_bodies=bodies, counts=counts, tower_counts=tower_counts,
@@ -273,6 +279,22 @@ def campbell(node, args):
     for curve in result['curves']:
         if curve['frame'] == 'rotating' and rotor['blades'] >= 3:
             curve['fixed_frame'] = modal.whirl(curve, result['rpm'])
+    rows = _rows(result)
+    record = {'crossings': len(result['crossings'])}
+    beam = modal.blade_beam(blade, length, twist, attachments)
+    notes = [MODEL_NOTE, *twist_notes, *_missing_note('blade', counts, modal.available(beam, 'blade')),
+             'Blade modes in the rotating frame (centrifugal stiffening, spin softening, Coriolis); tower modes fixed with a parked '
+             'rotor; no rotor–tower coupling. Fixed-frame whirl frequencies f ± Ω/2π assume an isotropic rotor.']
+    if tower is not None:
+        notes.append(f'Tower {source}')
+    _finish_campbell(result, record, notes, operating)
+    modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': length, 'blades': rotor['blades'],
+                 'tower_height_m': tower['height_m'] if tower else None, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
+                 'campbell': result, 'operating_rpm': operating}
+    return {'table': {'kind': 'campbell', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
+
+
+def _rows(result):
     rows = []
     for i, speed in enumerate(result['rpm']):
         row = {'rpm': speed}
@@ -281,13 +303,10 @@ def campbell(node, args):
         for name, line in result['excitation'].items():
             row[f'{name}_hz'] = line[i]
         rows.append(row)
-    record = {'crossings': len(result['crossings'])}
-    beam = modal.blade_beam(blade, length, twist, attachments)
-    notes = [MODEL_NOTE, *twist_notes, *_missing_note('blade', counts, modal.available(beam, 'blade')),
-             'Blade modes in the rotating frame (centrifugal stiffening, spin softening, Coriolis); tower modes fixed with a parked '
-             'rotor; no rotor–tower coupling. Fixed-frame whirl frequencies f ± Ω/2π assume an isotropic rotor.']
-    if tower is not None:
-        notes.append(f'Tower {source}')
+    return rows
+
+
+def _finish_campbell(result, record, notes, operating):
     if operating:
         values, worst, at = modal.margins(result, operating)
         record.update({f'{k}_hz': v for k, v in values.items()})
@@ -299,7 +318,49 @@ def campbell(node, args):
     weak = [c['id'] for c in result['curves'] if c['tracking_mac_min'] < 0.8]
     if weak:
         notes.append(f'Mode tracking uncertain (MAC < 0.8) for {", ".join(weak)}: modes may swap between speeds')
+
+
+def _coupled_campbell(config, args, rotor, length, twist, twist_notes, operating, rpm, harmonics, counts, attachments):
+    from nova.physics import coupled
+    blade, tower, nacelle = args['blade'], args.get('tower'), args.get('nacelle')
+    if tower is None or nacelle is None:
+        raise StructuralError('The coupled Campbell diagram needs the tower and nacelle blocks (hub optional)')
+    if rotor['blades'] < 3:
+        raise StructuralError('The coupled Campbell diagram needs at least three blades (two-bladed rotors are not isotropic)')
+    n = _integer(config, 'tower_modes', 0, modal.MAX_MODES, 2)
+    tower_counts = {'fa': n, 'ss': n, 'torsion': _integer(config, 'tower_torsion_modes', 0, modal.MAX_MODES, 0)}
+    bodies = [(nacelle['mass_kg'], (nacelle['cm_up_m'], nacelle['cm_lateral_m'], nacelle['cm_downwind_m']),
+               np.diag([nacelle['yaw_inertia_kg_m2'], 0.0, 0.0]))]
+    blade_model = modal.blade_beam(blade, length, twist, attachments)
+    tower_model = modal.tower_beam(tower, bodies, attachments)
+    blade_counts = {k: v for k, v in counts.items() if v and k in modal.available(blade_model, 'blade')}
+    tower_counts = {k: v for k, v in tower_counts.items() if v and k in modal.available(tower_model, 'tower')}
+    if not blade_counts or not tower_counts:
+        raise StructuralError('Ask for at least one blade mode and one tower mode')
+    try:
+        curves, short = coupled.campbell(blade_model, tower_model, blades=rotor['blades'], hub_radius=rotor['hub'],
+                                         hub_offset=(nacelle['tower_top_to_shaft_m'], 0.0, nacelle['overhang_m']), rpm=rpm,
+                                         blade_counts=blade_counts, tower_counts=tower_counts,
+                                         blade_damping=modal.blade_damping(blade), tower_damping=tower['damping_pct'] / 100,
+                                         hub=args.get('hub'))
+    except (coupled.CoupledError, modal.ModalError) as exc:
+        raise StructuralError(str(exc)) from exc
+    harmonics = sorted(set(harmonics or [1, rotor['blades'], 2 * rotor['blades']]))
+    result = {'rpm': rpm.tolist(), 'curves': curves, 'harmonics': harmonics,
+              'excitation': {f'{h}P': (h * rpm / 60.0).tolist() for h in harmonics},
+              'crossings': modal.crossings(curves, rpm, harmonics), 'coupling': 'mbc'}
+    record = {'crossings': len(result['crossings'])}
+    notes = [MODEL_NOTE, *twist_notes, *_missing_note('blade', counts, modal.available(blade_model, 'blade')),
+             'Rotor–tower coupled modes in the fixed frame: tower modes and the rotating-blade modes of every blade coupled through '
+             'the hub motion (mass, Coriolis, centrifugal and gyroscopic terms), multi-blade coordinates (collective, backward and '
+             'forward whirl), azimuth-averaged system (MBC3, Bir 2008). Isotropic rotor, no gravity, no aerodynamics, no shaft tilt '
+             'or precone, rigid drivetrain (no generator degree of freedom).',
+             f'Tower: nacelle at the top, rotor coupled through its {rotor["blades"]} flexible blades'
+             + (' and a rotating hub' if args.get('hub') else ' (hub mass not connected)')]
+    if short:
+        notes.append('Fewer tower modes than requested: ' + ', '.join(f'{k} ({a} of {b})' for k, (a, b) in short.items()))
+    _finish_campbell(result, record, notes, operating)
     modal_out = {'kind': 'modal', 'component': 'system', 'blade_length_m': length, 'blades': rotor['blades'],
-                 'tower_height_m': tower['height_m'] if tower else None, 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
+                 'tower_height_m': tower['height_m'], 'x': np.linspace(0, 1, modal.SHAPE_POINTS).tolist(),
                  'campbell': result, 'operating_rpm': operating}
-    return {'table': {'kind': 'campbell', 'rows': rows}, 'values': record, 'modal': modal_out, 'notes': notes}
+    return {'table': {'kind': 'campbell', 'rows': _rows(result)}, 'values': record, 'modal': modal_out, 'notes': notes}

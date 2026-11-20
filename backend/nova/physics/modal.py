@@ -359,14 +359,9 @@ def mac(a, b):
     return float(np.abs(np.vdot(a, b)) ** 2 / (np.real(np.vdot(a, a)) * np.real(np.vdot(b, b))))
 
 
-def solve(beam, *, omega=0.0, hub_radius=0.0, damping=None, component='blade', basis=BASIS):
-    """All modes of the beam within the reduced basis, lowest first.
-
-    `damping` maps a family name to a modal damping ratio. Returns a list of dicts: family, frequency_hz
-    (damped), natural_hz, damping_ratio, participation per family and the full complex vector `q`.
-    """
-    names = FAMILIES[component]
-    damping = damping or {}
+def basis(beam, *, omega=0.0, hub_radius=0.0, count=BASIS):
+    """Lowest undamped real modes of the clamped beam (gyroscopic terms left out): natural angular frequencies,
+    mass-normalised shapes on the free degrees of freedom and the free-dof K, M, C, G matrices."""
     K, M, C = beam.K.copy(), beam.M, beam.C
     G = np.zeros_like(K)
     if omega:
@@ -389,13 +384,23 @@ def solve(beam, *, omega=0.0, hub_radius=0.0, damping=None, component='blade', b
     Kc = T.T @ K @ T
     Mc = np.diag(mass_values[inertial])
     Kc = (Kc + Kc.T) / 2
-    keep = np.arange(R.shape[1])
-    count = min(basis, len(keep))
+    count = min(count, R.shape[1])
     values, vectors = eigh(Kc, Mc, subset_by_index=[0, count - 1])
     if values[0] <= 0:
         raise ModalError('The structure is unstable at this rotor speed (negative stiffness)')
-    natural = np.sqrt(values)
-    phi = T @ vectors
+    return np.sqrt(values), T @ vectors, (K, M, C, G)
+
+
+def solve(beam, *, omega=0.0, hub_radius=0.0, damping=None, component='blade', basis_size=BASIS):
+    """All modes of the beam within the reduced basis, lowest first.
+
+    `damping` maps a family name to a modal damping ratio. Returns a list of dicts: family, frequency_hz
+    (damped), natural_hz, damping_ratio, participation per family and the full complex vector `q`.
+    """
+    natural, phi, (K, M, C, G) = basis(beam, omega=omega, hub_radius=hub_radius, count=basis_size)
+    count = len(natural)
+    names = FAMILIES[component]
+    damping = damping or {}
     weights = np.diag(M)
 
     def family_of(q):
@@ -598,17 +603,23 @@ def campbell(blade, blade_length_m, hub_radius_m, blades, rpm, *, twist=None, to
                                'damping_ratio': [m['damping_ratio']] * len(rpm),
                                'shapes': [describe(tower_model, m, 'tower')], 'tracking_mac_min': 1.0})
     excitation = {f'{h}P': (h * rpm / 60.0).tolist() for h in harmonics}
-    crossings = []
+    return {'rpm': rpm.tolist(), 'curves': curves, 'excitation': excitation, 'harmonics': harmonics,
+            'crossings': crossings(curves, rpm, harmonics)}
+
+
+def crossings(curves, rpm, harmonics):
+    """Speeds where a mode frequency meets an excitation harmonic h·Ω/2π (linear interpolation)."""
+    rpm = np.asarray(rpm, dtype=float)
+    out = []
     for curve in curves:
         f = np.asarray(curve['frequency_hz'])
         for h in harmonics:
             gap = f - h * rpm / 60.0
             for i in np.nonzero(np.sign(gap[:-1]) * np.sign(gap[1:]) < 0)[0]:
                 t = gap[i] / (gap[i] - gap[i + 1])
-                crossings.append({'mode': curve['id'], 'harmonic': f'{h}P', 'rpm': float(rpm[i] + t * (rpm[i + 1] - rpm[i])),
-                                  'frequency_hz': float(f[i] + t * (f[i + 1] - f[i]))})
-    return {'rpm': rpm.tolist(), 'curves': curves, 'excitation': excitation, 'harmonics': harmonics,
-            'crossings': sorted(crossings, key=lambda c: c['rpm'])}
+                out.append({'mode': curve['id'], 'harmonic': f'{h}P', 'rpm': float(rpm[i] + t * (rpm[i + 1] - rpm[i])),
+                            'frequency_hz': float(f[i] + t * (f[i + 1] - f[i]))})
+    return sorted(out, key=lambda c: c['rpm'])
 
 
 def whirl(curve, rpm):

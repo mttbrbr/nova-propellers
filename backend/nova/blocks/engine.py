@@ -518,14 +518,101 @@ def _window_statistics(data, start):
             for i, c in enumerate(data['channels'])}, int(keep.sum())
 
 
+def _openfast_integration(config):
+    from nova.infrastructure import library
+    integrations = [r for r in library.list_records('integration') if r.get('adapter_id') == 'openfast']
+    chosen = config.get('integration_id') or ''
+    integration = next((r for r in integrations if r['id'] == chosen), None) if chosen else (integrations[0] if integrations else None)
+    if integration is None:
+        raise BlockError('No OpenFAST executable is configured: add one in Settings → Integrations')
+    return integration
+
+
+def _throttled_log():
+    report = _PROGRESS.get()
+    last = [0.0]
+
+    def log(text):  # throttled: OpenFAST prints one line per time step
+        if report and time.monotonic() - last[0] > 0.5 and text.strip():
+            last[0] = time.monotonic()
+            report(text.strip().splitlines()[-1][:120])
+    return log
+
+
+def _openfast_linearization(node, args, cancelled):
+    import shutil
+    import uuid
+    from pathlib import Path
+
+    import database
+    from nova.adapters import openfast_lin
+    from nova.adapters.base import AdapterError, execute_adapter
+    from nova.adapters.openfast import copy_openfast_case
+    from nova.adapters.registry import get
+    from nova.application.external import configuration
+    config = node.get('config', {})
+    azimuths = config.get('azimuths', 12)
+    if type(azimuths) is not int or not 4 <= azimuths <= 72:
+        raise BlockError('azimuths must be an integer in 4–72')
+    settle = _number(config.get('settle_time_s', 5.0), 'settle_time_s')
+    if not 0 <= settle <= 600:
+        raise BlockError('settle_time_s must be in 0–600 s')
+    rpm = config.get('rpm')
+    rpm = None if rpm is None else _number(rpm, 'rpm')
+    blades = config.get('blades', 3)
+    if type(blades) is not int or not 3 <= blades <= 10:
+        raise BlockError('blades must be an integer in 3–10 (the multi-blade transformation needs three or more)')
+    integration = _openfast_integration(config)
+    root = database.DB_PATH.parent / 'external-runs' / str(uuid.uuid4())
+    root.mkdir(parents=True)
+    try:
+        edited = root / 'linearization_source'
+        shutil.copytree(Path(args['case']['case_directory']), edited,
+                        ignore=shutil.ignore_patterns('*.out', '*.outb', '*.lin', '*.sum', '*.ech'))
+        rpm, times = openfast_lin.prepare(edited, args['case']['input_file'], azimuths=azimuths, settle_s=settle, rpm=rpm)
+        frozen = copy_openfast_case({**args['case'], 'case_directory': str(edited)}, root / 'source_case')
+        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled, on_log=_throttled_log())
+        found = openfast_lin.modes(openfast_lin.read_directory(Path(output['working_directory']) / 'case', blades), blades)
+    except (AdapterError, openfast_lin.LinearizationError, OSError) as exc:
+        raise BlockError(str(exc)) from exc
+    return linearization_outputs(found, rpm, times, azimuths, settle, args.get('modal'))
+
+
+def linearization_outputs(found, rpm, times, azimuths, settle, modal_input):
+    from nova.adapters import openfast_lin
+    rows = [{'mode': m['id'], 'frequency_hz': m['frequency_hz'], 'damping_ratio': m['damping_ratio'], 'whirl': m['whirl']} for m in found]
+    record = {f'of_{m["id"]}_hz': m['frequency_hz'] for m in found}
+    record['rpm'] = rpm
+    notes = [f'OpenFAST structural linearisation at {rpm:g} rpm: ElastoDyn with aerodynamics, inflow, control and gravity off, '
+             f'{azimuths} azimuths over one revolution from t = {settle:g} s, multi-blade coordinates averaged over azimuth (MBC3). '
+             'Labels come from the largest state amplitude and can be wrong for higher tower modes.']
+    comparison = []
+    if modal_input is not None:
+        campbell = modal_input.get('campbell') or {}
+        if campbell.get('coupling') != 'mbc':
+            notes.append('The connected Campbell diagram is not coupled (set coupling to mbc): no mode-by-mode comparison')
+        else:
+            if not campbell['rpm'][0] <= rpm <= campbell['rpm'][-1]:
+                raise BlockError(f'{rpm:g} rpm is outside the Campbell diagram speed range')
+            curves = [{**c, 'rpm': campbell['rpm']} for c in campbell['curves']]
+            comparison = openfast_lin.compare(found, curves, rpm)
+            if comparison:
+                record['max_difference_pct'] = max(abs(p['difference_pct']) for p in comparison)
+                notes.append('Modes paired with Nova by nearest frequency, preferring the same family and whirl. ElastoDyn uses '
+                             'polynomial assumed modes (Euler–Bernoulli), Nova a 3-D Timoshenko beam: differences grow for '
+                             'higher modes. Damping definitions differ (ElastoDyn applies it per assumed mode).')
+    return {'table': {'kind': 'linearization', 'rows': rows, 'comparison': comparison, 'rpm': rpm, 'times_s': times},
+            'values': record, 'notes': notes}
+
+
 def _openfast_run(node, args, cancelled):
     import uuid
+
     import database
     from nova.adapters.base import AdapterError, execute_adapter
     from nova.adapters.openfast import copy_openfast_case
     from nova.adapters.registry import get
     from nova.application.external import configuration
-    from nova.infrastructure import library
     config = node.get('config', {})
     start = _number(config.get('start_time_s', 0.0), 'start_time_s')
     wanted = config.get('statistics', [])
@@ -534,23 +621,12 @@ def _openfast_run(node, args, cancelled):
     for item in wanted:
         if item.get('stat') not in STATS or not NAME.match(str(item.get('name', ''))) or not item.get('channel'):
             raise BlockError(f'Each statistic needs a channel, a name and a stat in {", ".join(STATS)}')
-    integrations = [r for r in library.list_records('integration') if r.get('adapter_id') == 'openfast']
-    chosen = config.get('integration_id') or ''
-    integration = next((r for r in integrations if r['id'] == chosen), None) if chosen else (integrations[0] if integrations else None)
-    if integration is None:
-        raise BlockError('No OpenFAST executable is configured: add one in Settings → Integrations')
+    integration = _openfast_integration(config)
     root = database.DB_PATH.parent / 'external-runs' / str(uuid.uuid4())
     root.mkdir(parents=True)
     try:
         frozen = copy_openfast_case(args['case'], root / 'source_case')
-        report = _PROGRESS.get()
-        last = [0.0]
-
-        def log(text):  # throttled: OpenFAST prints one line per time step
-            if report and time.monotonic() - last[0] > 0.5 and text.strip():
-                last[0] = time.monotonic()
-                report(text.strip().splitlines()[-1][:120])
-        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled, on_log=log)
+        output = execute_adapter(get('openfast'), configuration(integration), frozen, root, cancelled=cancelled, on_log=_throttled_log())
     except AdapterError as exc:
         raise BlockError(str(exc)) from exc
     stats, samples = _window_statistics(output['data'], start)
@@ -580,8 +656,9 @@ def _structure_block(kind):
 def _openfast_rotor_case(node, args):
     import shutil
     import uuid
+
     import database
-    from nova.adapters.openfast_case import CaseError, DOF_SETTINGS, SETTINGS, write_case
+    from nova.adapters.openfast_case import DOF_SETTINGS, SETTINGS, CaseError, write_case
     config = node.get('config', {})
     settings = {k: config[k] for k in (*SETTINGS, *DOF_SETTINGS) if k in config}
     structure = {k: args.get(k) for k in ('hub', 'nacelle', 'tower', 'blade')}
@@ -622,7 +699,7 @@ HANDLERS = {
     'blade_modes': structural.blade_modes, 'rotating_blade_modes': lambda node, args: structural.blade_modes(node, args, rotating=True),
     'tower_modes': structural.tower_modes, 'campbell': structural.campbell,
 }
-LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run}
+LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization}
 
 
 def execute(workflow, *, progress=None, cancelled=None):

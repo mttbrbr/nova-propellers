@@ -4,6 +4,7 @@ import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, a
 import '@xyflow/react/dist/style.css';
 import { request } from '../backend.js';
 import LineChart from '../ui/LineChart.jsx';
+import { LinearizationComparison, ModalView } from '../ui/ModalCharts.jsx';
 import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
@@ -20,7 +21,7 @@ function optionsFor(key, catalog, rotors) {
     operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
     method: ['auto', 'bemt', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
-    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
+    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], coupling: ['none', 'mbc'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
   };
   if (key === 'preset' && map.preset) return map.preset;
   return map[key] || null;
@@ -556,11 +557,7 @@ function PortValue({ port, value }) {
     return <div className="flex flex-col gap-1"><span className="text-xs text-nv-muted">{port}: {value.method_label}</span>
       {value.warnings?.map((w) => <Notice key={w} tone="warn">{w}</Notice>)}</div>;
   }
-  if (value && value.kind === 'modal') {
-    const curves = value.campbell?.curves || value.modes || [];
-    return <p className="m-0 text-xs text-nv-muted">{port}: {value.component} modes · {curves.map((c) => c.label).join(', ')}
-      {value.campbell ? ` · ${value.campbell.rpm.length} speeds, ${value.campbell.crossings.length} crossings` : ''}</p>;
-  }
+  if (value && value.kind === 'modal') return <ModalView modal={value} />;
   if (value && value.kind && value.geometry) return <p className="m-0 text-xs text-nv-muted">{port}: {value.kind} specification ({Object.keys(value.geometry).length} geometry fields)</p>;
   if (value && value.title) return <div className="flex flex-col gap-2"><span className="text-xs text-nv-muted">{port}: {value.title}</span>
     {value.values && <Record values={value.values} />}{value.table && <TableValue port="table" table={value.table} />}
@@ -577,6 +574,7 @@ function Record({ values }) {
 
 function TableValue({ port, table }) {
   const rows = table.rows.filter((r) => r.state !== 'failed');
+  const charted = !['campbell', 'modes', 'linearization'].includes(table.kind);
   const x = table.kind === 'performance_curve' ? table.variable : table.kind === 'sweep' ? 'value' : 'evaluation';
   const y = table.kind === 'optimization' ? 'objective' : table.rotor_kind && !['hawt', 'vawt'].includes(table.rotor_kind) ? (table.rotor_kind === 'marine' ? 'open_water_efficiency' : 'efficiency') : 'CP';
   const points = rows.filter((r) => typeof r[x] === 'number' && typeof r[y] === 'number').map((r) => ({ x: r[x], y: r[y] })).sort((a, b) => a.x - b.x);
@@ -585,7 +583,8 @@ function TableValue({ port, table }) {
   const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => !['state', 'error'].includes(k)).slice(0, 8);
   return <div className="flex flex-col gap-2">
     <span className="text-xs text-nv-muted">{port}: {table.kind} · {table.rows.length} rows{table.filtered_from != null ? ` (of ${table.filtered_from})` : ''}</span>
-    {points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`} series={[{ id: 'y', color: '#FF8533', points }]} height={170}
+    {table.kind === 'linearization' && <LinearizationComparison table={table} />}
+    {charted && points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`} series={[{ id: 'y', color: '#FF8533', points }]} height={170}
       xDomain={[lo, hi]} xTicks={ticks.length > 1 ? ticks : [lo, hi]} xLabel={x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : ''} />}
     <details className="text-xs"><summary className="cursor-pointer text-nv-reference">Rows</summary><div className="mt-1 max-h-64 overflow-auto">
       <table className="w-full text-left tabular-nums"><thead className="text-nv-muted"><tr>{columns.map((c) => <th key={c} className="p-1 font-normal">{c}</th>)}</tr></thead>
