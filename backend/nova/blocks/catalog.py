@@ -85,6 +85,37 @@ BLOCKS = {
         defaults={'variables': [{'path': 'geometry.design_tsr', 'min': 4.0, 'max': 10.0}],
                   'objective': 'CP', 'sense': 'maximize', 'checks': [], 'method': 'cobyla',
                   'max_evaluations': 80, 'grid_levels': 5}),
+    'design_optimizer': dict(
+        family='general', category='Studies', label='Design optimiser',
+        description='Optimises specification fields for one objective (or a weighted sum of several) over ANY quantity computed downstream '
+                    '(mass, power, thrust, frequencies, cost, LCOE…): every candidate re-runs the blocks after this one. SQP (SLSQP) or '
+                    'COBYLA; hard checks and downstream hard constraints are constraints.',
+        inputs=[port('spec', 'rotor_spec')],
+        outputs=[port('spec', 'rotor_spec'), port('values', 'record'), port('history', 'table')],
+        defaults={'variables': [{'path': 'geometry.design_tsr', 'min': 5.0, 'max': 9.0}],
+                  'objectives': [{'expression': 'CP', 'sense': 'maximize', 'weight': 1.0}], 'checks': [], 'method': 'slsqp',
+                  'max_evaluations': 120, 'evaluate_downstream': True}),
+    'pareto_optimizer': dict(
+        family='general', category='Studies', label='Pareto optimiser (NSGA-II)',
+        description='Two to four objectives over any downstream quantity, genetic NSGA-II with constrained domination. Emits the Pareto front '
+                    'and the knee-point design.',
+        inputs=[port('spec', 'rotor_spec')],
+        outputs=[port('spec', 'rotor_spec'), port('values', 'record'), port('table', 'table')],
+        defaults={'variables': [{'path': 'geometry.radius_m', 'min': 3.0, 'max': 8.0}, {'path': 'geometry.design_tsr', 'min': 5.0, 'max': 9.0}],
+                  'objectives': [{'expression': 'power_w', 'sense': 'maximize'}, {'expression': 'thrust_n', 'sense': 'minimize'}],
+                  'checks': [], 'population': 24, 'generations': 15, 'seed': 1, 'evaluate_downstream': True}),
+    'multi_fidelity': dict(
+        family='general', category='Studies', label='Multi-fidelity optimiser',
+        description='Fidelity levels in sequence: cheap models (overrides such as fewer BEMT stations) far from the optimum, the full model in a '
+                    'shrinking trust region, and the downstream chain (structure, cost, finite elements) only at the end. Each level may use '
+                    'its own objective.',
+        inputs=[port('spec', 'rotor_spec')],
+        outputs=[port('spec', 'rotor_spec'), port('values', 'record'), port('history', 'table')],
+        defaults={'variables': [{'path': 'geometry.design_tsr', 'min': 5.0, 'max': 9.0}],
+                  'objectives': [{'expression': 'CP', 'sense': 'maximize', 'weight': 1.0}], 'checks': [],
+                  'levels': [{'label': 'coarse', 'overrides': {'geometry.stations': 8}, 'evaluations': 40, 'trust_region': 1.0, 'downstream': False},
+                             {'label': 'full BEMT', 'overrides': {}, 'evaluations': 30, 'trust_region': 0.3, 'downstream': False},
+                             {'label': 'full chain', 'overrides': {}, 'evaluations': 15, 'trust_region': 0.1, 'downstream': True}]}),
     'report': dict(
         family='general', category='Outputs', label='Report',
         description='Collect values, tables and constraint reports into the run summary.',
@@ -167,6 +198,22 @@ BLOCKS = {
         outputs=[port('spec', 'rotor_spec'), port('values', 'record'), port('table', 'table')],
         defaults={'tip_speed_ratio': None, 'wind_speed_m_s': 8.0, 'rpm_min': 0.0, 'rpm_max': None, 'rated_power_w': None,
                   'cut_in_m_s': 3.0, 'cut_out_m_s': 25.0, 'points': 23}),
+    'annual_energy': dict(
+        family='specific', category='Economics', label='Annual energy',
+        description='Annual energy production of a power curve (table with wind_speed_m_s and power_w, e.g. the operating-strategy schedule) '
+                    'under a Weibull wind distribution, with availability and losses; capacity factor.',
+        inputs=[port('table', 'table')], outputs=[port('values', 'record')],
+        defaults={'mean_wind_m_s': 7.0, 'weibull_k': 2.0, 'availability': 0.97, 'losses': 0.0}),
+    'cost_model': dict(
+        family='specific', category='Economics', label='Turbine cost (NREL CSM)',
+        description='Component masses and costs of a land-based geared HAWT from the NREL Cost and Scaling Model (2015 mass–cost update, '
+                    'WISDEM coefficients): rotor, drivetrain, nacelle, tower. With aep_kwh connected and site BOS and OpEx per kW, the LCOE.',
+        inputs=[port('spec', 'rotor_spec', True), port('values', 'record', True)],
+        outputs=[port('values', 'record'), port('table', 'table')],
+        defaults={'rotor_diameter_m': None, 'blades': None, 'rating_kw': None, 'hub_height_m': None, 'max_tip_speed_m_s': None,
+                  'drivetrain_efficiency': 0.95, 'turbine_class': 2, 'carbon_spar': False, 'main_bearings': 2, 'crane': False,
+                  'blade_mass_kg': None, 'use_connected_blade_mass': True, 'tower_mass_kg': None, 'bos_per_kw': None,
+                  'opex_per_kw_yr': None, 'fixed_charge_rate': 0.075, 'wake_losses': 0.0}),
     'design_checks': dict(
         family='specific', category='Constraints', label='Design checks',
         description='Domain limits: Betz, rating, tip speed/Mach, thrust, Keller, Burrill, cavitation, ripple.',

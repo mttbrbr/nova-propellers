@@ -22,7 +22,7 @@ from nova.physics import rotors
 from nova.physics.corrections import corrections_from
 from nova.physics.vawt import METHODS as VAWT_METHODS
 
-from . import performance, structural
+from . import economics, optimization, performance, structural
 from .catalog import BLOCKS
 from .constraints import evaluate_check, normalise, penalty, report
 from .expressions import ExpressionError, evaluate
@@ -699,14 +699,72 @@ HANDLERS = {
     'blade_modes': structural.blade_modes, 'rotating_blade_modes': lambda node, args: structural.blade_modes(node, args, rotating=True),
     'tower_modes': structural.tower_modes, 'campbell': structural.campbell,
     'operating_strategy': performance.operating_strategy,
+    'annual_energy': economics.annual_energy, 'cost_model': economics.cost_model,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization,
-        'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible}
+        'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible,
+        'design_optimizer': optimization.design_optimizer, 'pareto_optimizer': optimization.pareto_optimizer,
+        'multi_fidelity': optimization.multi_fidelity}
+SUBGRAPH = {'design_optimizer', 'pareto_optimizer', 'multi_fidelity'}
+
+
+def _schedule(checked, lookup):
+    """Topological order in which the optimisers that re-run their downstream chain wait until every other ready
+    block has run, so the inputs of that chain coming from other branches exist."""
+    deps = {nid: {src for src, _ in checked['inbound'][nid].values()} for nid in lookup}
+    done, order = set(), []
+    while len(order) < len(lookup):
+        ready = sorted(n for n in lookup if n not in done and deps[n] <= done)
+        normal = [n for n in ready if lookup[n]['type'] not in SUBGRAPH]
+        pick = (normal or ready)[0]
+        order.append(pick)
+        done.add(pick)
+    return order
+
+
+def _downstream(nid, checked, lookup, order, outputs, cancelled):
+    """Evaluator of the blocks downstream of an optimiser for candidate outputs of that optimiser."""
+    children = {}
+    for target, ports in checked['inbound'].items():
+        for src, _ in ports.values():
+            children.setdefault(src, set()).add(target)
+    reach, stack = set(), [nid]
+    while stack:
+        for child in children.get(stack.pop(), ()):
+            if child not in reach:
+                reach.add(child)
+                stack.append(child)
+    chain = [n for n in order if n in reach]
+    for m in chain:
+        if lookup[m]['type'] in SUBGRAPH:
+            raise BlockError(f'Optimiser {m} is downstream of optimiser {nid}: nested optimisation is not supported')
+
+    def evaluate_chain(own):
+        local = {**outputs, nid: own}
+        record, feasible, violation = {}, True, 0.0
+        for m in chain:
+            node = lookup[m]
+            inbound = checked['inbound'][m]
+            missing = sorted({src for src, _ in inbound.values() if src not in local})
+            if missing:
+                raise BlockError(f'{m} needs {", ".join(missing)}, which did not run before the optimiser')
+            args = {port: local[src][out] for port, (src, out) in inbound.items()}
+            result = LONG[node['type']](node, args, cancelled) if node['type'] in LONG else HANDLERS[node['type']](node, args)
+            local[m] = result
+            values = result.get('values')
+            if isinstance(values, dict):
+                record.update({k: float(v) for k, v in values.items() if isinstance(v, (int, float)) and not isinstance(v, bool)})
+            if node['type'] in ('constraint', 'design_checks') and not result['report']['feasible']:
+                feasible = False
+                violation += penalty(node.get('config', {}).get('checks') or [], args['values'])
+        return record, feasible, violation
+    return evaluate_chain
 
 
 def execute(workflow, *, progress=None, cancelled=None):
     checked = validate(workflow)
     lookup = {node['id']: node for node in workflow['nodes']}
+    checked['order'] = _schedule(checked, lookup)
     outputs, blocks, reports = {}, {}, []
     for index, nid in enumerate(checked['order']):
         if cancelled and cancelled():
@@ -723,7 +781,13 @@ def execute(workflow, *, progress=None, cancelled=None):
             progress({'node': nid, 'progress': index / len(checked['order']), 'message': f'{nid}: running'})
         token = _PROGRESS.set(lambda text: progress({'node': nid, 'progress': index / len(checked['order']), 'message': f'{nid}: {text}'}) if progress else None)
         try:
-            if node['type'] in LONG:
+            if node['type'] in SUBGRAPH:
+                chain = optimization.DOWNSTREAM.set(_downstream(nid, checked, lookup, checked['order'], outputs, cancelled))
+                try:
+                    result = LONG[node['type']](node, args, cancelled)
+                finally:
+                    optimization.DOWNSTREAM.reset(chain)
+            elif node['type'] in LONG:
                 result = LONG[node['type']](node, args, cancelled)
             else:
                 result = HANDLERS[node['type']](node, args)
