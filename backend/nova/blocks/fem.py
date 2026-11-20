@@ -81,7 +81,8 @@ def blade_layup(node, args):
                      'edge_stiffness_nm2': p['EI_edge_nm2'], 'structural_twist_deg': aero + p['principal_angle_deg'],
                      'axial_stiffness_n': p['EA_n'], 'torsional_stiffness_nm2': p['GJ_nm2'], 'edge_shear_stiffness_n': p['GA_edge_n'],
                      'flap_shear_stiffness_n': p['GA_flap_n'], 'torsional_inertia_kg_m': p['torsional_inertia_kg_m'],
-                     'flap_inertia_kg_m': p['flap_inertia_kg_m'], 'edge_inertia_kg_m': p['edge_inertia_kg_m'], 'cm_offset_m': p['cm_offset_m']})
+                     'flap_inertia_kg_m': p['flap_inertia_kg_m'], 'edge_inertia_kg_m': p['edge_inertia_kg_m'], 'cm_offset_m': p['cm_offset_m'],
+                     'elastic_axis_offset_m': p['elastic_centre_m'][0] - 0.25 * c})
         layup_stations.append({'fraction': float(x), 'chord_m': c, 'twist_deg': aero, 'blend': blend})
     damping = {k: config.get(k, 1.0) for k in ('flap_damping_pct', 'edge_damping_pct')}
     try:

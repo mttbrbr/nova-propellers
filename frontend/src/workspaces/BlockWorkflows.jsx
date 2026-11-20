@@ -23,7 +23,7 @@ function optionsFor(key, catalog, rotors) {
     operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
     method: ['auto', 'bemt', 'slsqp', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
-    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], coupling: ['none', 'mbc'], engine: ['native', 'pywake'], mode: ['grid', 'explicit'],
+    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], coupling: ['none', 'mbc'], model: ['aeroelastic', 'cone_factor'], engine: ['native', 'pywake'], mode: ['grid', 'explicit'],
     kind: ['constant', 'step', 'ramp', 'sine', 'table'], turbine_class: [1, 2, 3], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
   };
   if (key === 'preset' && map.preset) return map.preset;
@@ -36,7 +36,7 @@ const stationColumns = {
 // Optional columns read by the 3-D beam of the structural-dynamics blocks (ElastoDyn ignores them).
 const optionalColumns = {
   'Blade structure': ['structural_twist_deg', 'axial_stiffness_n', 'torsional_stiffness_nm2', 'edge_shear_stiffness_n', 'flap_shear_stiffness_n',
-    'torsional_inertia_kg_m', 'flap_inertia_kg_m', 'edge_inertia_kg_m', 'cm_offset_m'],
+    'torsional_inertia_kg_m', 'flap_inertia_kg_m', 'edge_inertia_kg_m', 'cm_offset_m', 'elastic_axis_offset_m'],
   Tower: ['axial_stiffness_n', 'torsional_stiffness_nm2', 'side_side_shear_stiffness_n', 'fore_aft_shear_stiffness_n', 'torsional_inertia_kg_m',
     'fore_aft_inertia_kg_m', 'side_side_inertia_kg_m'],
 };
@@ -44,7 +44,7 @@ const columnLabel = { span_fraction: 'r/L', height_fraction: 'h/H', mass_per_len
   fore_aft_stiffness_nm2: 'EI fa', side_side_stiffness_nm2: 'EI ss', structural_twist_deg: 'twist °', axial_stiffness_n: 'EA', torsional_stiffness_nm2: 'GJ',
   edge_shear_stiffness_n: 'GA edge', flap_shear_stiffness_n: 'GA flap', side_side_shear_stiffness_n: 'GA ss', fore_aft_shear_stiffness_n: 'GA fa',
   torsional_inertia_kg_m: 'I tors', flap_inertia_kg_m: 'I flap', edge_inertia_kg_m: 'I edge', fore_aft_inertia_kg_m: 'I fa', side_side_inertia_kg_m: 'I ss',
-  cm_offset_m: 'cm off' };
+  cm_offset_m: 'cm off', elastic_axis_offset_m: 'EA aft ¼c' };
 const tubularOnly = ['base_diameter_m', 'top_diameter_m', 'wall_thickness_m', 'youngs_modulus_pa', 'density_kg_m3'];
 const BlockKind = createContext('');
 const BlockConfig = createContext({});

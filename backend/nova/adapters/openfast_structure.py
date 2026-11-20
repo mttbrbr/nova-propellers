@@ -24,7 +24,8 @@ MINIMUM_STATIONS = 2
 # name → may be zero or negative? Stiffnesses must be positive, inertias non-negative, twist and offsets free.
 BLADE_OPTIONAL = {'structural_twist_deg': 'free', 'axial_stiffness_n': 'positive', 'torsional_stiffness_nm2': 'positive',
                   'edge_shear_stiffness_n': 'positive', 'flap_shear_stiffness_n': 'positive', 'torsional_inertia_kg_m': 'non_negative',
-                  'flap_inertia_kg_m': 'non_negative', 'edge_inertia_kg_m': 'non_negative', 'cm_offset_m': 'free'}
+                  'flap_inertia_kg_m': 'non_negative', 'edge_inertia_kg_m': 'non_negative', 'cm_offset_m': 'free',
+                  'elastic_axis_offset_m': 'free'}
 TOWER_OPTIONAL = {'axial_stiffness_n': 'positive', 'torsional_stiffness_nm2': 'positive', 'side_side_shear_stiffness_n': 'positive',
                   'fore_aft_shear_stiffness_n': 'positive', 'torsional_inertia_kg_m': 'non_negative',
                   'fore_aft_inertia_kg_m': 'non_negative', 'side_side_inertia_kg_m': 'non_negative'}

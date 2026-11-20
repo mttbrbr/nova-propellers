@@ -51,6 +51,41 @@ aerodynamics. Checks: a very stiff blade gives the rigid curve, a precone alone 
 $\cos^3\beta$, a soft blade loses power, shear lowers $C_P$; a uniformly loaded cantilever deflects
 $qL^4/8EI$.
 
+### Steady aeroelastic model (default)
+
+With `model = "aeroelastic"` (the default) the curve is computed on the deformed blade instead of
+scaling rigid loads. At every point of the curve the BEMT and the rotating 3-D beam are iterated
+(under-relaxed fixed point, usually 2–10 iterations):
+
+1. the BEMT runs on the deformed geometry: every element has its cone angle
+   $\beta(s) = \beta_\text{precone} + \arctan(dw/ds)$, sits at the in-plane radius
+   $r(s) = r_\text{hub} + \int_0^s \cos\beta\,ds$, sees the normal wind $V\cos\beta$ and the speed
+   $\Omega r$, and its twist is reduced by the elastic nose-up torsion $\theta_e(s)$;
+2. the element forces become loads per unit span: normal force $f_n$ (flapwise), tangential force
+   $f_t$ (edgewise) and the torque $f_\perp d$ of the force normal to the chord, applied at the quarter
+   chord, about the elastic axis a distance $d$ behind it (`elastic_axis_offset_m`, filled by the
+   layup block from the section's elastic centre);
+3. the beam gives the flapwise deflection (centrifugal stiffening included) and the cantilever torsion
+   $\theta_e(s) = \int_0^s T/GJ$ with $T(s) = \int_s^L m_t$.
+
+Thrust is $B\int f_n\cos\beta\,ds$ and torque $B\int f_t\,r\,ds$; the coefficients refer to the
+undeformed rotor area. With shear, the sheared rigid coefficients are scaled by the aeroelastic-to-rigid
+ratio in uniform inflow. Not modelled: prebend, sweep, the edgewise deflection in the aerodynamics,
+bend–twist coupling and the propeller moment in the torsion, gravity and unsteady effects.
+
+Checks (`backend/tests/test_aeroelastic.py`): a very stiff blade reproduces the rigid coefficients; an
+elastic axis behind the quarter chord twists the blade nose-up and raises the thrust; against OpenFAST
+5.0.0 (AeroDyn + ElastoDyn, prescribed speed, tower locked) on the AOC 15/50 example with the bending
+stiffness divided by 10 (ElastoDyn has no blade torsion, so the comparison is flapwise only):
+
+| λ | Tip deflection Nova / OpenFAST | Cp change from flexibility Nova / OpenFAST | Rigid Cp Nova / OpenFAST |
+| --- | --- | --- | --- |
+| 5 | 377 / 353 mm | −0.65 % / −0.78 % | 0.412 / 0.409 |
+| 7 | 271 / 248 mm | −0.38 % / −0.54 % | 0.384 / 0.378 |
+
+The 7–9 % larger deflection is consistent with ElastoDyn's two polynomial assumed modes against the
+converged beam. The cos³β model (`model = "cone_factor"`) remains available for quick estimates.
+
 ### Operating strategy
 
 Region 2 follows the chosen $\lambda$: $n = \lambda V/R \cdot 60/2\pi$. The speed is clipped to

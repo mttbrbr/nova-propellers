@@ -6,6 +6,10 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Steady aeroelastic Cp–λ: the BEMT runs on the deformed blade (cone, in-plane radius, elastic twist about the
+  elastic axis) and is iterated with the rotating 3-D beam; default model of *Cp–λ flexible & sheared*.
+  Checked against OpenFAST AeroDyn + ElastoDyn. Blade structures accept `elastic_axis_offset_m`, filled by
+  the layup block.
 - Mode view: a full-screen view over the Workflow canvas, opened with the *Modes* button on any block with a
   modal result (on the node, in its result card and in the run summary). Mode list and participation, the
   Campbell diagram or the mode table, and an animated 3-D turbine (tower, nacelle, rotor) showing the

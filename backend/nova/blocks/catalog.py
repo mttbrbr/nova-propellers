@@ -184,12 +184,13 @@ BLOCKS = {
                   'objective': 'CP', 'sense': 'maximize', 'points': 5, 'levels': 4, 'shrink': 0.4, 'max_evaluations': 120}),
     'cp_flexible': dict(
         family='specific', category='Solvers', label='Cp–λ flexible & sheared',
-        description='Cp–λ and C_T of a HAWT in power-law wind shear and with the steady flapwise deflection of the connected blade '
-                    'structure (each element coned by its slope, cos³β), next to the rigid uniform-inflow curve.',
+        description='Cp–λ and C_T of a HAWT in power-law wind shear and with the connected blade structure deformed by its loads: '
+                    'model "aeroelastic" iterates the BEMT on the deformed blade (cone, in-plane radius, elastic twist) with the 3-D beam; '
+                    '"cone_factor" applies cos³β to the rigid loads. Next to the rigid uniform-inflow curve.',
         inputs=[port('spec', 'rotor_spec'), port('blade', 'blade', True), port('attachments', 'attachment', True)],
         outputs=[port('table', 'table'), port('values', 'record')],
         defaults={'start': 2.0, 'stop': 12.0, 'points': 21, 'shear_exponent': 0.0, 'hub_height_m': None, 'precone_deg': 0.0,
-                  'azimuth_steps': 24}),
+                  'azimuth_steps': 24, 'model': 'aeroelastic'}),
     'operating_strategy': dict(
         family='specific', category='Conditions', label='Operating strategy',
         description='Rotor speed from a tip-speed ratio and a wind speed (or the optimum λ of a connected Cp–λ table), with rotor-speed '

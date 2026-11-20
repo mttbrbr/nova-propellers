@@ -14,7 +14,7 @@ import math
 
 import numpy as np
 
-from nova.physics import flexible, modal, rotors
+from nova.physics import aeroelastic, flexible, modal, rotors
 
 from .expressions import ExpressionError, evaluate
 
@@ -211,13 +211,25 @@ def cp_flexible(node, args, cancelled=None):
         notes.append(f'Power-law wind shear α = {shear:g} about a {inflow["hub_height_m"]:g} m hub, azimuthally resolved BEMT')
     blade = args.get('blade')
     beam = None
+    model = config.get('model', 'aeroelastic')
+    if model not in ('aeroelastic', 'cone_factor'):
+        raise PerformanceError('model must be aeroelastic or cone_factor')
     if blade is not None:
         rotor, length, twist, twist_notes = _blade_setup({}, blade, spec)
         beam = modal.blade_beam(blade, length, twist, args.get('attachments') or [])
         notes += twist_notes
-        notes.append('Steady flapwise deflection of the rotating 3-D beam under the BEMT loads; every element coned by '
-                     'β = precone + atan(dw/ds) contributes cos³β of its rigid power and thrust (fixed-point iteration). '
-                     'Elastic twist and the in-plane deflection are not fed back into the aerodynamics')
+        if model == 'aeroelastic':
+            notes.append('Steady aeroelastic solution: BEMT on the deformed blade (local cone angle, in-plane radius, normal wind '
+                         'V cos β, elastic twist from the lift at the quarter chord about the elastic axis) iterated with the rotating '
+                         '3-D beam until cone and twist settle. Without torsional stiffness and elastic-axis offset the twist stays rigid')
+            if 'elastic_axis_offset_m' not in (blade.get('extended') or {}):
+                notes.append('No elastic_axis_offset_m column: the elastic axis is taken at the quarter chord (no aerodynamic torsion)')
+        else:
+            notes.append('Steady flapwise deflection of the rotating 3-D beam under the BEMT loads; every element coned by '
+                         'β = precone + atan(dw/ds) contributes cos³β of its rigid power and thrust (fixed-point iteration). '
+                         'Elastic twist and the in-plane deflection are not fed back into the aerodynamics')
+        if inflow and model == 'aeroelastic':
+            notes.append('With shear, the sheared rigid coefficients are scaled by the aeroelastic-to-rigid ratio in uniform inflow')
     elif precone:
         notes.append(f'Rigid blade with {precone:g}° precone (cos³ factor)')
     else:
@@ -241,7 +253,15 @@ def cp_flexible(node, args, cancelled=None):
                 point['inflow'] = inflow
                 result = rotors.analyze(point)
             cp, ct = result['coefficients']['CP'], result['coefficients']['CT']
-            if beam is not None:
+            if beam is not None and model == 'aeroelastic':
+                uniform = copy.deepcopy(point)
+                uniform.pop('inflow', None)
+                solved = aeroelastic.solve(uniform, blade, precone_deg=precone, twist=twist, attachments=args.get('attachments') or [])
+                cp *= solved['CP'] / solved['CP_rigid']
+                ct *= solved['CT'] / solved['CT_rigid']
+                row.update(tip_flap_m=solved['tip_flap_m'], tip_edge_m=solved['tip_edge_m'], tip_twist_deg=solved['tip_twist_deg'],
+                           tip_cone_deg=solved['tip_cone_deg'], iterations=solved['iterations'])
+            elif beam is not None:
                 omega = result['operating']['omega_rad_s']
                 cone = flexible.coned(result, beam, blades=int(built.blades), hub_radius=float(built.hub_radius_m), omega=omega,
                                       precone_deg=precone)
@@ -252,7 +272,7 @@ def cp_flexible(node, args, cancelled=None):
                 cp, ct = cp * factor, ct * factor
             row.update(state='succeeded', CP=cp, CT=ct, rpm=result['operating']['rpm'],
                        power_w=0.5 * result['fluid']['density_kg_m3'] * math.pi * radius**2 * velocity**3 * cp)
-        except (ValueError, flexible.FlexibilityError) as exc:
+        except (ValueError, flexible.FlexibilityError, aeroelastic.AeroelasticError) as exc:
             row.update(state='failed', error=str(exc))
         rows.append(row)
     good = [r for r in rows if r['state'] == 'succeeded']
