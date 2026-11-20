@@ -6,6 +6,9 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Aeroelastic time-domain turbine (*Turbine dynamics* block): rotor–tower modes at variable speed, rotor-speed
+  degree of freedom, BEMT per element with structural velocities and Øye dynamic inflow, shear and collective
+  pitch, driven by the control blocks. Template `aeroelastic_turbine`.
 - *Structure* workspace: structural data of the open version kept apart from the aerodynamics (blade layup or
   solid section; hub, nacelle and tower for wind turbines), structural run on a chosen aerodynamic run with
   sections, modes, Campbell diagram, deflection, aeroelastic Cp–λ, 3-D turbine and mode view. API under

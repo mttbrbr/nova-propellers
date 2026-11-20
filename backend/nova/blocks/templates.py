@@ -341,6 +341,30 @@ for _n in TEMPLATES['coupled_campbell']['nodes']:
         _n['config'] = {**_n['config'], 'coupling': 'mbc', 'points': 21}
 
 
+TEMPLATES['aeroelastic_turbine'] = {
+    'name': 'Aeroelastic turbine in closed loop (AOC 15/50 example structure)',
+    'description': 'Time-domain aeroelastic simulation: rotor–tower modes, rotor speed, BEMT with dynamic inflow; wind ramp through '
+                   'rated, kω² torque law and PI pitch control. Rotor speed, power, thrust, tower-top motion, tip deflection and root '
+                   'moment as time series.',
+    'nodes': [
+        *(copy.deepcopy(_FLEX[k]) for k in ('rotor', 'operating', 'hub', 'nacelle', 'tower', 'blade')),
+        _node('wind', 'control_source', {'output': 'wind_speed', 'kind': 'ramp', 'value': 8.0, 'amplitude': 6.0, 'time': 3.0,
+                                         'end_time': 20.0}, 560, -200),
+        _node('law', 'torque_law', {'rated_torque_nm': 7000.0}, 840, -200),
+        _node('pitch', 'pid_controller', {'output': 'pitch', 'measurement': 'rotor_speed', 'setpoint': 6.8, 'kp': 8.0, 'ki': 3.0,
+                                          'min': 0.0, 'max': 30.0, 'reverse': True}, 1120, -200),
+        _node('plant', 'turbine_dynamics', {'initial_rpm': 55.0}, 1400, -200),
+        _node('simulation', 'control_simulation', {'duration_s': 30.0, 'dt_s': 0.04, 'initial': {'pitch': 0.0, 'gen_torque': 0.0},
+                                                   'record': ['wind_speed', 'rotor_speed', 'pitch', 'power', 'thrust', 'tower_top_fa',
+                                                              'tip_flap', 'root_flap_moment'], 'statistics_from_s': 22.0}, 1680, -200),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'law', 'spec'), _edge('operating', 'spec', 'plant', 'spec'),
+              _edge('blade', 'blade', 'plant', 'blade'), _edge('tower', 'tower', 'plant', 'tower'), _edge('nacelle', 'nacelle', 'plant', 'nacelle'),
+              _edge('hub', 'hub', 'plant', 'hub'), _edge('wind', 'dynamics', 'law', 'dynamics'), _edge('law', 'dynamics', 'pitch', 'dynamics'),
+              _edge('pitch', 'dynamics', 'plant', 'dynamics'), _edge('plant', 'dynamics', 'simulation', 'dynamics')],
+}
+
+
 def templates():
     return [{'id': key, 'name': t['name'], 'description': t['description']} for key, t in TEMPLATES.items()]
 

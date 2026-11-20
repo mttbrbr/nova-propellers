@@ -238,6 +238,56 @@ class RotorPlant:
         signals[n['power']] = load * self.omega * self.efficiency
 
 
+class AeroelasticTurbine:
+    """Aeroelastic turbine (``nova.physics.dynamics``) as a control element: reads wind, generator torque and pitch,
+    writes rotor speed, power, thrust, tower-top motion, blade-tip flap deflection and root flap moment."""
+
+    OUTPUTS = ('speed', 'power', 'aero_power', 'thrust', 'tower_top_fa', 'tower_top_ss', 'tip_flap', 'root_flap_moment', 'tsr')
+
+    def __init__(self, item):
+        from . import dynamics
+        self.names = {k: _name(item[k], k) for k in ('wind', 'generator_torque', 'pitch', *self.OUTPUTS)}
+        try:
+            self.model = dynamics.Turbine(item['spec'], item['blade'], tower=item.get('tower'), nacelle=item.get('nacelle'), hub=item.get('hub'),
+                                          rpm_ref=item.get('rpm_ref'), hub_height_m=item.get('hub_height_m'),
+                                          shear_exponent=item.get('shear_exponent', 0.0), dynamic_inflow=item.get('dynamic_inflow', True),
+                                          generator_inertia_kg_m2=item.get('generator_inertia_kg_m2', 0.0),
+                                          gearbox_ratio=item.get('gearbox_ratio', 1.0))
+        except dynamics.DynamicsError as exc:
+            raise ControlError(str(exc)) from exc
+        if item.get('initial_rpm') is not None:
+            self.model.omega = float(item['initial_rpm']) * math.pi / 30
+        self.fixed = item.get('fixed_rpm')
+        self.efficiency = float(item.get('generator_efficiency', 1.0))
+        self.max_dt = float(item.get('max_step_s', 0.02))
+
+    def publish(self, signals):
+        n = self.names
+        signals.setdefault(n['speed'], self.model.omega)
+        for key in self.OUTPUTS[1:]:
+            signals.setdefault(n[key], 0.0)
+
+    def step(self, t, signals, dt):
+        n = self.names
+        wind = _value(signals, n['wind'])
+        pitch = signals.get(n['pitch'], 0.0)
+        torque = signals.get(n['generator_torque'], 0.0)
+        steps = max(1, math.ceil(dt / self.max_dt - 1e-9))
+        fixed = None if self.fixed is None else float(self.fixed) * math.pi / 30
+        for _ in range(steps):
+            out = self.model.step(dt / steps, wind, pitch, torque, fixed_speed=fixed)
+        omega = self.model.omega
+        signals[n['speed']] = omega
+        signals[n['power']] = self.model.gear * torque * omega * self.efficiency
+        signals[n['aero_power']] = out['aero_power']
+        signals[n['thrust']] = out['thrust']
+        signals[n['tower_top_fa']] = out['tower_top_fa']
+        signals[n['tower_top_ss']] = out['tower_top_ss']
+        signals[n['tip_flap']] = out['tip_flap_b1']
+        signals[n['root_flap_moment']] = out['root_flap_moment_b1']
+        signals[n['tsr']] = omega * self.model.R / max(wind, 1e-6)
+
+
 class FMU:
     """FMI 2.0 co-simulation FMU through FMPy (optional dependency)."""
 
@@ -304,6 +354,8 @@ def build(elements):
             out.append(RotorPlant(item))
         elif kind == 'fmu':
             out.append(FMU(item))
+        elif kind == 'aeroelastic_turbine':
+            out.append(AeroelasticTurbine(item))
         else:
             raise ControlError(f'Unknown control element {kind!r}')
     return out

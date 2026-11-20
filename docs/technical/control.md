@@ -40,6 +40,34 @@ the tables come from Nova's BEMT over a λ × pitch grid. The inertia is given, 
 blade structure, hub and generator (reflected through the gearbox). Aerodynamics are quasi-steady (no
 dynamic inflow); the drivetrain is rigid.
 
+### Aeroelastic turbine (time domain)
+
+The *Turbine dynamics (aeroelastic)* block turns the connected HAWT and its structure (blade, and optionally
+tower, nacelle and hub) into a plant for the same simulation:
+
+- **structure**: the rotor–tower model of the coupled Campbell diagram (tower modes and the rotating
+  modes of every blade, second-order hub kinematics). The blade basis is taken at a reference speed and
+  its stiffness and gyroscopic terms follow the actual speed,
+  $K_b(\Omega) = \operatorname{diag}(\omega_\text{ref}^2) + (\Omega^2 - \Omega_\text{ref}^2)\,\Phi^\mathsf{T} S\,\Phi$,
+  $G_b(\Omega) = (\Omega/\Omega_\text{ref})\,G_\text{ref}$; Newmark average-acceleration integration;
+- **rotor speed**: $J\dot\Omega = Q_\text{aero} - N\,T_\text{gen}$ with $J$ from the blades, hub and
+  generator (rigid drivetrain);
+- **aerodynamics per element**: local wind (power-law shear with the element height) minus the element's
+  structural velocity (tower top and blade modes, hence aerodynamic damping); the equilibrium BEMT
+  induction for that flow, warm-started from the previous step, drives Øye's dynamic-inflow filter on the
+  axial induced velocity
+  ($\tau_1 = 1.1/(1-1.3a)\,R/V$, $\tau_2 = (0.39 - 0.26 (r/R)^2)\,\tau_1$); loads from the polar at the
+  resulting angle of attack; collective pitch from the controller. The loads are evaluated at the start of
+  each step (loose coupling, step at most 0.02 s).
+
+Not modelled: tower shadow, yaw and skewed wake, dynamic stall, gravity, drivetrain torsion, blade torsion
+and large-deflection geometry; turbulence enters only through the wind signal.
+
+Checks (`backend/tests/test_dynamics.py`, AOC 15/50 example structure): at fixed speed and constant wind
+the mean power and thrust converge to the steady BEMT within 0.5 %; the free decay of the tower (no
+aerodynamics) oscillates at the coupled fore-aft frequency of the multi-blade analysis within 2 %; with the
+kω² law and a PI pitch controller the rotor holds its speed above rated. Template `aeroelastic_turbine`.
+
 ### FMU import
 
 FMUs are run through FMPy (BSD-2, optional: `pip install fmpy`), co-simulation only: Nova sets the

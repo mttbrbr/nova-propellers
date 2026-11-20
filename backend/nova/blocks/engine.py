@@ -706,7 +706,7 @@ HANDLERS = {
     'pitch_schedule': control.element_block('lookup', control.LOOKUP_KEYS),
     'transfer_function': control.element_block('transfer_function', control.TF_KEYS),
     'state_space': control.element_block('state_space', control.SS_KEYS), 'fmu_model': control.element_block('fmu', control.FMU_KEYS),
-    'torque_law': control.torque_law,
+    'torque_law': control.torque_law, 'turbine_dynamics': control.turbine_dynamics,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run, 'openfast_linearization': _openfast_linearization,
         'performance_map': performance.performance_map, 'cp_flexible': performance.cp_flexible,

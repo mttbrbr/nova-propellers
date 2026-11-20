@@ -169,3 +169,31 @@ def control_simulation(node, args, cancelled=None):
     notes = [f'{len(times) - 1} steps of {dt:g} s; elements evaluated in chain order, signals written later in the chain are read '
              f'with a one-step delay; statistics from t = {window:g} s']
     return {'table': {'kind': 'time_series', 'rows': rows, 'signals': list(signals)}, 'values': values, 'notes': notes}
+
+
+DYNAMIC_SIGNALS = (('wind', 'wind_speed'), ('generator_torque', 'gen_torque'), ('pitch', 'pitch'), ('speed', 'rotor_speed'), ('power', 'power'),
+                   ('aero_power', 'aero_power'), ('thrust', 'thrust'), ('tower_top_fa', 'tower_top_fa'), ('tower_top_ss', 'tower_top_ss'),
+                   ('tip_flap', 'tip_flap'), ('root_flap_moment', 'root_flap_moment'), ('tsr', 'tsr'))
+
+
+def turbine_dynamics(node, args):
+    """Aeroelastic turbine element: the connected rotor and structure as a time-domain plant."""
+    config = node.get('config', {})
+    spec = rotors.merged(args['spec'])
+    item = {'element': 'aeroelastic_turbine', 'spec': spec, 'blade': args['blade'],
+            **{k: args[k] for k in ('tower', 'nacelle', 'hub') if args.get(k) is not None},
+            **{k: config[k] for k in ('rpm_ref', 'hub_height_m', 'shear_exponent', 'dynamic_inflow', 'generator_inertia_kg_m2',
+                                      'gearbox_ratio', 'generator_efficiency', 'initial_rpm', 'fixed_rpm', 'max_step_s') if config.get(k) is not None},
+            **{k: config.get(k, default) for k, default in DYNAMIC_SIGNALS}}
+    if item.get('tower') is not None and item.get('nacelle') is None:
+        raise ControlBlockError('Connect the nacelle with the tower (overhang, shaft height and mass)')
+    _check(item)
+    notes = ['Aeroelastic turbine: rotor–tower modes (blade basis at the reference speed, stiffness and gyroscopic terms updated '
+             'with the actual speed), rotor-speed degree of freedom, BEMT per element on the local flow (structural velocities '
+             'included) with Øye dynamic inflow, shear, collective pitch; Newmark integration, loads from the start of each step. '
+             'No tower shadow, yaw, dynamic stall, gravity or drivetrain torsion']
+    if item.get('tower') is None:
+        notes.append('No tower connected: the hub is fixed (blade dynamics and rotor speed only)')
+    out = _chain(args, item)
+    out['notes'] = notes
+    return out

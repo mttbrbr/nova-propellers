@@ -435,6 +435,20 @@ BLOCKS = {
                   'friction_nms': 0.0, 'initial_rpm': None, 'tsr_grid': None, 'pitch_grid': None, 'substeps': 4, 'wind': 'wind_speed',
                   'generator_torque': 'gen_torque', 'pitch': 'pitch', 'speed': 'rotor_speed', 'aero_torque': 'aero_torque',
                   'power': 'power', 'thrust': 'thrust', 'tsr': 'tsr'}),
+    'turbine_dynamics': dict(
+        family='specific', category='Control', label='Turbine dynamics (aeroelastic)',
+        description='Time-domain aeroelastic HAWT from the connected rotor and structure: rotor–tower modes, rotor-speed degree of '
+                    'freedom, BEMT per element with structural velocities and Øye dynamic inflow, shear and collective pitch. Reads the '
+                    'wind, generator-torque and pitch signals; writes rotor speed, power, thrust, tower-top motion, tip deflection and '
+                    'root flap moment.',
+        inputs=[port('dynamics', 'dynamics', True), port('spec', 'rotor_spec'), port('blade', 'blade'), port('tower', 'tower', True),
+                port('nacelle', 'nacelle', True), port('hub', 'hub', True)],
+        outputs=[port('dynamics', 'dynamics')],
+        defaults={'rpm_ref': None, 'initial_rpm': None, 'fixed_rpm': None, 'hub_height_m': None, 'shear_exponent': 0.0, 'dynamic_inflow': True,
+                  'generator_inertia_kg_m2': 0.0, 'gearbox_ratio': 1.0, 'generator_efficiency': 1.0, 'max_step_s': 0.02,
+                  'wind': 'wind_speed', 'generator_torque': 'gen_torque', 'pitch': 'pitch', 'speed': 'rotor_speed', 'power': 'power',
+                  'aero_power': 'aero_power', 'thrust': 'thrust', 'tower_top_fa': 'tower_top_fa', 'tower_top_ss': 'tower_top_ss',
+                  'tip_flap': 'tip_flap', 'root_flap_moment': 'root_flap_moment', 'tsr': 'tsr'}),
     'control_simulation': dict(
         family='general', category='Control', label='Control simulation',
         description='Time-domain simulation of the chained control elements: recorded signals as a time series and, for every signal, '
