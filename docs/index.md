@@ -38,6 +38,7 @@ technical/rotor-models
 technical/vawt
 technical/marine-propellers
 technical/block-workflows
+technical/structural-dynamics
 technical/verification-validation
 technical/projects-storage
 ```

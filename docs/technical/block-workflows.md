@@ -10,7 +10,8 @@ constraints", without writing code.
 
 ### Port types
 
-The types are `record` (named scalars), `rotor_spec`, `rotor_result`, `table` and `report`.
+The types are `record` (named scalars), `rotor_spec`, `rotor_result`, `table` and `report`, plus
+the structural types `hub`, `nacelle`, `tower`, `blade`, `attachment` and `modal`.
 
 ### Blocks
 
@@ -21,6 +22,8 @@ The types are `record` (named scalars), `rotor_spec`, `rotor_result`, `table` an
 - **Specific blocks** define the engineering problem: HAWT, VAWT, propeller and marine rotors,
   operating point, hull and immersion, corrections, rotor solver, performance curve and design
   checks.
+- **Structural-dynamics blocks** compute blade, tower and Campbell-diagram modes without
+  aerodynamics; see [Structural dynamics](structural-dynamics.md).
 
 Rotor and operating-point blocks accept **bindings** (for example `geometry.radius_m = D / 2`), so
 requirements drive the specification.

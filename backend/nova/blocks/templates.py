@@ -208,6 +208,36 @@ TEMPLATES = {
     },
 }
 
+_FLEX = {n['id']: n for n in TEMPLATES['openfast_flexible_example']['nodes']}
+TEMPLATES['structural_campbell'] = {
+    'name': 'Structural modes and Campbell diagram (AOC 15/50 example structure)',
+    'description': 'Clamped and rotating blade modes, tower modes and the Campbell diagram with 1P/3P/6P margins, no aerodynamics. '
+                   'Same example structure as the flexible OpenFAST template: replace it with your own data.',
+    'nodes': [
+        *(copy.deepcopy(_FLEX[k]) for k in ('rotor', 'operating', 'hub', 'nacelle', 'tower', 'blade')),
+        _node('blade_clamped', 'blade_modes', {'flap_modes': 3, 'edge_modes': 2}, 560, 0),
+        _node('blade_rotating', 'rotating_blade_modes', {'flap_modes': 3, 'edge_modes': 2}, 560, 220),
+        _node('tower_modes', 'tower_modes', {'modes': 2}, 560, 440),
+        _node('campbell', 'campbell', {'rpm_max': 80.0, 'points': 41}, 560, 660),
+        _node('margins', 'constraint', {'checks': [
+            {'quantity': 'min_excitation_margin_pct', 'operator': '>=', 'value': 10.0, 'severity': 'soft',
+             'label': 'Distance of every mode from 1P/3P/6P at the operating speed', 'unit': '%'}],
+            'on_violation': 'report'}, 840, 660),
+        _node('report', 'report', {'title': 'Structural modes'}, 1120, 660),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'),
+              _edge('blade', 'blade', 'blade_clamped', 'blade'), _edge('operating', 'spec', 'blade_clamped', 'spec'),
+              _edge('blade', 'blade', 'blade_rotating', 'blade'), _edge('operating', 'spec', 'blade_rotating', 'spec'),
+              _edge('tower', 'tower', 'tower_modes', 'tower'), _edge('nacelle', 'nacelle', 'tower_modes', 'nacelle'),
+              _edge('hub', 'hub', 'tower_modes', 'hub'), _edge('blade', 'blade', 'tower_modes', 'blade'),
+              _edge('operating', 'spec', 'tower_modes', 'spec'),
+              _edge('blade', 'blade', 'campbell', 'blade'), _edge('operating', 'spec', 'campbell', 'spec'),
+              _edge('tower', 'tower', 'campbell', 'tower'), _edge('nacelle', 'nacelle', 'campbell', 'nacelle'),
+              _edge('hub', 'hub', 'campbell', 'hub'),
+              _edge('campbell', 'values', 'margins', 'values'), _edge('campbell', 'table', 'report', 'b'),
+              _edge('margins', 'report', 'report', 'c')],
+}
+
 
 def templates():
     return [{'id': key, 'name': t['name'], 'description': t['description']} for key, t in TEMPLATES.items()]

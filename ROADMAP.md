@@ -142,3 +142,55 @@ Next: portable external-case exchange and suitable project types, broader OpenFA
 qualification, optimization-history candidate inspection, then validated resource
 models. General multiphysics coupling and native-language migration stay gated
 by numerical baselines, profiling and demonstrated user needs.
+
+## Engineering extensions (block-based)
+
+Every capability below is delivered as workflow blocks; when a block needs new inputs, dedicated
+input blocks are added (as `point_mass` and `spring_damper` were for structural dynamics).
+
+### Phase 1 — Structural dynamics (in progress)
+
+- Done: clamped and rotating blade modes, tower modes, Campbell diagram with MAC mode tracking,
+  1P/BP/2BP margins and crossings, point masses, springs and dampers with damped modes, template
+  `structural_campbell`. See `docs/technical/structural-dynamics.md`.
+- Open: Campbell chart and animated mode shapes in the 3-D view (mock-up first); OpenFAST
+  linearisation block (ElastoDyn, aerodynamics off, MBC3) to verify the in-house Campbell diagram;
+  refreshed README screenshots.
+
+### Phase 2 — Performance curves and operating strategy
+
+- Cp–λ (and K_T–J) optimisation on a grid that refines progressively near the optimum, with an
+  interpolating response surface.
+- Cp–TSR extrapolation with a simplified model including rotor flexibility (from phase 1 modes)
+  and wind shear.
+- Operating-strategy block: choose TSR and wind speed, obtain rotor speed.
+
+### Phase 3 — Cost models and multidisciplinary optimisation
+
+- Cost models: NREL 2006 cost and scaling model (wind only, public). Check licensing and
+  availability of the Sandia blade cost model and the INNWIND.EU deliverables.
+- General multi-objective optimisation blocks over any record quantity (mass, power, thrust,
+  cost, …), not only cost of energy: gradient-based (SQP via SciPy) and genetic/NSGA-II.
+- Multi-fidelity strategy: coarse models far from the optimum, refined BEMT closer, finite
+  elements at the end.
+
+### Phase 4 — CalculiX
+
+- 2-D cross-section properties and 3-D shell finite-element model of the blade through an external
+  adapter.
+
+### Phase 5 — Aerodynamic integrations
+
+- Wind-farm blocks on the existing PyWake adapter.
+- DUST (mid-fidelity vortex particle method) as an external adapter.
+
+### Phase 6 — Control and co-simulation
+
+- Generalised control blocks with freely named inputs and outputs (PI/PID, kω² torque law, pitch
+  scheduling, transfer function / state space).
+- OpenModelica models through generic FMU import rather than a dedicated integration.
+
+### To decide
+
+- Hosting of the Sphinx documentation (GitHub Pages or Read the Docs) and removal of
+  `docs/esempio documentazione/`.

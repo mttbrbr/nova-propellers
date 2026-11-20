@@ -53,3 +53,12 @@ limitations.
 explicit lift-slope, clipping and quadratic-drag formula. The constants are
 project parameters, not imported aerodynamic measurements. These values exist
 to exercise the software and UI and cannot qualify a design or solver.
+
+## Structural modes
+
+Blade and tower modes use Euler–Bernoulli Hermite finite elements (80 elements, consistent mass,
+dense generalised eigensolver). Rotating blades add centrifugal geometric stiffness and, edgewise,
+spin softening; the first-flap result reproduces Wright et al. (1982) within 0.02 %. Damped modes
+with discrete dampers come from the state-space eigenproblem. Maturity: `preliminary` (analytical
+and literature checks only; OpenFAST linearisation comparison pending). Details:
+[technical/structural-dynamics.md](technical/structural-dynamics.md).

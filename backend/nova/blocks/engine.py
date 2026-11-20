@@ -22,6 +22,7 @@ from nova.physics import rotors
 from nova.physics.corrections import corrections_from
 from nova.physics.vawt import METHODS as VAWT_METHODS
 
+from . import structural
 from .catalog import BLOCKS
 from .constraints import evaluate_check, normalise, penalty, report
 from .expressions import ExpressionError, evaluate
@@ -617,6 +618,9 @@ HANDLERS = {
     'openfast_rotor_case': _openfast_rotor_case,
     'hub': _structure_block('hub'), 'nacelle': _structure_block('nacelle'), 'tower': _structure_block('tower'),
     'blade_structure': _structure_block('blade'),
+    'point_mass': structural.attachment_handler('point_mass'), 'spring_damper': structural.attachment_handler('spring_damper'),
+    'blade_modes': structural.blade_modes, 'rotating_blade_modes': lambda node, args: structural.blade_modes(node, args, rotating=True),
+    'tower_modes': structural.tower_modes, 'campbell': structural.campbell,
 }
 LONG = {'sweep': _sweep, 'optimizer': _optimizer, 'openfast_run': _openfast_run}
 

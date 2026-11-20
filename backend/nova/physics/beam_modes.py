@@ -8,7 +8,9 @@ with exactly that constraint and the fit error is reported.
 import numpy as np
 from scipy.linalg import eigh
 
-ELEMENTS = 80
+from nova.physics.modal import Beam
+
+ELEMENTS = 80  # same discretisation as nova.physics.modal
 
 
 def cantilever_modes(fraction, mass_per_length, stiffness, length_m, tip_mass_kg=0.0, modes=2, elements=ELEMENTS):
@@ -17,32 +19,14 @@ def cantilever_modes(fraction, mass_per_length, stiffness, length_m, tip_mass_kg
     `fraction`, `mass_per_length` (kg/m) and `stiffness` (N·m²) describe the distribution over 0–1 of the
     length. Returns (frequencies_hz, x, shapes) with shapes[mode] normalised to 1 at the free end.
     """
-    fraction = np.asarray(fraction, dtype=float)
-    mass_per_length = np.asarray(mass_per_length, dtype=float)
-    stiffness = np.asarray(stiffness, dtype=float)
-    if length_m <= 0 or np.any(mass_per_length <= 0) or np.any(stiffness <= 0):
-        raise ValueError('Length, mass per length and stiffness must be positive')
     if not 1 <= modes <= 4:
         raise ValueError('Between one and four modes can be computed')
-    nodes = np.linspace(0.0, 1.0, elements + 1)
-    middle = 0.5 * (nodes[:-1] + nodes[1:])
-    m = np.interp(middle, fraction, mass_per_length)
-    ei = np.interp(middle, fraction, stiffness)
-    h = length_m / elements
-    size = 2 * (elements + 1)
-    K = np.zeros((size, size))
-    M = np.zeros((size, size))
-    ke = np.array([[12, 6 * h, -12, 6 * h], [6 * h, 4 * h**2, -6 * h, 2 * h**2],
-                   [-12, -6 * h, 12, -6 * h], [6 * h, 2 * h**2, -6 * h, 4 * h**2]])
-    me = np.array([[156, 22 * h, 54, -13 * h], [22 * h, 4 * h**2, 13 * h, -3 * h**2],
-                   [54, 13 * h, 156, -22 * h], [-13 * h, -3 * h**2, -22 * h, 4 * h**2]])
-    for e in range(elements):
-        at = slice(2 * e, 2 * e + 4)
-        K[at, at] += ei[e] / h**3 * ke
-        M[at, at] += m[e] * h / 420.0 * me
-    M[-2, -2] += float(tip_mass_kg)
+    beam = Beam(fraction, mass_per_length, stiffness, length_m, elements)
+    nodes = beam.nodes
+    beam.add_point(1.0, mass=float(tip_mass_kg))
+    size = beam.K.shape[0]
     free = slice(2, size)
-    values, vectors = eigh(K[free, free], M[free, free], subset_by_index=[0, modes - 1])
+    values, vectors = eigh(beam.K[free, free], beam.M[free, free], subset_by_index=[0, modes - 1])
     frequencies = np.sqrt(np.maximum(values, 0.0)) / (2 * np.pi)
     shapes = []
     for k in range(modes):

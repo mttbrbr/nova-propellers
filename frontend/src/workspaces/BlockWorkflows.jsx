@@ -8,7 +8,7 @@ import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, St
 import { formatValue, niceTicks } from '../lib/blade.js';
 
 const IntegrationsContext = createContext({ list: [], openSettings: null });
-const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A', hub: '#7BD88F', nacelle: '#5BC0BE', tower: '#C9A66B', blade: '#E58FB7' };
+const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A', hub: '#7BD88F', nacelle: '#5BC0BE', tower: '#C9A66B', blade: '#E58FB7', attachment: '#A3B86C', modal: '#D9A0F2' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
 const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink focus:border-nv-accent focus:outline-none';
@@ -20,7 +20,7 @@ function optionsFor(key, catalog, rotors) {
     operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
     method: ['auto', 'bemt', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
-    shape: ['straight', 'troposkien'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
+    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
   };
   if (key === 'preset' && map.preset) return map.preset;
   return map[key] || null;
@@ -539,6 +539,11 @@ function PortValue({ port, value }) {
   if (value && value.kind && value.performance) {
     return <div className="flex flex-col gap-1"><span className="text-xs text-nv-muted">{port}: {value.method_label}</span>
       {value.warnings?.map((w) => <Notice key={w} tone="warn">{w}</Notice>)}</div>;
+  }
+  if (value && value.kind === 'modal') {
+    const curves = value.campbell?.curves || value.modes || [];
+    return <p className="m-0 text-xs text-nv-muted">{port}: {value.component} modes · {curves.map((c) => c.label).join(', ')}
+      {value.campbell ? ` · ${value.campbell.rpm.length} speeds, ${value.campbell.crossings.length} crossings` : ''}</p>;
   }
   if (value && value.kind && value.geometry) return <p className="m-0 text-xs text-nv-muted">{port}: {value.kind} specification ({Object.keys(value.geometry).length} geometry fields)</p>;
   if (value && value.title) return <div className="flex flex-col gap-2"><span className="text-xs text-nv-muted">{port}: {value.title}</span>

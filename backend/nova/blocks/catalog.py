@@ -18,7 +18,8 @@ import copy
 
 from nova.physics.rotors import DEFAULTS
 
-TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade')
+TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade',
+         'attachment', 'modal')
 
 
 def port(name, kind, optional=False, label=None):
@@ -192,6 +193,51 @@ BLOCKS = {
         inputs=[port('case', 'openfast_case')], outputs=[port('table', 'table'), port('values', 'record')],
         defaults={'integration_id': '', 'start_time_s': 0.0,
                   'statistics': [{'channel': 'GenPwr', 'stat': 'mean', 'name': 'gen_power_kw', 'unit': 'kW'}]}),
+    # ------------------------------------------------------------ structural dynamics (no aerodynamics)
+    'point_mass': dict(
+        family='specific', category='Structural dynamics', label='Point mass',
+        description='Concentrated mass and/or rotary inertia at a position along the blade or tower (0 = clamped end, 1 = free end). '
+                    'Chain several attachment blocks: each appends its item to the list received upstream.',
+        inputs=[port('attachments', 'attachment', True)], outputs=[port('attachments', 'attachment')],
+        defaults={'target': 'blade', 'position': 1.0, 'mass_kg': 0.0, 'inertia_kg_m2': 0.0, 'direction': 'both'}),
+    'spring_damper': dict(
+        family='specific', category='Structural dynamics', label='Spring & damper',
+        description='Grounded translational and/or rotational spring and viscous damper at a position along the blade or tower '
+                    '(e.g. guy wires, tuned dampers, foundation). Any non-zero damper switches the solution to damped modes.',
+        inputs=[port('attachments', 'attachment', True)], outputs=[port('attachments', 'attachment')],
+        defaults={'target': 'tower', 'position': 1.0, 'stiffness_n_m': 0.0, 'damping_ns_m': 0.0, 'rotational_stiffness_nm_rad': 0.0,
+                  'rotational_damping_nms_rad': 0.0, 'direction': 'both'}),
+    'blade_modes': dict(
+        family='specific', category='Structural dynamics', label='Blade modes (clamped)',
+        description='Flap and edge natural frequencies and mode shapes of the non-rotating blade clamped at the root. '
+                    'Length from the connected rotor (tip − hub radius) or length_m.',
+        inputs=[port('blade', 'blade'), port('spec', 'rotor_spec', True), port('attachments', 'attachment', True)],
+        outputs=[port('table', 'table'), port('values', 'record'), port('modal', 'modal')],
+        defaults={'length_m': None, 'flap_modes': 3, 'edge_modes': 2}),
+    'rotating_blade_modes': dict(
+        family='specific', category='Structural dynamics', label='Blade modes (rotating)',
+        description='Blade modes at a rotor speed: centrifugal stiffening about the rotor axis and edgewise spin softening. '
+                    'rpm empty = operating speed of the connected rotor.',
+        inputs=[port('blade', 'blade'), port('spec', 'rotor_spec', True), port('attachments', 'attachment', True)],
+        outputs=[port('table', 'table'), port('values', 'record'), port('modal', 'modal')],
+        defaults={'length_m': None, 'rpm': None, 'flap_modes': 3, 'edge_modes': 2}),
+    'tower_modes': dict(
+        family='specific', category='Structural dynamics', label='Tower modes',
+        description='Fore-aft and side-to-side modes of the tower clamped at the base, with nacelle, hub and blade masses lumped at the top '
+                    '(or top_mass_kg) and an optional top rotary inertia.',
+        inputs=[port('tower', 'tower'), port('nacelle', 'nacelle', True), port('hub', 'hub', True), port('blade', 'blade', True),
+                port('spec', 'rotor_spec', True), port('attachments', 'attachment', True)],
+        outputs=[port('table', 'table'), port('values', 'record'), port('modal', 'modal')],
+        defaults={'modes': 2, 'top_mass_kg': None, 'top_inertia_kg_m2': 0.0}),
+    'campbell': dict(
+        family='specific', category='Structural dynamics', label='Campbell diagram',
+        description='Blade (rotating frame) and tower frequencies against rotor speed with the 1P, BP, 2BP excitation lines (or your '
+                    'harmonics), crossings and the smallest margin at the operating speed. Modes are tracked between speeds by MAC.',
+        inputs=[port('blade', 'blade'), port('spec', 'rotor_spec'), port('tower', 'tower', True), port('nacelle', 'nacelle', True),
+                port('hub', 'hub', True), port('attachments', 'attachment', True)],
+        outputs=[port('table', 'table'), port('values', 'record'), port('modal', 'modal')],
+        defaults={'rpm_min': 0.0, 'rpm_max': None, 'points': 31, 'operating_rpm': None, 'flap_modes': 2, 'edge_modes': 1,
+                  'tower_modes': 2, 'harmonics': [], 'top_mass_kg': None, 'top_inertia_kg_m2': 0.0}),
 }
 
 

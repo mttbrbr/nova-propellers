@@ -6,6 +6,15 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Structural-dynamics blocks without aerodynamics: *Blade modes (clamped)*,
+  *Blade modes (rotating)* with centrifugal stiffening and edgewise spin
+  softening, *Tower modes* with the rotor and nacelle mass at the top, and
+  *Campbell diagram* with 1P/BP/2BP excitation lines, crossings, MAC mode
+  tracking and the smallest excitation margin at the operating speed. *Point
+  mass* and *Spring & damper* blocks chain onto them; with dampers the damped
+  frequencies and damping ratios come from the state-space eigenproblem.
+  Template `structural_campbell`; the first flap frequency of a rotating uniform
+  beam reproduces Wright et al. (1982).
 - Flexible OpenFAST models from blocks: *Hub*, *Nacelle & shaft*, *Tower* (tubular
   or table) and *Blade structure* blocks feed *OpenFAST case from rotor*, which
   then writes a full ElastoDyn case at prescribed rotor speed. Mode shapes are
