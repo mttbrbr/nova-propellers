@@ -148,49 +148,62 @@ by numerical baselines, profiling and demonstrated user needs.
 Every capability below is delivered as workflow blocks; when a block needs new inputs, dedicated
 input blocks are added (as `point_mass` and `spring_damper` were for structural dynamics).
 
-### Phase 1 — Structural dynamics (in progress)
+### Phase 1 — Structural dynamics (done)
 
-- Done: 3-D coupled Timoshenko beam (spectral elements); clamped and rotating blade modes, tower
-  modes, Campbell diagram with MAC mode tracking, 1P/BP/2BP margins and crossings, point masses,
-  springs and dampers with damped modes, template `structural_campbell`. See
-  `docs/technical/structural-dynamics.md`.
-- Open: rotor–tower coupled Campbell diagram (multi-blade coordinates).
-- Open: Campbell chart and animated mode shapes in the 3-D view (mock-up first); OpenFAST
-  linearisation block (ElastoDyn, aerodynamics off, MBC3) to verify the in-house Campbell diagram;
-  refreshed README screenshots.
+- 3-D coupled Timoshenko beam (spectral elements); clamped and rotating blade modes, tower modes, Campbell
+  diagram with MAC tracking, margins and crossings, point masses, springs and dampers, template
+  `structural_campbell`. See `docs/technical/structural-dynamics.md`.
+- Rotor–tower coupled Campbell diagram in multi-blade coordinates (MBC3, collective/BW/FW), template
+  `coupled_campbell`.
+- OpenFAST linearisation block (ElastoDyn, aerodynamics off, MBC3) with a mode-by-mode comparison; on the
+  AOC 15/50 example the first five coupled modes agree within 2.5 %, the second flap within about 7 %.
+- Campbell chart, animated mode shapes and participation in the block result panel.
+- Open: refreshed README screenshots; mode shapes in the 3-D viewport (today a 2-D animated side view).
 
-### Phase 2 — Performance curves and operating strategy
+### Phase 2 — Performance curves and operating strategy (done)
 
-- Cp–λ (and K_T–J) optimisation on a grid that refines progressively near the optimum, with an
-  interpolating response surface.
-- Cp–TSR extrapolation with a simplified model including rotor flexibility (from phase 1 modes)
-  and wind shear.
-- Operating-strategy block: choose TSR and wind speed, obtain rotor speed.
+- *Performance map*: progressive grid refinement around the optimum and a thin-plate RBF response surface
+  whose optimum is verified.
+- *Cp–λ flexible & sheared*: power-law shear (azimuthal BEMT) and steady flap deflection of the rotating
+  3-D beam (cos³β coning). *Operating strategy*: rotor speed from λ and wind speed, limits, rated power,
+  schedule. See `docs/technical/performance-strategy.md`.
 
-### Phase 3 — Cost models and multidisciplinary optimisation
+### Phase 3 — Cost models and multidisciplinary optimisation (done)
 
-- Cost models: NREL 2006 cost and scaling model (wind only, public). Check licensing and
-  availability of the Sandia blade cost model and the INNWIND.EU deliverables.
-- General multi-objective optimisation blocks over any record quantity (mass, power, thrust,
-  cost, …), not only cost of energy: gradient-based (SQP via SciPy) and genetic/NSGA-II.
-- Multi-fidelity strategy: coarse models far from the optimum, refined BEMT closer, finite
-  elements at the end.
+- NREL Cost and Scaling Model (2015 mass–cost update, WISDEM coefficients), annual energy, LCOE.
+- *Design optimiser* (SLSQP/COBYLA), *Pareto optimiser* (NSGA-II) and *Multi-fidelity optimiser* over any
+  quantity computed downstream: every candidate re-runs the downstream blocks. See
+  `docs/technical/economics-optimisation.md`.
+- Not implemented: Sandia blade cost model (no published model with a licence found) and INNWIND.EU cost
+  model (public deliverables without a reuse licence). Decision for the owner.
 
-### Phase 4 — CalculiX
+### Phase 4 — Sections and CalculiX (done, CalculiX run not qualified)
 
-- 2-D cross-section properties and 3-D shell finite-element model of the blade through an external
-  adapter.
+- *Blade layup*: thin-walled sections (NACA or circular root, shell, spar caps, webs; multi-cell torsion)
+  producing the blade structure record.
+- CalculiX adapter and *Blade shell modes* block (S4 shell model). Tested with a stand-in executable; a
+  real-solver test runs with `NOVA_CCX`. See `docs/technical/blade-sections-fem.md`.
 
-### Phase 5 — Aerodynamic integrations
+### Phase 5 — Aerodynamic integrations (done, DUST run not qualified)
 
-- Wind-farm blocks on the existing PyWake adapter.
-- DUST (mid-fidelity vortex particle method) as an external adapter.
+- Wind-farm blocks: farm turbine, layout, Weibull climate, farm AEP with native NOJ or PyWake.
+- DUST adapter and *DUST rotor* block (lifting-line rotor, vortex-particle wake, integral loads). Case
+  syntax from the DUST examples; not yet run against a real DUST build. See
+  `docs/technical/wind-farm-dust.md`.
 
-### Phase 6 — Control and co-simulation
+### Phase 6 — Control and co-simulation (done, FMU run not qualified)
 
-- Generalised control blocks with freely named inputs and outputs (PI/PID, kω² torque law, pitch
-  scheduling, transfer function / state space).
-- OpenModelica models through generic FMU import rather than a dedicated integration.
+- Control blocks on named signals: sources, PI/PID with gain scheduling and anti-windup, kω² torque law,
+  schedules, transfer function, state space, rotor–drivetrain plant, simulation. Templates
+  `turbine_control`, `lcoe_optimization`, `wind_farm_aep`, `rotor_economics_chain`.
+- FMI 2.0 co-simulation FMUs through optional FMPy (replaces a dedicated OpenModelica integration);
+  tested with a stand-in FMPy module. See `docs/technical/control.md`.
+
+### Next
+
+- Qualify the external runs: CalculiX shell modes against the beam, DUST against BEMT/OpenFAST, a real
+  OpenModelica FMU.
+- Mode shapes in the 3-D viewport; dedicated result views for wind farms and control time series.
 
 ### To decide
 

@@ -99,6 +99,10 @@ def cost_model(node, args):
     else:
         notes.append('No LCOE: it needs aep_kwh in the connected values and bos_per_kw and opex_per_kw_yr (site-specific inputs, '
                      'nothing is assumed)')
+    if diameter < 40 or rating < 500:
+        notes.append('Outside the range the NREL model was fitted on (roughly 0.5–5 MW, rotors of 40 m and more): fixed intercepts such '
+                     'as the hub, spinner, generator and transformer masses dominate small turbines, so absolute costs are not meaningful')
+        record['outside_calibration'] = 1.0
     notes.insert(0, 'NREL Cost and Scaling Model, 2015 mass–cost update with the coefficients of NREL WISDEM (land-based, '
                     'three-stage geared drivetrain); scaling estimates in the coefficients\' USD, for comparing designs')
     return {'values': record, 'table': {'kind': 'costs', 'rows': result['components']}, 'notes': notes}

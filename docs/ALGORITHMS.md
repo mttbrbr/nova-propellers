@@ -62,5 +62,23 @@ spectral elements up to order 6, as in OpenFAST BeamDyn. Rotating blades add cen
 stiffening and softening, Coriolis and section gyroscopic terms. Motions without inertia are
 condensed statically; damped and gyroscopic modes come from a state-space solution in a modal
 basis. Checks: Euler–Bernoulli limit, Wright et al. (1982), exact Timoshenko and torsion
-solutions, propeller moment. Maturity: `preliminary` (OpenFAST linearisation comparison pending).
+solutions, propeller moment, rotor–tower coupling limits, OpenFAST linearisation of the AOC example (first five
+coupled modes within 2.5 %). Maturity: `preliminary`.
 Details: [technical/structural-dynamics.md](technical/structural-dynamics.md).
+
+## Engineering extensions
+
+Independently written implementations of published methods; no third-party code is included.
+
+- Multi-blade coordinate transformation and azimuth averaging: Bir (2008), NREL/CP-500-42553.
+- Thin-walled section properties and multi-cell Bredt–Batho torsion: textbook thin-wall theory.
+- NREL Cost and Scaling Model: Fingersh, Hand & Laxson (2006), NREL/TP-500-40566, with the 2015 mass–cost
+  coefficients as published in NREL WISDEM (Apache-2.0); only the coefficients and equations are used.
+- NOJ wake model: Jensen (1983), Katic et al. (1986), with PyWake's default choices (area overlap,
+  root-sum-square superposition).
+- NSGA-II: Deb et al. (2002). SQP and COBYLA, response surfaces: SciPy.
+- External solvers (OpenFAST, CalculiX, DUST, PyWake, FMUs through FMPy) are installed by the user and
+  only driven through their input and output files.
+
+Maturity of all these blocks: `preliminary`. CalculiX, DUST and FMU runs are not yet qualified against
+real executables. Details in the technical manual.

@@ -6,6 +6,25 @@ All notable changes to Nova are documented in this file.
 
 ### Added
 
+- Rotor–tower coupled Campbell diagram (`coupling: mbc`): tower modes and each blade's rotating-frame
+  modes coupled through the hub kinematics, multi-blade coordinates and azimuth averaging (MBC3);
+  collective, backward- and forward-whirl modes in the fixed frame. Template `coupled_campbell`.
+- *OpenFAST linearisation* block: structural linearisation of a flexible ElastoDyn case, `.lin`
+  parsing, MBC3 and a mode-by-mode comparison with the coupled Campbell diagram.
+- Block results show the Campbell diagram (hover readout, selectable curves, crossings, operating
+  speed), animated mode shapes, coupled-mode participation and the OpenFAST comparison table.
+- *Performance map* (progressive refinement and response surface), *Cp–λ flexible & sheared* (wind
+  shear and steady blade deflection) and *Operating strategy* blocks.
+- *Annual energy*, *Turbine cost (NREL CSM)* with LCOE, and the *Design*, *Pareto (NSGA-II)* and
+  *Multi-fidelity* optimisers, which re-run the downstream blocks for every candidate so any computed
+  quantity can be an objective or a constraint.
+- *Blade layup* (thin-walled sections to a blade structure) and *Blade shell modes* through a new
+  CalculiX adapter (external, not bundled).
+- Wind-farm blocks (*Farm turbine*, *Farm layout*, *Wind climate*, *Wind farm AEP*) with a native NOJ
+  model or PyWake, and a DUST adapter with the *DUST rotor* block (external, not bundled).
+- Control blocks on named signals (sources, PI/PID, kω² torque law, schedules, transfer function,
+  state space, rotor–drivetrain plant, simulation) and FMI 2.0 co-simulation FMUs through optional
+  FMPy. Templates `rotor_economics_chain`, `lcoe_optimization`, `wind_farm_aep`, `turbine_control`.
 - Structural-dynamics blocks without aerodynamics on a 3-D coupled beam (Timoshenko,
   six degrees of freedom per node, spectral elements as in BeamDyn): *Blade modes
   (clamped)*, *Blade modes (rotating)* with centrifugal stiffening, spin softening,

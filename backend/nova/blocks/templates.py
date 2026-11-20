@@ -239,6 +239,108 @@ TEMPLATES['structural_campbell'] = {
 }
 
 
+_ROTOR = lambda: _node('rotor', 'rotor_hawt', {}, 0, 0)  # noqa: E731
+_OPERATING = lambda x=280: _node('operating', 'operating_point', {'fluid': {'preset': 'air'},  # noqa: E731
+                                                                  'operating': {'velocity_m_s': 8.0, 'tip_speed_ratio': 7.0}}, x, 0)
+_SITE = {'hub_height_m': 25.0, 'bos_per_kw': 600.0, 'opex_per_kw_yr': 45.0}
+
+TEMPLATES['rotor_economics_chain'] = {
+    'name': 'Performance map, layup, flexible Cp–λ, strategy, energy and cost',
+    'description': 'Optimum λ and pitch on a refined grid with a response surface; blade layup sections; Cp–λ with blade flexibility and '
+                   'wind shear; variable-speed strategy; annual energy; NREL cost model and LCOE (example site costs: replace them).',
+    'nodes': [
+        _ROTOR(), _OPERATING(),
+        _node('map', 'performance_map', {'variables': [{'path': 'operating.tip_speed_ratio', 'min': 4.0, 'max': 10.0},
+                                                       {'path': 'geometry.pitch_deg', 'min': -2.0, 'max': 4.0}],
+                                         'points': 4, 'levels': 2, 'max_evaluations': 40}, 560, -220),
+        _node('layup', 'blade_layup', {}, 560, 0),
+        _node('modes', 'blade_modes', {'flap_modes': 2, 'edge_modes': 1, 'torsion_modes': 1}, 840, -120),
+        _node('curve', 'cp_flexible', {'start': 3.0, 'stop': 11.0, 'points': 9, 'shear_exponent': 0.14, 'hub_height_m': 25.0,
+                                       'azimuth_steps': 12}, 840, 80),
+        _node('strategy', 'operating_strategy', {'rated_power_w': 20000.0, 'rpm_max': 150.0, 'points': 23}, 1120, 80),
+        _node('energy', 'annual_energy', {'mean_wind_m_s': 6.5}, 1400, 80),
+        _node('cost', 'cost_model', dict(_SITE), 1680, 80),
+        _node('report', 'report', {'title': 'Rotor economics'}, 1960, 80),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'map', 'spec'), _edge('operating', 'spec', 'layup', 'spec'),
+              _edge('layup', 'blade', 'modes', 'blade'), _edge('operating', 'spec', 'modes', 'spec'),
+              _edge('operating', 'spec', 'curve', 'spec'), _edge('layup', 'blade', 'curve', 'blade'),
+              _edge('operating', 'spec', 'strategy', 'spec'), _edge('curve', 'table', 'strategy', 'table'),
+              _edge('strategy', 'table', 'energy', 'table'), _edge('operating', 'spec', 'cost', 'spec'),
+              _edge('energy', 'values', 'cost', 'values'), _edge('cost', 'values', 'report', 'a'), _edge('cost', 'table', 'report', 'b')],
+}
+
+TEMPLATES['lcoe_optimization'] = {
+    'name': 'LCOE optimisation over the whole chain',
+    'description': 'The design optimiser varies the rotor radius; every candidate re-runs Cp–λ, the operating strategy, annual energy and '
+                   'the cost model, and the LCOE is minimised under a tip-speed limit.',
+    'nodes': [
+        _ROTOR(), _OPERATING(),
+        _node('optimizer', 'design_optimizer', {'variables': [{'path': 'geometry.radius_m', 'min': 3.0, 'max': 7.0, 'initial': 4.0}],
+                                                'objectives': [{'expression': 'lcoe_usd_kwh', 'sense': 'minimize'}], 'method': 'cobyla',
+                                                'max_evaluations': 12}, 560, 0),
+        _node('curve', 'performance_curve', {'points': 9, 'start': 3.0, 'stop': 11.0}, 840, -100),
+        _node('strategy', 'operating_strategy', {'rated_power_w': 20000.0, 'rpm_max': 200.0, 'points': 23}, 1120, 0),
+        _node('energy', 'annual_energy', {'mean_wind_m_s': 6.5}, 1400, 0),
+        _node('cost', 'cost_model', dict(_SITE), 1680, 0),
+        _node('limits', 'constraint', {'checks': [{'quantity': 'lcoe_usd_kwh', 'operator': '<=', 'value': 1.0, 'severity': 'soft',
+                                                   'label': 'LCOE target', 'unit': 'USD/kWh'}], 'on_violation': 'report'}, 1960, 0),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'optimizer', 'spec'),
+              _edge('optimizer', 'spec', 'curve', 'spec'), _edge('optimizer', 'spec', 'strategy', 'spec'),
+              _edge('curve', 'table', 'strategy', 'table'), _edge('strategy', 'table', 'energy', 'table'),
+              _edge('optimizer', 'spec', 'cost', 'spec'), _edge('energy', 'values', 'cost', 'values'), _edge('cost', 'values', 'limits', 'values')],
+}
+
+TEMPLATES['wind_farm_aep'] = {
+    'name': 'Wind farm: wake losses, energy and cost',
+    'description': 'The rotor\'s power and thrust curves along its operating strategy, a 2 × 3 grid at 7 × 5 diameters, a 12-sector Weibull '
+                   'climate and the native NOJ wake model (or PyWake); farm energy feeds the cost model.',
+    'nodes': [
+        _ROTOR(), _OPERATING(),
+        _node('curve', 'performance_curve', {'points': 11, 'start': 3.0, 'stop': 11.0}, 560, -120),
+        _node('strategy', 'operating_strategy', {'rated_power_w': 20000.0, 'rpm_max': 160.0, 'cut_in_m_s': 3.0, 'cut_out_m_s': 25.0, 'points': 12}, 840, 0),
+        _node('turbine', 'farm_turbine', {'hub_height_m': 25.0}, 1120, 0),
+        _node('layout', 'farm_layout', {'rows': 2, 'columns': 3}, 1400, -120),
+        _node('climate', 'wind_climate', {'sectors': 12, 'mean_wind_m_s': 7.0, 'speed_step_m_s': 2.0}, 1120, 220),
+        _node('farm', 'wind_farm', {}, 1680, 0),
+        _node('cost', 'cost_model', {'hub_height_m': 25.0, 'rating_kw': 20.0, 'bos_per_kw': 600.0, 'opex_per_kw_yr': 45.0}, 1960, 0),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('operating', 'spec', 'curve', 'spec'), _edge('operating', 'spec', 'strategy', 'spec'),
+              _edge('curve', 'table', 'strategy', 'table'), _edge('operating', 'spec', 'turbine', 'spec'), _edge('strategy', 'table', 'turbine', 'table'),
+              _edge('turbine', 'turbine', 'layout', 'turbine'), _edge('turbine', 'turbine', 'farm', 'turbine'), _edge('layout', 'layout', 'farm', 'layout'),
+              _edge('climate', 'climate', 'farm', 'climate'), _edge('operating', 'spec', 'cost', 'spec')],
+}
+
+TEMPLATES['turbine_control'] = {
+    'name': 'Variable-speed, pitch-regulated turbine control',
+    'description': 'Wind ramp through rated, kω² torque law up to rated torque, PI pitch controller on rotor speed, rotor–drivetrain plant with '
+                   'BEMT Cp(λ, β); time series and statistics of every signal.',
+    'nodes': [
+        _ROTOR(), _OPERATING(),
+        _node('wind', 'control_source', {'output': 'wind_speed', 'kind': 'ramp', 'value': 7.0, 'amplitude': 7.0, 'time': 5.0, 'end_time': 45.0}, 560, -120),
+        _node('law', 'torque_law', {'rated_torque_nm': 1800.0}, 840, -120),
+        _node('pitch', 'pid_controller', {'output': 'pitch', 'measurement': 'rotor_speed', 'setpoint': 12.0, 'kp': 4.0, 'ki': 1.5, 'min': 0.0,
+                                          'max': 30.0, 'reverse': True}, 1120, -120),
+        _node('plant', 'rotor_dynamics', {'inertia_kg_m2': 300.0, 'tsr_grid': [1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0],
+                                          'pitch_grid': [0.0, 4.0, 8.0, 14.0, 20.0, 30.0]}, 1400, -120),
+        _node('simulation', 'control_simulation', {'duration_s': 60.0, 'dt_s': 0.02, 'initial': {'pitch': 0.0}, 'statistics_from_s': 50.0}, 1680, -120),
+    ],
+    'edges': [_edge('rotor', 'spec', 'operating', 'spec'), _edge('wind', 'dynamics', 'law', 'dynamics'), _edge('operating', 'spec', 'law', 'spec'),
+              _edge('law', 'dynamics', 'pitch', 'dynamics'), _edge('pitch', 'dynamics', 'plant', 'dynamics'), _edge('operating', 'spec', 'plant', 'spec'),
+              _edge('plant', 'dynamics', 'simulation', 'dynamics')],
+}
+
+TEMPLATES['coupled_campbell'] = copy.deepcopy(TEMPLATES['structural_campbell'])
+TEMPLATES['coupled_campbell'].update(
+    name='Rotor–tower coupled Campbell diagram (AOC 15/50 example structure)',
+    description='The structural Campbell template with rotor–tower coupling in multi-blade coordinates: collective, backward- and '
+                'forward-whirl blade modes and tower modes in the fixed frame.')
+for _n in TEMPLATES['coupled_campbell']['nodes']:
+    if _n['id'] == 'campbell':
+        _n['config'] = {**_n['config'], 'coupling': 'mbc', 'points': 21}
+
+
 def templates():
     return [{'id': key, 'name': t['name'], 'description': t['description']} for key, t in TEMPLATES.items()]
 

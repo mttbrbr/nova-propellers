@@ -5,11 +5,12 @@ import '@xyflow/react/dist/style.css';
 import { request } from '../backend.js';
 import LineChart from '../ui/LineChart.jsx';
 import { LinearizationComparison, ModalView } from '../ui/ModalCharts.jsx';
+import WindFarmLayout from '../components/WindFarmLayout.jsx';
 import { Button, Disclosure, IconButton, KeyValue, MenuItem, Notice, Popover, StatusDot } from '../ui/controls.jsx';
 import { formatValue, niceTicks } from '../lib/blade.js';
 
 const IntegrationsContext = createContext({ list: [], openSettings: null });
-const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A', hub: '#7BD88F', nacelle: '#5BC0BE', tower: '#C9A66B', blade: '#E58FB7', attachment: '#A3B86C', modal: '#D9A0F2' };
+const typeColor = { record: '#FF8533', rotor_spec: '#B49CFB', rotor_result: '#46D19A', table: '#4CC9F0', report: '#F27C7C', openfast_case: '#E8B34A', hub: '#7BD88F', nacelle: '#5BC0BE', tower: '#C9A66B', blade: '#E58FB7', attachment: '#A3B86C', modal: '#D9A0F2', layup: '#E8D27A', farm_turbine: '#6FB7E8', farm_layout: '#8FA8D9', wind_climate: '#7FD1C7', dynamics: '#F0A35E' };
 const statusTone = { succeeded: 'ok', failed: 'err', blocked: 'muted', violated: 'warn' };
 const fmt = (v) => typeof v === 'number' ? formatValue(v, 4) : String(v ?? '—');
 const fieldClass = 'h-[30px] w-full min-w-0 rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink focus:border-nv-accent focus:outline-none';
@@ -19,9 +20,10 @@ function optionsFor(key, catalog, rotors) {
   const axial = rotors?.axial_corrections || {}, vertical = rotors?.vertical_corrections || {};
   const map = {
     operator: catalog?.operators, severity: ['hard', 'soft'], stat: ['mean', 'min', 'max', 'std', 'final'], on_violation: ['report', 'stop'], sense: ['maximize', 'minimize'],
-    method: ['auto', 'bemt', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
+    method: ['auto', 'bemt', 'slsqp', 'cobyla', 'nelder_mead', 'grid', ...(rotors?.vawt_methods || []).map((m) => m.id)],
     variable: ['auto', 'tip_speed_ratio', 'advance_ratio'], preset: (catalog?.constraint_presets || []).map((p) => p.id),
-    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], coupling: ['none', 'mbc'], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
+    shape: ['straight', 'troposkien'], target: ['blade', 'tower'], coupling: ['none', 'mbc'], engine: ['native', 'pywake'], mode: ['grid', 'explicit'],
+    kind: ['constant', 'step', 'ramp', 'sine', 'table'], turbine_class: [1, 2, 3], direction: ['both', 'flap', 'edge', 'fore_aft', 'side_side', 'torsion', 'axial'], name: null, ...Object.fromEntries(Object.entries({ ...axial, ...vertical }).map(([k, v]) => [k, v])),
   };
   if (key === 'preset' && map.preset) return map.preset;
   return map[key] || null;
@@ -572,19 +574,44 @@ function Record({ values }) {
     <div className="mt-1 flex flex-col gap-0.5">{entries.map(([k, v]) => <KeyValue key={k} label={k}><span className="font-mono">{fmt(v)}</span></KeyValue>)}</div></details>;
 }
 
+// Which columns a table of each kind is charted with (x, y and an optional dashed reference column).
+function chartAxes(table, signal) {
+  switch (table.kind) {
+    case 'performance_curve': return { x: table.variable, y: table.rotor_kind && !['hawt', 'vawt'].includes(table.rotor_kind) ? (table.rotor_kind === 'marine' ? 'open_water_efficiency' : 'efficiency') : 'CP', reference: table.reference_series };
+    case 'sweep': return { x: 'value', y: 'CP' };
+    case 'optimization': return { x: 'evaluation', y: 'objective' };
+    case 'performance_map': return { x: table.variables?.[0], y: 'objective' };
+    case 'operating_schedule': return { x: 'wind_speed_m_s', y: 'power_w' };
+    case 'turbine_curve': return { x: 'wind_speed_m_s', y: 'power_w' };
+    case 'pareto': return { x: table.objectives?.[0], y: table.objectives?.[1] };
+    case 'sections': return { x: 'fraction', y: 'EI_flap_nm2' };
+    case 'time_series': return { x: 'time_s', y: signal };
+    default: return null;
+  }
+}
+
 function TableValue({ port, table }) {
   const rows = table.rows.filter((r) => r.state !== 'failed');
-  const charted = !['campbell', 'modes', 'linearization'].includes(table.kind);
-  const x = table.kind === 'performance_curve' ? table.variable : table.kind === 'sweep' ? 'value' : 'evaluation';
-  const y = table.kind === 'optimization' ? 'objective' : table.rotor_kind && !['hawt', 'vawt'].includes(table.rotor_kind) ? (table.rotor_kind === 'marine' ? 'open_water_efficiency' : 'efficiency') : 'CP';
-  const points = rows.filter((r) => typeof r[x] === 'number' && typeof r[y] === 'number').map((r) => ({ x: r[x], y: r[y] })).sort((a, b) => a.x - b.x);
+  const signals = table.kind === 'time_series' ? Object.keys(rows[0] || {}).filter((k) => k !== 'time_s') : [];
+  const [signal, setSignal] = useState(signals[0]);
+  const axes = chartAxes(table, signals.includes(signal) ? signal : signals[0]);
+  const x = axes?.x, y = axes?.y;
+  const charted = Boolean(axes && x && y);
+  const points = charted ? rows.filter((r) => typeof r[x] === 'number' && typeof r[y] === 'number').map((r) => ({ x: r[x], y: r[y] })).sort((a, b) => a.x - b.x) : [];
+  const reference = charted && axes.reference ? rows.filter((r) => typeof r[x] === 'number' && typeof r[axes.reference] === 'number').map((r) => ({ x: r[x], y: r[axes.reference] })).sort((a, b) => a.x - b.x) : [];
   const lo = points[0]?.x ?? 0, hi = points.at(-1)?.x ?? 1;
   const ticks = niceTicks(lo, hi, 3).filter((t) => t >= lo - 1e-9 && t <= hi + 1e-9);
   const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => !['state', 'error'].includes(k)).slice(0, 8);
   return <div className="flex flex-col gap-2">
     <span className="text-xs text-nv-muted">{port}: {table.kind} · {table.rows.length} rows{table.filtered_from != null ? ` (of ${table.filtered_from})` : ''}</span>
     {table.kind === 'linearization' && <LinearizationComparison table={table} />}
-    {charted && points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`} series={[{ id: 'y', color: '#FF8533', points }]} height={170}
+    {table.kind === 'wind_farm' && <WindFarmLayout layout={rows.map((r) => ({ x: r.x_m, y: r.y_m }))} />}
+    {signals.length > 1 && <label className="flex items-center gap-2 text-xs text-nv-muted">Signal
+      <select aria-label="Signal" className="h-[28px] rounded-md border border-nv-edge bg-nv-chrome px-2 text-[12.5px] text-nv-ink" value={signal} onChange={(e) => setSignal(e.target.value)}>
+        {signals.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>}
+    {charted && points.length > 1 && hi > lo && <LineChart title={`${y} vs ${x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : x}`}
+      series={[{ id: 'y', color: '#FF8533', points, label: reference.length ? y : undefined }, ...(reference.length ? [{ id: 'ref', color: '#4CC9F0', points: reference, dashed: true, label: axes.reference }] : [])]}
+      legend={reference.length > 0} height={170}
       xDomain={[lo, hi]} xTicks={ticks.length > 1 ? ticks : [lo, hi]} xLabel={x === 'tip_speed_ratio' ? 'λ' : x === 'advance_ratio' ? 'J' : ''} />}
     <details className="text-xs"><summary className="cursor-pointer text-nv-reference">Rows</summary><div className="mt-1 max-h-64 overflow-auto">
       <table className="w-full text-left tabular-nums"><thead className="text-nv-muted"><tr>{columns.map((c) => <th key={c} className="p-1 font-normal">{c}</th>)}</tr></thead>

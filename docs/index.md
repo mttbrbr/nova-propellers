@@ -39,6 +39,11 @@ technical/vawt
 technical/marine-propellers
 technical/block-workflows
 technical/structural-dynamics
+technical/blade-sections-fem
+technical/performance-strategy
+technical/economics-optimisation
+technical/wind-farm-dust
+technical/control
 technical/verification-validation
 technical/projects-storage
 ```

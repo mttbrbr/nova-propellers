@@ -180,6 +180,68 @@ The ElastoDyn files that the OpenFAST case block writes still use Euler–Bernou
 fitted to ElastoDyn's polynomial, because that is the input ElastoDyn accepts
 (`backend/nova/physics/beam_modes.py`).
 
+### Rotor–tower coupling (multi-blade coordinates)
+
+With `coupling = "mbc"` the Campbell block no longer treats the rotor as a rigid body on the tower. The
+generalised coordinates are the tower modal coordinates $\boldsymbol\eta$ (clamped tower with the
+nacelle at the top, *without* the rotor) and, for each blade $b$, the rotating-frame modal coordinates
+$\mathbf q_b$ of the 3-D beam at the current speed (centrifugal stiffening and spin softening included,
+Coriolis matrix kept). A point of blade $b$ at radius $r$ is at
+
+$$
+\mathbf P = \mathbf p_\text{top} + \mathbf u(\boldsymbol\eta) + \mathbf R(\boldsymbol\theta(\boldsymbol\eta))\,\bigl(\mathbf d + r\,\mathbf e_r(\psi_b) + u_b\,\mathbf e_r + v_b\,\mathbf e_t + w_b\,\mathbf e_z\bigr),
+\qquad \mathbf R \approx \mathbf I + [\boldsymbol\theta\times] + \tfrac12[\boldsymbol\theta\times]^2 ,
+$$
+
+with $\mathbf u, \boldsymbol\theta$ the tower-top translation and rotation, $\mathbf d$ the hub centre
+from the tower top (shaft height, overhang) and $\psi_b = \psi + 2\pi b/B$. Expanding the kinetic energy
+to second order gives the mass coupling between tower and blades, the Coriolis and centrifugal terms
+and the gyroscopic and centrifugal terms of the tower-top rotations. Every term reduces to five mass
+moments of a blade ($\sum m$, $\sum m r$, $\sum m r^2$, $\sum m\mathbf Y$, $\sum m r\mathbf Y$ with
+$\mathbf Y$ the modal displacements), so the cost does not grow with the blade resolution. The
+blade–blade block is the beam's own rotating-frame model; a hub is a ring of point masses with its
+polar inertia. The periodic equations
+$\mathbf M(\psi)\ddot{\mathbf x} + \mathbf D(\psi)\dot{\mathbf x} + \mathbf K(\psi)\mathbf x = 0$ are
+transformed with $\mathbf q_b = \mathbf q_0 + \sum_h (\mathbf q_{hc}\cos h\psi_b + \mathbf q_{hs}\sin h\psi_b)\,[+\,\mathbf q_d(-1)^b]$
+and the first-order system matrix is averaged over 36 azimuths (MBC3, Bir 2008). Modes are labelled by
+their largest participation and, for blade modes, by the phase between the cosine and sine
+components: collective, backward whirl (BW) or forward whirl (FW). They are tracked from the highest
+speed down, where the whirl pairs are well separated.
+
+The coupling needs the tower and nacelle blocks and at least three blades. It ignores gravity,
+aerodynamics, shaft tilt, precone and the drivetrain (no generator degree of freedom).
+
+Checks (`backend/tests/test_coupled.py`):
+
+- a tower 10⁵ times stiffer gives the isolated rotating blade for the collective mode and
+  $f \mp \Omega/2\pi$ for the backward and forward flap and edge whirl modes (0.1 %);
+- at standstill with very stiff blades the tower modes equal those of the tower carrying the rotor as
+  a rigid body (0.2 %).
+
+### Verification against OpenFAST linearisation
+
+The *OpenFAST linearisation* block turns a flexible ElastoDyn case (from *OpenFAST case from rotor*)
+into a structural linearisation: aerodynamics, inflow, control and gravity off, prescribed rotor
+speed, linearisation times spread over one revolution. It parses the `.lin` state matrices, applies
+the same multi-blade transformation and averaging, and pairs the OpenFAST modes with the coupled
+Campbell curves by nearest frequency (labels from ElastoDyn state amplitudes are unreliable for the
+second tower modes, whose degrees of freedom are normalised at the tower top). A synthetic test writes
+`.lin` files from Nova's own periodic system and recovers its MBC frequencies to 0.1 %.
+
+On the AOC 15/50 example structure at 60 rpm (OpenFAST 5.0.0, 12 azimuths):
+
+| Mode | OpenFAST (Hz) | Nova (Hz) | Difference |
+| --- | --- | --- | --- |
+| Tower fore-aft 1 / side-side 1 | 1.574 / 1.578 | 1.572 / 1.576 | −0.1 % |
+| Blade flap BW / collective / FW | 3.37 / 4.48 / 5.36 | 3.28 / 4.40 / 5.28 | −1.6 to −2.5 % |
+| Blade edge BW / collective / FW | 7.38 / 7.60 / 9.35 | 7.16 / 7.29 / 9.14 | −2.3 to −4 % |
+| Tower fore-aft 2 / side-side 2 | 11.37 / 12.90 | 11.10 / 12.96 | −2.4 / +0.5 % |
+| Blade flap 2 (BW / collective / FW) | 14.5 / 15.6 / 16.5 | 13.6 / 14.6 / 15.5 | about −7 % |
+
+ElastoDyn uses two polynomial assumed modes per blade direction (Euler–Bernoulli, fitted at
+standstill), Nova the converged 3-D beam: the second flap mode, whose shape changes most with
+rotation, differs most. Damping is defined differently (ElastoDyn applies it per assumed mode).
+
 ### Code
 
 - `backend/nova/physics/modal.py`: sections, spectral beam elements, rotation terms, condensation,
@@ -205,6 +267,8 @@ A column is either given at every station or left out entirely.
 
 - Wright, A. D., Smith, C. E., Thresher, R. W., Wang, J. L. C. (1982). *Vibration modes of
   centrifugally stiffened beams*. Journal of Applied Mechanics 49(1), 197–202.
+- Bir, G. (2008). *Multi-blade coordinate transformation and its application to wind turbine
+  analysis*. AIAA 2008-1300 (NREL/CP-500-42553).
 - Wang, Q., Sprague, M. A., Jonkman, J., Johnson, N., Jonkman, B. (2017). *BeamDyn: a
   high-fidelity wind turbine blade solver in the FAST modular framework*. Wind Energy 20(8),
   1439–1462.

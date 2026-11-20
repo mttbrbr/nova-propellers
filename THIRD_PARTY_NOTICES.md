@@ -34,6 +34,23 @@ the resulting application under Nova's license; bundled dependency license and
 native-library notices still apply. GTK and WebKitGTK are system dependencies
 of the Arch and Debian packages and remain under their respective licenses.
 
+## Optional external programs and published coefficients
+
+These programs are installed by the user, configured in Settings → Integrations and driven only
+through their input and output files. They are not bundled, linked or redistributed.
+
+| Program | Use in Nova | License |
+| --- | --- | --- |
+| OpenFAST | Time-domain cases and structural linearisation | Apache-2.0 |
+| PyWake | Wind-farm wake model (NOJ) | MIT |
+| CalculiX (ccx) | Shell finite-element modes of the blade | GPL-2.0 |
+| DUST | Lifting-line / vortex-particle rotor check | MIT |
+| FMPy (optional Python package) | FMI 2.0 co-simulation FMUs | BSD-2-Clause |
+
+The turbine cost block uses the equations and coefficients of the NREL Cost and Scaling Model as
+published in NREL WISDEM (`wisdem/nrelcsm`, `wisdem/plant_financese`, Apache-2.0); no WISDEM source
+code is included.
+
 The release process must refresh this file whenever a runtime dependency or
 locked version changes. Package metadata marked `UNKNOWN` must be verified
 against the dependency's official license file before release.
