@@ -16,11 +16,13 @@ def ensure_builtins():
     with _registry_lock:
         if not _builtins_loaded:
             from nova.adapters.calculix import CalculiXAdapter
+            from nova.adapters.dust import DustAdapter
             from nova.adapters.openfast import OpenFASTAdapter
             from nova.adapters.pywake import PyWakeAdapter
             register(PyWakeAdapter())
             register(OpenFASTAdapter())
             register(CalculiXAdapter())
+            register(DustAdapter())
             _builtins_loaded = True
 
 

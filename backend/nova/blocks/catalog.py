@@ -19,7 +19,7 @@ import copy
 from nova.physics.rotors import DEFAULTS
 
 TYPES = ('record', 'rotor_spec', 'rotor_result', 'table', 'report', 'openfast_case', 'hub', 'nacelle', 'tower', 'blade',
-         'attachment', 'modal', 'layup')
+         'attachment', 'modal', 'layup', 'farm_turbine', 'farm_layout', 'wind_climate')
 
 
 def port(name, kind, optional=False, label=None):
@@ -214,6 +214,41 @@ BLOCKS = {
                   'drivetrain_efficiency': 0.95, 'turbine_class': 2, 'carbon_spar': False, 'main_bearings': 2, 'crane': False,
                   'blade_mass_kg': None, 'use_connected_blade_mass': True, 'tower_mass_kg': None, 'bos_per_kw': None,
                   'opex_per_kw_yr': None, 'fixed_charge_rate': 0.075, 'wake_losses': 0.0}),
+    'farm_turbine': dict(
+        family='specific', category='Wind farm', label='Farm turbine',
+        description='Power and thrust curves of the connected HAWT along its operating-strategy schedule, with the hub height: the turbine '
+                    'type placed in a wind farm.',
+        inputs=[port('spec', 'rotor_spec'), port('table', 'table')],
+        outputs=[port('turbine', 'farm_turbine'), port('table', 'table'), port('values', 'record')],
+        defaults={'name': 'Nova rotor', 'hub_height_m': None}),
+    'farm_layout': dict(
+        family='specific', category='Wind farm', label='Farm layout',
+        description='Turbine positions: a rotated, optionally staggered grid with spacings in rotor diameters, or explicit coordinates '
+                    '(x east, y north, metres).',
+        inputs=[port('turbine', 'farm_turbine', True)], outputs=[port('layout', 'farm_layout'), port('values', 'record')],
+        defaults={'mode': 'grid', 'rows': 2, 'columns': 3, 'spacing_x_d': 7.0, 'spacing_y_d': 5.0, 'stagger': 0.0, 'angle_deg': 0.0,
+                  'diameter_m': None, 'x_m': [], 'y_m': []}),
+    'wind_climate': dict(
+        family='specific', category='Wind farm', label='Wind climate',
+        description='Direction sectors (frequencies) and a Weibull speed distribution binned into a joint probability table; '
+                    'turbulence intensity for the external wake models.',
+        inputs=[], outputs=[port('climate', 'wind_climate'), port('values', 'record')],
+        defaults={'sectors': 12, 'frequencies': None, 'mean_wind_m_s': 8.0, 'weibull_k': 2.0, 'speed_min_m_s': 3.0, 'speed_max_m_s': 25.0,
+                  'speed_step_m_s': 1.0, 'turbulence_intensity': 0.1}),
+    'wind_farm': dict(
+        family='specific', category='Wind farm', label='Wind farm AEP',
+        description='Annual energy of the farm with wakes: native NOJ (Jensen) model, or PyWake through Settings → Integrations. Per-turbine '
+                    'energy and wake efficiency, total wake loss, capacity factor; aep_kwh feeds the cost model.',
+        inputs=[port('turbine', 'farm_turbine'), port('layout', 'farm_layout'), port('climate', 'wind_climate')],
+        outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'engine': 'native', 'wake_expansion': 0.1, 'availability': 1.0, 'integration_id': ''}),
+    'dust_rotor': dict(
+        family='specific', category='Solvers', label='DUST rotor (vortex particles)',
+        description='Mid-fidelity check of the connected HAWT with DUST (lifting lines, vortex-particle wake) configured in Settings → '
+                    'Integrations; mean thrust, torque and power over the last revolution next to Nova\'s BEMT.',
+        inputs=[port('spec', 'rotor_spec')], outputs=[port('table', 'table'), port('values', 'record')],
+        defaults={'integration_id': '', 'revolutions': 4, 'steps_per_revolution': 48, 'span_elements': 24, 'particles': 60000,
+                  'timeout_seconds': 3600.0}),
     'design_checks': dict(
         family='specific', category='Constraints', label='Design checks',
         description='Domain limits: Betz, rating, tip speed/Mach, thrust, Keller, Burrill, cavitation, ripple.',
